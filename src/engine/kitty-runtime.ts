@@ -370,14 +370,17 @@ export function installKittyRuntime(diacritics: number[]): void {
           if (mode === "text") {
             if (char === "\x1b") mode = "esc"; else text += char;
           } else if (mode === "esc") {
-            if (char === "_") { await flush(); mode = "apc"; sequence = ""; }
+            if (char === "\x1b") text += char;
+            else if (char === "_") { await flush(); mode = "apc"; sequence = ""; }
             else {
               text += "\x1b" + char;
               if (char === "]" || char === "P" || char === "^") { mode = "string"; stringOsc = char === "]"; }
               else mode = "text";
             }
           } else if (mode === "apc" || mode === "apcEsc") {
-            if (mode === "apcEsc" && char === "\\") {
+            if (char === "\x18" || char === "\x1a") {
+              sequence = ""; pending = undefined; mode = "text"; text += char;
+            } else if (mode === "apcEsc" && char === "\\") {
               if (sequence.startsWith("G")) await command(sequence.slice(1));
               sequence = ""; mode = "text";
             } else {
@@ -388,7 +391,8 @@ export function installKittyRuntime(diacritics: number[]): void {
             }
           } else {
             text += char;
-            if (mode === "stringEsc") mode = char === "\\" ? "text" : "string";
+            if (char === "\x18" || char === "\x1a") mode = "text";
+            else if (mode === "stringEsc") mode = char === "\\" ? "text" : char === "\x1b" ? "stringEsc" : "string";
             else if (char === "\x1b") mode = "stringEsc";
             else if (stringOsc && char === "\x07") mode = "text";
           }

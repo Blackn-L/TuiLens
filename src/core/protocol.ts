@@ -15,7 +15,7 @@ export const launchSchema = z.object({
   cols: dimension.optional(),
   rows: z.number().int().min(2).max(250).optional(),
   colorMode: z.enum(["truecolor", "ansi256", "none"]).optional(),
-  images: z.enum(["off", "sixel", "all"]).optional(),
+  images: z.enum(["off", "sixel", "iterm", "all"]).optional(),
   recording: z.object({ maxBytes: z.number().int().min(4096).max(64 * 1024 * 1024).optional() }).strict().optional(),
 }).strict();
 const text = z.string().max(256 * 1024);

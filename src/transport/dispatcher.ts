@@ -9,7 +9,7 @@ export async function dispatch(manager: SessionManager, method: string, params: 
   const result = methodSchemas[method as Method].safeParse(params);
   if (!result.success) throw new TuiLensError("INVALID_ARGUMENT", "命令参数不合法", result.error.issues);
   switch (method) {
-    case "ping": return { version: "0.2.0", pid: process.pid };
+    case "ping": return { version: "0.3.0", pid: process.pid };
     case "launch": {
       const session = await manager.launch(result.data as LaunchOptions);
       // 客户端取消启动时不得留下无法返回 ID 的孤儿会话。

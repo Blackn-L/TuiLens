@@ -75,7 +75,7 @@ export interface InputGuard {
   region?: { bounds: Region; fingerprint: string };
 }
 
-export type ImageProfile = "off" | "sixel" | "all";
+export type ImageProfile = "off" | "sixel" | "iterm" | "all";
 export interface Modifiers { shift?: boolean; ctrl?: boolean; alt?: boolean }
 
 export interface LaunchOptions {

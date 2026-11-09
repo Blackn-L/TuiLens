@@ -46,7 +46,7 @@ export function launchOptions(options: LaunchOptions): void {
   if (options.colorMode !== undefined && !["truecolor", "ansi256", "none"].includes(options.colorMode)) {
     throw new TuiLensError("INVALID_ARGUMENT", "不支持的 colorMode");
   }
-  if (options.images !== undefined && !["off", "sixel", "all"].includes(options.images)) {
+  if (options.images !== undefined && !["off", "sixel", "iterm", "all"].includes(options.images)) {
     throw new TuiLensError("INVALID_ARGUMENT", "不支持的 images");
   }
   if (options.recording !== undefined) {

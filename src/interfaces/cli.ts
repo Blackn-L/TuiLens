@@ -5,12 +5,12 @@ import { request } from "../transport/client.js";
 import { methodSchemas, type Method } from "./schemas.js";
 import { readBoundedFile } from "../core/bounded-file.js";
 
-const HELP = `TuiLens 0.2.0 — 面向 Agent 的终端观察与操作
+const HELP = `TuiLens 0.3.0 — 面向 Agent 的终端观察与操作
 
 用法：tuilens <命令> [会话 ID] [参数]
 所有结果为 JSON；坐标从 0 起算、以字符格计量。
 
-launch --cwd <路径> --images off|sixel|all [--record] -- <程序> [参数...]
+launch --cwd <路径> --images off|sixel|iterm|all [--record] -- <程序> [参数...]
 launch --json <JSON>                 也可使用 --file <文件> 或 --stdin
 list                                列出会话
 observe <id> [--no-screenshot] [--cells]  同帧文字与 PNG；按需返回完整字符格
@@ -43,7 +43,7 @@ mcp                                 启动 MCP stdio 接口
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
   if (!command || command === "--help" || command === "help") { process.stdout.write(HELP); return; }
-  if (command === "--version") { process.stdout.write("0.2.0\n"); return; }
+  if (command === "--version") { process.stdout.write("0.3.0\n"); return; }
   if (command === "_serve") { await (await import("../transport/server.js")).serve(); return; }
   if (command === "mcp") { await (await import("./mcp.js")).startMcp(); return; }
   const separator = rest.indexOf("--");

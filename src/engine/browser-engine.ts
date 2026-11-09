@@ -5,6 +5,7 @@ import { chromium, type Browser, type Page } from "playwright";
 import { TuiLensError } from "../core/errors.js";
 import type { BrowserEngineOptions, Region, TerminalEngine, TerminalSnapshot, TerminalState } from "../core/types.js";
 import { initializeBrowserRuntime } from "./browser-runtime.js";
+import { Osc1337Normalizer } from "./osc1337.js";
 import { installKittyRuntime } from "./kitty-runtime.js";
 import { KITTY_DIACRITICS } from "./kitty-diacritics.js";
 
@@ -42,7 +43,8 @@ export async function createBrowserEngine(options: BrowserEngineOptions): Promis
   assertDimensions(options.cols, options.rows);
   const fontSize = options.fontSize ?? 16;
   const images = options.images ?? "off";
-  if (!["off", "sixel", "all"].includes(images)) throw new TuiLensError("INVALID_IMAGE_PROFILE", "不支持的图片配置");
+  const iip = images === "iterm" || images === "all" ? new Osc1337Normalizer() : undefined;
+  if (!["off", "sixel", "iterm", "all"].includes(images)) throw new TuiLensError("INVALID_IMAGE_PROFILE", "不支持的图片配置");
   if (!Number.isFinite(fontSize) || fontSize < 8 || fontSize > 48) {
     throw new TuiLensError("INVALID_FONT_SIZE", "字体大小必须在 8–48 像素范围内");
   }
@@ -125,12 +127,15 @@ export async function createBrowserEngine(options: BrowserEngineOptions): Promis
     const size = await page.evaluate(() => window.__tuilens.size());
     await page.setViewportSize(size);
     await settle();
+    const current = await state();
+    iip?.setGeometry({ cols: current.cols, rows: current.rows, ...size });
   }
 
   return {
     async write(data): Promise<void> {
       assertOpen();
-      await page.evaluate((chunk) => window.__tuilens.write(chunk), data);
+      const normalized = iip ? iip.write(data) : data;
+      if (normalized) await page.evaluate((chunk) => window.__tuilens.write(chunk), normalized);
     },
     async resize(cols, rows): Promise<void> {
       assertOpen();

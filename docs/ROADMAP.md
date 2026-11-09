@@ -2,9 +2,10 @@
 
 [English](ROADMAP.md) · [简体中文](zh-CN/ROADMAP.md)
 
-## Implemented in 0.2
+## Implemented
 
 - SIXEL and bounded Kitty inline/virtual placement subset.
+- iTerm2 OSC 1337 inline images and multipart transport (0.3).
 - Region screenshots, read-only baselines, masks and diff artifacts.
 - Drag, explicit mouse down/up, modifiers and coordinate-aware wheel input.
 - Bounded recording, output replay and declarative scenarios.

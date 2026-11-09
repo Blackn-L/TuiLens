@@ -2,13 +2,14 @@
 
 [English](../IMAGES.md) · [简体中文](IMAGES.md)
 
-启动参数 `images` 可设为 `off`、`sixel` 或 `all`，默认 `off`。
+启动参数 `images` 可设为 `off`、`sixel`、`iterm` 或 `all`，默认 `off`。
 
 | 配置 | 启用能力 |
 | --- | --- |
 | off | 文字与字符块 |
 | sixel | SIXEL |
-| all | SIXEL 与下述 Kitty 子集 |
+| iterm | iTerm2 OSC 1337 内联图片 |
+| all | SIXEL、IIP 与下述 Kitty 子集 |
 
 浏览器仅加载所需组件，不声明未启用的能力。SIXEL 模式通过 DA1 属性 `4`
 报告支持；字符像素尺寸由实际终端画布计算。Kitty 子集支持内联数据查询
@@ -22,8 +23,40 @@
 
 - 支持图像数据、调色板、字符尺寸报告和终端擦除。
 - 图像上限 4M 像素，单序列上限 8 MiB，缓存上限 32 MiB。
-- IIP 未启用。图片滚动与文字覆盖采用插件的字符格机制。
+- 图片滚动与文字覆盖采用插件的字符格机制。
 - 不保证每种终端的 SIXEL 光标策略一致；应以具体控制序列和截图验证。
+
+## iTerm2 内联图片（OSC 1337）
+
+```sh
+node dist/src/interfaces/cli.js launch --images iterm --cols 60 --rows 12 -- node examples/osc1337.mjs
+```
+
+![OSC 1337 示例](../assets/osc1337.png)
+
+`iterm` 只开启本协议，不宣告 SIXEL，也不伪装 iTerm2 品牌。
+这是 iTerm2 扩展协议，但可以在任何受支持的宿主系统上解析。
+实现复用插件的解码与存储，并在入口归一化数据流：
+
+- 支持 `File=...:base64`，以 BEL 或 `ESC \`（ST）结束；C1 OSC/ST 码点走同样的校验。
+- 支持 `MultipartFile`、`FilePart`、`FileEnd`，以及任意终端数据块边界。
+- 支持 `inline=1`、可选 name/size、width/height/preserveAspectRatio。
+- 尺寸支持字符格、px 像素、% 视口比例和 auto。
+- 支持 PNG、JPEG 和 GIF 首帧；PNG 限制为非交错 8 位，拒绝 APNG。
+- 缺少 size 时按真实文件字节补齐；声明值小于实际文件时拒绝。
+- 同时指定宽高并保持比例时，图像适配到两个边界以内。
+
+文件解码上限 8 MiB，头部 8 KiB，单字段 1024 字符，最多 16384 个分段；
+图片小于 4M 像素、边长不超过 4096。IIP 与 SIXEL 共用 32 MiB 缓存。
+错误或不支持的请求被消费，不执行文件下载或其他 OSC 副作用。
+PNG 在解码前校验容器；JPEG/GIF 先做有界浏览器预检，再交给插件。
+插件仍会进行第二次解码，浏览器/进程超时保留为最终故障边界。
+
+不支持 inline=0 下载、APNG 动画、PDF/PICT 等 macOS 原生格式、
+shell 集成、剪贴板动作和 Feature Reporting 扩展。
+通常使用 7 位 `ESC ]` 形式；GIF 不播放动画。
+图片随插件字符格机制滚动和擦除，resize 后分数格宽可能使缓存缩放向外取整一像素。
+协议显式启用，不设置 `TERM_PROGRAM=iTerm.app`。
 
 ## Kitty 子集
 
@@ -66,7 +99,7 @@ PNG 完整签名、分块边界、CRC 与结束块在浏览器解码前校验，
 ```
 
 区域必须完整位于当前终端内。根据实际字符像素度量裁剪，边缘向外取整，
-返回的宽高来自实际 PNG。PNG 包含文字、SIXEL 和 Kitty 绘制层。
+返回的宽高来自实际 PNG。PNG 包含文字、SIXEL、IIP 和 Kitty 绘制层。
 裁剪只影响截图，观察的字符状态仍可保留完整视口。
 
 ## 验证

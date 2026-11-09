@@ -12,7 +12,7 @@ const columns = z.number().int().min(2).max(500);
 const rows = z.number().int().min(2).max(250);
 const time = z.number().finite().min(0).max(7 * 24 * 60 * 60 * 1000);
 const header = z.object({ type: z.literal("header"), version: z.literal(1), cols: columns, rows,
-  images: z.enum(["off", "sixel", "all"]) }).strict();
+  images: z.enum(["off", "sixel", "iterm", "all"]) }).strict();
 const event = z.discriminatedUnion("type", [
   z.object({ type: z.literal("output"), data: z.string().max(1024 * 1024), atMs: time }).strict(),
   z.object({ type: z.literal("resize"), cols: columns, rows, atMs: time }).strict(),

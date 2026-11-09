@@ -166,23 +166,53 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
   let kitty: KittyRuntime | undefined;
   const nativeWrite = (data: string): Promise<void> => new Promise((resolve) => terminal.write(data, resolve));
   if (options.images !== "off") {
+    const sixel = options.images === "sixel" || options.images === "all";
+    const iterm = options.images === "iterm" || options.images === "all";
     imageAddon = new host.ImageAddon.ImageAddon({
-      enableSizeReports: true, sixelSupport: true, iipSupport: false,
+      enableSizeReports: true, sixelSupport: sixel, iipSupport: iterm, iipSizeLimit: 8 * 1024 * 1024,
       sixelPaletteLimit: 4096, sixelSizeLimit: 8 * 1024 * 1024,
       pixelLimit: 4 * 1024 * 1024, storageLimit: 32, showPlaceholder: false,
     });
     terminal.loadAddon(imageAddon);
     // 上游解码器异步初始化但没有公开 ready Promise。用公开图像查询做有界预热，
     // 避免启动后的第一张图片在解码器尚未就绪时被无声丢弃。
-    const deadline = Date.now() + 5000;
-    let ready = false;
-    do {
-      await nativeWrite("\x1b[H\x1bPq\"1;1;1;6#1;2;100;0;0#1~\x1b\\");
-      ready = Boolean(imageAddon.getImageAtBufferCell(0, 0));
-      if (!ready) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    } while (!ready && Date.now() < deadline);
-    await nativeWrite("\x1bc");
-    if (!ready) throw new Error("SIXEL 解码器未能初始化");
+    if (sixel) {
+      const deadline = Date.now() + 5000;
+      let ready = false;
+      do {
+        await nativeWrite("\x1b[H\x1bPq\"1;1;1;6#1;2;100;0;0#1~\x1b\\");
+        ready = Boolean(imageAddon.getImageAtBufferCell(0, 0));
+        if (!ready) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      } while (!ready && Date.now() < deadline);
+      await nativeWrite("\x1bc");
+      if (!ready) throw new Error("SIXEL 解码器未能初始化");
+    }
+    if (iterm) {
+      // 插件对损坏 JPEG/GIF 的异步解码拒绝没有恢复路径。公共 OSC hook
+      // 在它之前有界预检，失败消费序列，成功才交给插件进行布局与存储。
+      listeners.push(terminal.parser.registerOscHandler(1337, async (data) => {
+        if (!data.startsWith("File=")) return true;
+        const colon = data.indexOf(":");
+        if (colon < 0) return true;
+        try {
+          const raw = Uint8Array.from(atob(data.slice(colon + 1)), (character) => character.charCodeAt(0));
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          let expired = false;
+          const decoding = createImageBitmap(new Blob([raw]));
+          void decoding.then((bitmap) => { if (expired) bitmap.close(); }, () => {});
+          try {
+            const bitmap = await Promise.race([decoding, new Promise<never>((_, reject) => {
+              timer = setTimeout(() => { expired = true; reject(new Error("image timeout")); }, 2000);
+            })]);
+            const valid = bitmap.width > 0 && bitmap.height > 0 && bitmap.width <= 4096 && bitmap.height <= 4096
+              && bitmap.width * bitmap.height < 4 * 1024 * 1024;
+            bitmap.close();
+            if (!valid) return true;
+          } finally { clearTimeout(timer); }
+          return false;
+        } catch { return true; }
+      }));
+    }
     if (options.images === "all") {
       kitty = host.__tuilensCreateKitty(terminal, (data) => { void host.__tuilensData(data); }, (cell) => {
         if (cell.isBgRGB()) return `#${cell.getBgColor().toString(16).padStart(6, "0")}`;

@@ -9,12 +9,12 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 
 ![TuiLens playground](docs/assets/playground.png)
 
-> **Status:** experimental, version 0.2.0. Designed for functional and visual testing.
+> **Status:** experimental, version 0.3.0. Designed for functional and visual testing.
 > The browser renderer is not a low-overhead performance measurement environment.
 
 ## Features
 
-- **Native images:** opt-in SIXEL and a bounded Kitty inline-image subset, including Unicode virtual placements.
+- **Native images:** opt-in SIXEL, iTerm2 OSC 1337 inline images, and a bounded Kitty subset with Unicode virtual placements.
 - **Visual testing:** character-region screenshots, PNG comparisons, pixel masks, and inspectable diff artifacts.
 - **Interaction:** keys, bracketed paste, clicks, button down/up, drag, wheel coordinates, and modifiers.
 - **Recording and replay:** bounded output/input/resize recordings; offline replay never executes recorded input.
@@ -78,8 +78,9 @@ A successful action means input was delivered; wait for an application-specific 
 
 ## Images and screenshots
 
-Use `launch --images sixel` or `launch --images all`. Images are **off by default**.
-`all` enables SIXEL plus the supported Kitty subset; it does not mean full Kitty conformance.
+Use `launch --images sixel`, `launch --images iterm`, or `launch --images all`. Images are **off by default**.
+`iterm` enables OSC 1337 inline images, including multipart transport. `all` enables all three implemented
+image families; it does not mean full Kitty or OSC 1337 extension conformance.
 
 ```sh
 node dist/src/interfaces/cli.js observe SESSION_ID --region 0,0,40,10

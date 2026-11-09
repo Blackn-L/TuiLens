@@ -10,7 +10,7 @@ import { methodSchemas, type Method } from "./schemas.js";
 
 /** MCP 与 CLI 共用同一应用协议；断开时只释放此连接创建的会话。 */
 export async function startMcp(): Promise<void> {
-  const server = new McpServer({ name: "tuilens", version: "0.2.0" });
+  const server = new McpServer({ name: "tuilens", version: "0.3.0" });
   const owned = new Set<string>();
   const disconnect = new AbortController();
   const pending = new Set<Promise<unknown>>();

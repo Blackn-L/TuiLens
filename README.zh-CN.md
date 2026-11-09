@@ -9,12 +9,12 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 
 ![TuiLens 示例界面](docs/assets/playground.png)
 
-> **状态：** 0.2.0 实验版本，用于功能和视觉测试。
+> **状态：** 0.3.0 实验版本，用于功能和视觉测试。
 > 浏览器渲染链路不属于低干扰性能测量环境。
 
 ## 功能
 
-- **原生图片：** 按需启用 SIXEL 和有界 Kitty 内联图片子集，支持 Unicode 虚拟放置。
+- **原生图片：** 按需启用 SIXEL、iTerm2 OSC 1337 内联图片和有界 Kitty 子集，支持 Unicode 虚拟放置。
 - **视觉测试：** 字符格区域截图、PNG 比较、像素遮罩、差异图与报告。
 - **输入操作：** 按键、括号粘贴、点击、按住/释放、拖拽、带位置滚轮和修饰键。
 - **录制回放：** 有容量限制的输出/输入/resize 记录；离线回放不执行录制的输入。
@@ -76,8 +76,9 @@ node dist/src/interfaces/cli.js shutdown
 
 ## 图片与截图
 
-使用 `launch --images sixel` 或 `launch --images all`，默认 `off`。
-`all` 表示 SIXEL 加已实现的 Kitty 子集，不代表完整 Kitty 兼容。
+使用 `launch --images sixel`、`launch --images iterm` 或 `launch --images all`，默认 `off`。
+`iterm` 启用 OSC 1337 内联图片及分段传输。`all` 包含三种已实现的图片协议，
+不代表完整 Kitty 或 OSC 1337 扩展兼容。
 
 ```sh
 node dist/src/interfaces/cli.js observe SESSION_ID --region 0,0,40,10
