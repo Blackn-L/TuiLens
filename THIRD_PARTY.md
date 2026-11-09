@@ -1,16 +1,22 @@
-# 第三方组件
+# Third-party components / 第三方组件
 
-直接运行依赖：
+Direct runtime dependencies / 直接运行依赖：
 
 | 包 | 版本 | 用途 | 上游许可证 |
 | --- | --- | --- | --- |
 | node-pty | 1.1.0 | PTY / ConPTY 进程通道 | MIT |
 | @xterm/xterm | 6.0.0 | 终端状态与绘制 | MIT |
 | @xterm/addon-unicode-graphemes | 0.4.0 | 字素与宽字符处理 | MIT |
+| @xterm/addon-image | 0.9.0 | SIXEL rendering / 图像渲染 | MIT |
+| pngjs | 7.0.0 | PNG decoding and comparison / PNG 解码和比较 | MIT |
 | playwright | 1.65.0 | 浏览器生命周期与截图 | Apache-2.0 |
 | @modelcontextprotocol/sdk | 1.32.2 | MCP stdio 协议 | MIT |
 | zod | 4.6.7 | 接口参数校验 | MIT |
 
-精确传递依赖及完整性校验见 `package-lock.json`；分发时保留各包自带许可证。
-Chrome/Chromium 为外部运行环境，TuiLens 仓库不包含浏览器或系统字体。
-项目尚未确定分发许可证；当前 package 设置为 private，防止意外发布到包注册表。
+Exact transitive versions and integrity hashes are recorded in `package-lock.json`.
+Preserve each dependency's license when distributing it. Chrome/Chromium and system fonts are external runtime dependencies.
+The protocol diacritic table is standard Unicode/Kitty protocol data; the source is attributed in its module.
+No project distribution license has been selected. `private: true` prevents accidental registry publication.
+
+传递依赖版本和校验值见锁文件，分发时保留各包许可证。浏览器与系统字体属于外部运行环境。
+组合符表为协议标准数据，模块中保留来源。项目尚未选择整体分发许可证，private 阻止意外发布到包注册表。

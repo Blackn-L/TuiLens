@@ -10,7 +10,7 @@ import { methodSchemas, type Method } from "./schemas.js";
 
 /** MCP 与 CLI 共用同一应用协议；断开时只释放此连接创建的会话。 */
 export async function startMcp(): Promise<void> {
-  const server = new McpServer({ name: "tuilens", version: "0.1.0" });
+  const server = new McpServer({ name: "tuilens", version: "0.2.0" });
   const owned = new Set<string>();
   const disconnect = new AbortController();
   const pending = new Set<Promise<unknown>>();
@@ -20,10 +20,14 @@ export async function startMcp(): Promise<void> {
     observe: "冻结输出消费，获取同一 frameId 的字符格和实际终端 PNG；截图会产生采集开销。",
     input: "发送文字、括号粘贴、按键、点击、带位置滚轮或原始字节。先观察实际控件位置。",
     find: "从字符格定位文字，正确处理中文宽字符。找到文字不等于业务控件可点击。",
+    clickText: "定位后按区域指纹保护点击。默认拒绝重名，可指定样式/区域/nth。",
     resize: "改变 PTY 和模拟器尺寸。之后需等待应用布局条件。",
     wait: "等待全部条件成立；可按区域检查文字、样式稳定、尺寸或退出。支持取消。",
     metrics: "读取字节、排队和背压计数；不截图或读取整个字符网格。",
     close: "关闭会话并释放进程和浏览器资源。",
+    compare: "将实际 PNG 与只读基准图比较，输出差异图；遮罩坐标以截图像素计量。",
+    replay: "离线重放显式录制的终端输出与 resize，不执行程序或输入，返回截图。",
+    scenario: "运行声明式场景步骤，自动记录失败证据并回收本次会话。",
   };
   for (const [name, description] of Object.entries(descriptions)) {
     const method = name as Method;
@@ -44,7 +48,7 @@ export async function startMcp(): Promise<void> {
         if (method === "launch") owned.add((data as SessionInfo).id);
         if (method === "close") owned.delete((args as { id: string }).id);
         const content: CallToolResult["content"] = [{ type: "text", text: JSON.stringify(data) }];
-        if (method === "observe") {
+        if (method === "observe" || method === "replay") {
           const observation = data as Observation;
           if (observation.screenshot) {
             content.push({
@@ -53,7 +57,8 @@ export async function startMcp(): Promise<void> {
             });
           }
         }
-        return { content };
+        const failed = data !== null && typeof data === "object" && "pass" in data && data.pass === false;
+        return { content, ...(failed ? { isError: true } : {}) };
       } catch (error) {
         return { isError: true, content: [{ type: "text", text: JSON.stringify(errorRecord(error)) }] };
       }

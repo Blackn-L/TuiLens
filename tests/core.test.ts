@@ -33,6 +33,7 @@ test("字符格定位正确映射中文、emoji、组合字素", () => {
 
 test("局部稳定判断不受外部行与 frameId 影响，但捕获样式变化", () => {
   const region = { x: 0, y: 0, width: 3, height: 1 };
+  assert.match(regionFingerprint(snapshot, region), /^[0-9a-f]{64}$/);
   const changed = structuredClone(snapshot);
   changed.frameId = 100;
   changed.cells[1] = [cell(0, "外部变化")];

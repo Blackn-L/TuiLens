@@ -51,7 +51,32 @@ export interface TerminalSnapshot {
 export interface TextMatch {
   text: string;
   region: Region;
+  frameId?: number;
+  fingerprint?: string;
 }
+
+export interface MatchStyle {
+  fg?: string;
+  bg?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+}
+
+export interface MatchOptions {
+  style?: MatchStyle;
+  /** unique 拒绝重名匹配；nth 从 0 起算。 */
+  selection?: "all" | "unique" | "first" | "last";
+  nth?: number;
+}
+
+export interface InputGuard {
+  frameId?: number;
+  region?: { bounds: Region; fingerprint: string };
+}
+
+export type ImageProfile = "off" | "sixel" | "all";
+export interface Modifiers { shift?: boolean; ctrl?: boolean; alt?: boolean }
 
 export interface LaunchOptions {
   command: string;
@@ -61,6 +86,8 @@ export interface LaunchOptions {
   cols?: number;
   rows?: number;
   colorMode?: "truecolor" | "ansi256" | "none";
+  images?: ImageProfile;
+  recording?: { maxBytes?: number };
 }
 
 export interface SessionInfo {
@@ -71,29 +98,34 @@ export interface SessionInfo {
   status: "running" | "exited" | "closed";
   exitCode: number | null;
   createdAt: string;
+  recordingPath?: string;
 }
 
 export interface Observation {
   session: SessionInfo;
   snapshot: TerminalSnapshot;
-  screenshot: null | { path: string; width: number; height: number; frameId: number };
+  screenshot: null | { path: string; width: number; height: number; frameId: number; region?: Region };
 }
 
 export interface ObserveOptions {
   screenshot?: boolean;
+  /** 字符格裁剪，仅影响 PNG；状态仍返回完整 viewport。 */
+  region?: Region;
 }
 
 export type InputAction =
   | { type: "text"; text: string }
   | { type: "paste"; text: string }
   | { type: "key"; key: string }
-  | { type: "click"; x: number; y: number; button?: "left" | "middle" | "right" }
-  | { type: "move"; x: number; y: number }
-  | { type: "scroll"; x: number; y: number; direction: "up" | "down"; amount?: number }
+  | { type: "click"; x: number; y: number; button?: "left" | "middle" | "right"; modifiers?: Modifiers }
+  | { type: "move"; x: number; y: number; modifiers?: Modifiers }
+  | { type: "mouseDown" | "mouseUp"; x: number; y: number; button?: "left" | "middle" | "right"; modifiers?: Modifiers }
+  | { type: "drag"; from: { x: number; y: number }; to: { x: number; y: number }; steps?: number; button?: "left" | "middle" | "right"; modifiers?: Modifiers }
+  | { type: "scroll"; x: number; y: number; direction: "up" | "down"; amount?: number; modifiers?: Modifiers }
   | { type: "raw"; data: string };
 
 export type WaitCondition =
-  | { kind: "text"; text: string; region?: Region; absent?: boolean }
+  | { kind: "text"; text: string; region?: Region; absent?: boolean; style?: MatchStyle; count?: number }
   | { kind: "size"; cols: number; rows: number }
   | { kind: "stable"; region?: Region; durationMs?: number }
   | { kind: "exited" };
@@ -102,6 +134,7 @@ export interface WaitOptions {
   conditions: WaitCondition[];
   timeoutMs?: number;
   signal?: AbortSignal;
+  afterFrameId?: number;
 }
 
 export interface BrowserEngineOptions {
@@ -111,6 +144,7 @@ export interface BrowserEngineOptions {
   executablePath?: string;
   fontFamily?: string;
   fontSize?: number;
+  images?: ImageProfile;
 }
 
 /** 终端适配器不持有进程；替换引擎无需修改 CLI/MCP 或等待规则。 */
@@ -119,8 +153,10 @@ export interface TerminalEngine {
   resize(cols: number, rows: number): Promise<void>;
   /** 只读取尺寸与模式，不等待绘制，也不遍历或传输字符网格。 */
   state(): Promise<TerminalState>;
+  /** 可选快速文本条件：避免等待普通标记时跨进程传输整屏字符格。 */
+  hasText?(text: string): Promise<boolean>;
   snapshot(frameId: number): Promise<TerminalSnapshot>;
-  screenshot(): Promise<{ png: Buffer; width: number; height: number }>;
+  screenshot(region?: Region): Promise<{ png: Buffer; width: number; height: number }>;
   close(): Promise<void>;
 }
 

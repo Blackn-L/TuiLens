@@ -5,9 +5,11 @@ import type { IDisposable, IPty } from "node-pty";
 import { TuiLensError } from "../core/errors.js";
 import { encodeInput } from "../core/input.js";
 import type {
-  InputAction, Observation, ObserveOptions, SessionInfo, TerminalEngine,
+  InputAction, InputGuard, Observation, ObserveOptions, SessionInfo, TerminalEngine,
 } from "../core/types.js";
-import { dimensions } from "../core/validation.js";
+import { dimensions, inputGuard, regionWithin } from "../core/validation.js";
+import { regionFingerprint } from "../core/locator.js";
+import type { RecordingWriter } from "../recording/writer.js";
 
 const MAX_PENDING_BYTES = 16 * 1024 * 1024;
 const MAX_BATCH_CHARS = 32 * 1024;
@@ -93,6 +95,7 @@ export class ManagedSession {
     private readonly engine: TerminalEngine,
     private readonly pty: IPty,
     private readonly artifactDir: string,
+    private readonly recorder?: RecordingWriter,
   ) {
     this.exitPromise = new Promise((resolve) => { this.resolveExit = resolve; });
     this.disposables.push(pty.onData((data) => this.receive(data)));
@@ -104,6 +107,8 @@ export class ManagedSession {
       void this.enqueue(async () => {
         this.details.status = "exited";
         this.details.exitCode = exitCode;
+        await this.recorder?.append({ type: "exit", code: exitCode });
+        await this.recorder?.close();
         for (const wake of [...this.exitWaiters]) wake();
       }).catch((error: unknown) => this.setFault(error));
     }));
@@ -126,6 +131,7 @@ export class ManagedSession {
 
   private setFault(error: unknown): void {
     this.fault ??= error instanceof Error ? error : new Error(String(error));
+    this.recorder?.markTruncated();
   }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -196,6 +202,7 @@ export class ManagedSession {
       try {
         if (!this.closing && !this.fault) {
           await this.engine.write(data);
+          await this.recorder?.append({ type: "output", data });
           this.counters.appliedBytes += bytes;
           this.counters.writeBatches += 1;
           this.frameId += 1;
@@ -216,6 +223,18 @@ export class ManagedSession {
     return this.observeReady(options, control);
   }
 
+  async hasText(text: string, control: OperationControl): Promise<boolean | undefined> {
+    if (!this.engine.hasText) return undefined;
+    this.assertUsable();
+    this.sealBatch();
+    const pending = this.enqueue(async () => {
+      this.assertUsable();
+      if (control.signal?.aborted) throw new TuiLensError("ABORTED", "等待已取消");
+      return this.engine.hasText!(text);
+    });
+    return controlled(pending, control);
+  }
+
   private async observeReady(options: ObserveOptions, control: OperationControl): Promise<Observation> {
     const deadline = performance.now() + (control.timeoutMs ?? 10_000);
     const signal = control.signal
@@ -230,10 +249,11 @@ export class ManagedSession {
         this.assertUsable();
         if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
         const snapshot = await this.engine.snapshot(this.frameId);
+        if (options.region) regionWithin(options.region, snapshot.cols, snapshot.rows);
         const observation: Observation = { session: this.info(), snapshot, screenshot: null };
         if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
         if (options.screenshot !== false) {
-          const capture = await this.engine.screenshot();
+          const capture = await this.engine.screenshot(options.region);
           if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
           const prefix = join(this.artifactDir, `${this.details.id}-${this.frameId}-${++this.observationId}`);
           await mkdir(this.artifactDir, { recursive: true, mode: 0o700 });
@@ -241,6 +261,7 @@ export class ManagedSession {
           await writeFile(path, capture.png, { mode: 0o600 });
           observation.screenshot = {
             path, width: capture.width, height: capture.height, frameId: snapshot.frameId,
+            ...(options.region ? { region: options.region } : {}),
           };
           await writeFile(`${prefix}.json`, JSON.stringify(observation, null, 2), { mode: 0o600 });
         }
@@ -265,31 +286,52 @@ export class ManagedSession {
     throw new TuiLensError("FRAME_PENDING", "应用的同步输出帧未在期限内结束");
   }
 
-  input(action: InputAction): Promise<SessionInfo> {
+  input(action: InputAction, guard?: InputGuard, control: OperationControl = {}): Promise<SessionInfo> {
     this.assertUsable(true);
     this.sealBatch();
-    return this.enqueue(async () => {
+    let cancelled = false;
+    const check = () => { if (cancelled || control.signal?.aborted) throw new TuiLensError("ABORTED", "输入已取消"); };
+    const pending = this.enqueue(async () => {
       this.assertUsable(true);
+      check();
+      inputGuard(guard, this.details.cols, this.details.rows);
+      if (guard?.frameId !== undefined && guard.frameId !== this.frameId) {
+        throw new TuiLensError("STALE_FRAME", "操作引用的画面已过期，请重新观察");
+      }
+      if (guard?.region) {
+        const snapshot = await this.engine.snapshot(this.frameId);
+        if (regionFingerprint(snapshot, guard.region.bounds) !== guard.region.fingerprint) {
+          throw new TuiLensError("STALE_REGION", "操作目标区域已变化，请重新定位");
+        }
+      }
       // 输入只需模式和尺寸，不读整屏字符格，也不等待绘制。
       const state = await this.engine.state();
+      check();
       this.pty.write(encodeInput(action, state));
+      await this.recorder?.append({ type: "input", action });
       return this.info();
     });
+    return controlled(pending, { timeoutMs: 10000, ...control }).catch((error) => { cancelled = true; throw error; });
   }
 
-  resize(cols: number, rows: number): Promise<SessionInfo> {
+  resize(cols: number, rows: number, control: OperationControl = {}): Promise<SessionInfo> {
     dimensions(cols, rows);
     this.assertUsable(true);
     this.sealBatch();
-    return this.enqueue(async () => {
+    let cancelled = false;
+    const pending = this.enqueue(async () => {
       this.assertUsable(true);
+      if (cancelled || control.signal?.aborted) throw new TuiLensError("ABORTED", "尺寸变更已取消");
+      // 一旦开始变更引擎尺寸，必须同步更新 PTY，不能在中间取消形成两套尺寸。
       await this.engine.resize(cols, rows);
       this.pty.resize(cols, rows);
       this.details.cols = cols;
       this.details.rows = rows;
+      await this.recorder?.append({ type: "resize", cols, rows });
       this.frameId += 1;
       return this.info();
     });
+    return controlled(pending, { timeoutMs: 10000, ...control }).catch((error) => { cancelled = true; throw error; });
   }
 
   async waitForExit(control: OperationControl): Promise<void> {
@@ -328,6 +370,8 @@ export class ManagedSession {
   }
 
   private async closeResources(): Promise<void> {
+    // 显式关闭会丢弃仍在排队的数据，不能把这份录制标记为完整。
+    if (this.counters.receivedBytes !== this.counters.appliedBytes || this.fault) this.recorder?.markTruncated();
     this.closing = true;
     this.closeController.abort();
     this.sealBatch();
@@ -351,6 +395,7 @@ export class ManagedSession {
     // 先关闭浏览器可打断卡住的 evaluate；再等待队列收敛，不能让 close 无限悬挂。
     try { await this.engine.close(); } catch (error) { closeError ??= error; }
     try { await controlled(this.tail, { timeoutMs: 2000 }); } catch (error) { closeError ??= error; }
+    try { await this.recorder?.close(); } catch (error) { closeError ??= error; }
     this.details.status = "closed";
     if (closeError) throw closeError;
   }

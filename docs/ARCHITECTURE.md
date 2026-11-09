@@ -1,44 +1,50 @@
-# TuiLens 架构与首版契约
+# Architecture
 
-TuiLens 提供面向 Agent 的终端运行环境。首版复用 PTY 与 xterm.js，
-提供会话、观察、等待、操作协议、CLI 和 MCP。
+[English](ARCHITECTURE.md) · [简体中文](zh-CN/ARCHITECTURE.md)
 
-## 分层
+## Layers
 
-- `src/core/`：公开数据类型、错误、参数校验、字符格定位和输入编码，无浏览器或进程依赖。
-- `src/engine/`：浏览器版 xterm.js 适配器；同一实例维护字符格与可见画面。
-- `src/session/`：PTY、输出顺序、观察屏障、等待、进程退出和证据。
-- `src/transport/`：本机 IPC 与守护进程；CLI 多次调用共享会话。
-- `src/interfaces/`：JSON CLI 与 MCP stdio，调用相同应用服务。
-- `tests/`：协议、生命周期、原生 PTY 与浏览器验收。
-- `scripts/`：基准与维护工具，运行参数显式传入。
+| Directory | Responsibility |
+| --- | --- |
+| `src/core` | Public types, protocol schemas, input encoding, locators, validation, bounded reads |
+| `src/engine` | xterm.js browser adapter, image decoding and rendering, viewport capture |
+| `src/session` | PTY lifecycle, ordered output, observation barriers, waits and resource limits |
+| `src/recording` | Bounded versioned journals and offline replay |
+| `src/visual` | PNG validation, pixel comparison and diff artifacts |
+| `src/scenario` | Declarative execution and failure reports |
+| `src/transport` | Authenticated local IPC daemon/client and shared dispatch |
+| `src/interfaces` | CLI and MCP stdio |
 
-## 关键契约
+Interfaces delegate to the same application service. Protocol schemas are in core;
+scenarios do not import CLI implementations. `TerminalEngine` is the replaceable engine contract.
 
-1. 对外坐标从 0 起算，以字符格计量。宽字符续格保留 width=0，定位不能按 JS 字符串长度计算列。
-2. PTY 输出与用户操作按会话串行处理。观察在队列屏障内读取状态并截图，期间新输出排队。
-3. 截图与状态具有相同 frameId；截图前等待终端解析和浏览器绘制完成。不能以“收到字节”代表界面就绪。
-4. resize 只表示尺寸已送达；调用方用文本区域、底栏位置或局部稳定条件等待应用完成重排。
-5. 输入按实际终端模式编码，滚轮必须携带位置；未启用鼠标时明确报错。
-6. 无原生图片协议支持声明。首版支持字符与字符块；kitty/sixel 留在独立引擎能力扩展。
-7. 等待支持组合条件、超时和取消；稳定等待可限定区域，避开持续动画。
-8. 默认保存当前观察和操作元数据；原始正文可能包含用户内容，不自动上传或将启动环境写入日志。
-9. 会话关闭释放 PTY、监听器、页面与浏览器。退出的会话仍允许观察最后画面，显式 close 后释放。
-10. 运行时文件位于用户数据目录或指定 artifactDir，应用路径通过调用参数传入。
-11. 输入仅读取轻量模式；输出按最多 32K UTF-16 单元合批。8 MiB 排队触发暂停，
-    低于 4 MiB 恢复，超过 16 MiB 明确失败。metrics 不访问浏览器。
-12. 同步输出尚未提交时，引擎返回 FRAME_PENDING；会话在队列外重试，
-    确保后续结束序列能被消费，超时与取消有界。
-13. Windows 命名管道与 Linux abstract Unix socket 共用私有令牌认证。
-    启动失败回收监听端点；客户端总会 ping，不以状态文件存在判断服务存活。
-14. CLI/MCP 默认只回传文字与截图信息，完整字符格按需请求；SDK 保留完整数据模型。
+## Contracts
 
-## 首版边界
+- Public coordinates are zero-based terminal cells; PNG masks are pixels.
+- Wide-character continuation cells have width 0. Locators use buffer cells rather than JavaScript string length.
+- Received output is batched, then applied in order. Input and resize seal earlier batches before entering the queue.
+- A capture reads state and PNG behind one observation barrier; newer output queues until capture ends.
+- Synchronized output must finish before capture. `FRAME_PENDING` retries happen outside the queue.
+- Image decode is part of ordered processing. Only enabled protocols are advertised.
+- Resize delivery and application layout completion are separate. Callers wait for visible layout conditions.
+- Input reads lightweight dimensions/modes. Guards are checked immediately before input, and cancelled queued actions are dropped.
+- Simple text waits probe the engine without transferring the full grid until a match; captures still wait for rendering.
+- A changed global frame rejects a frame guard. A region fingerprint can tolerate animation outside the target.
+- Replays and live sessions share an eight-operation budget and manager shutdown lifecycle.
+- Recordings are opt-in. They retain terminal content and mark dropped/truncated output explicitly.
+- Baseline images are never overwritten by comparisons.
+- Scenario failure attempts bounded evidence capture and always closes its session.
 
-Node.js 22+，Windows ConPTY 与 Linux PTY；真实验收分别记录。
-CLI 返回结构化 JSON，MCP 使用 stdio。没有远程公开 HTTP 控制服务。
-浏览器依赖通过 Playwright 安装或显式指定已有 Chrome/Chromium。
-新增命令复用 core/session 接口，避免在 CLI 与 MCP 内复制业务逻辑。
+## Bounds
 
-浏览器模式不作为低干扰性能宿主。长任务性能设计与原生引擎扩展见
-[性能边界](PERFORMANCE.md) 和 [后续迭代](ROADMAP.md)。
+Output batches contain at most 32K UTF-16 units without splitting surrogate pairs.
+8 MiB of queued output pauses PTY reading; below 4 MiB resumes; over 16 MiB is a visible error.
+Recording files have explicit byte limits. Replay, PNG reads and image placement metadata also have independent limits.
+See [images](IMAGES.md), [recording](RECORDING.md), and [visual testing](VISUAL.md).
+
+Windows uses named pipes; Linux uses abstract Unix sockets. A local token authenticates requests.
+The daemon verifies live endpoints instead of treating an on-disk state file as proof of liveness.
+MCP disconnect cancels pending requests and releases connection-owned sessions.
+
+The browser path is an observation environment, not a zero-overhead performance probe.
+[Performance boundaries](PERFORMANCE.md) remain part of every measurement claim.

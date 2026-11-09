@@ -1,42 +1,34 @@
-# 性能测量
+# Performance measurement
 
-浏览器终端用于功能和视觉验收。关闭截图仍有终端解析、浏览器通信和绘制开销。
-测量结果应注明被测程序、终端引擎、平台与采集方式。
+[English](PERFORMANCE.md) · [简体中文](zh-CN/PERFORMANCE.md)
 
-## 对照基准
+Disabling screenshots does not remove parsing, browser IPC or rendering cost.
+Always identify the workload, terminal engine, platform and collection method.
 
 ```sh
 npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1 --out artifacts/overhead.json
 ```
 
-同一个原生 PTY 夹具分别经过：
+The same native PTY fixture runs in isolated workers with alternating order:
 
-- `drain-only`：消费输出，不解析 ANSI、不绘制。
-- `tuilens`：通过实际会话和浏览器终端，测量期间不截图、不轮询完整字符格。
+- `drain-only`: consumes output without ANSI parsing or drawing.
+- `tuilens`: uses the actual session/browser engine, without screenshots or full-grid polling during measurement.
 
-每轮使用独立进程，交替执行顺序；最后读取一次画面检查完成标记，
-这次读取不计入主测量窗口。
+One final screen read validates the completion marker outside the measurement window.
 
-## 指标
-
-| 字段 | 范围 |
+| Metric | Scope |
 | --- | --- |
-| startupMs | 模块、浏览器、PTY 启动及夹具就绪 |
-| workload.elapsedMs | 夹具自身产出耗时 |
-| controlToOutputAppliedMs | 发出控制动作到最后输出消费/解析完成 |
-| rootCpuMs | 工具根进程 CPU 时间 |
-| rootRssPeakBytes | 工具根进程采样 RSS 峰值 |
-| sessionMetrics | 接收/应用字节、积压、背压与批次 |
+| startupMs | Module, browser, PTY startup and fixture readiness |
+| workload.elapsedMs | Fixture-reported output production time |
+| controlToOutputAppliedMs | Control input to final output consumption/parser completion |
+| rootCpuMs | Tool worker root-process CPU |
+| rootRssPeakBytes | Sampled root-process RSS peak |
+| sessionMetrics | Received/applied bytes, queue peaks, pauses and batches |
 
-根进程 CPU/RSS 不包含浏览器、PTY 宿主和被测程序。
-解析完成不代表像素已经绘制。输出通道可能改写字节；
-夹具产出字节与终端接收字节应分别记录。
+Root CPU/RSS excludes Chromium, the PTY host and workload. Parser completion is not pixel presentation.
+The PTY may transform or coalesce output, so produced and received byte counts are distinct.
 
-## 长任务
-
-- 固定工作负载、字体、网格、引擎和浏览器版本。
-- 分别采样被测程序与工具进程树资源。
-- 记录采样成本、队列峰值及暂停时间，避免把背压归因于被测程序。
-- 区分输入发送、应用输出、解析完成和画面可见时点。
-- 使用持续负载检查资源增长；短时合成输出不能外推到数小时运行。
-- 原生引擎或 Rust 处理层仍需开销校准，不承诺零干扰。
+For long-running tests, fix fonts, grid, engine and browser versions; sample each process tree separately;
+record collection overhead and backpressure; and distinguish input delivery, application output, parsing and display.
+Short synthetic output tests cannot establish hours-long latency or memory stability.
+Native engines and Rust processing layers still require overhead calibration.

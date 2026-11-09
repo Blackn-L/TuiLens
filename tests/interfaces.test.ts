@@ -26,12 +26,17 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
   };
   let client: Client | undefined;
   try {
-    const session = await call("launch", { command: process.execPath, args: [fixture], cols: 60, rows: 12 }) as SessionInfo;
+    const session = await call("launch", { command: "node", args: [fixture], cols: 60, rows: 12, recording: {} }) as SessionInfo;
     await call("wait", { id: session.id, conditions: [{ kind: "text", text: "TUILENS_READY" }] });
     const observation = await call("observe", { id: session.id }) as Observation;
     assert.equal(observation.snapshot.frameId, observation.screenshot?.frameId);
     assert.match(observation.snapshot.text, /中文 🚀 A⠀B/u);
     assert.deepEqual([...((await readFile(observation.screenshot!.path)).subarray(0, 8))], [137, 80, 78, 71, 13, 10, 26, 10]);
+    const crop = await call("observe", { id: session.id, region: { x: 0, y: 0, width: 12, height: 2 } }) as Observation;
+    assert.ok(crop.screenshot!.width < observation.screenshot!.width);
+    const comparison = await call("compare", { id: session.id, options: { baseline: crop.screenshot!.path,
+      region: { x: 0, y: 0, width: 12, height: 2 } } }) as { pass: boolean };
+    assert.equal(comparison.pass, true);
     await call("input", { id: session.id, action: { type: "text", text: "PING" } });
     await call("wait", { id: session.id, conditions: [{ kind: "text", text: "INPUT_RECEIVED" }] });
     await call("resize", { id: session.id, cols: 80, rows: 16 });
@@ -41,6 +46,9 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     assert.ok(metrics.appliedBytes <= metrics.receivedBytes);
     await call("input", { id: session.id, action: { type: "key", key: "Ctrl+q" } });
     await call("wait", { id: session.id, conditions: [{ kind: "exited" }] });
+    const replayed = await call("replay", { path: session.recordingPath }) as { snapshot: { cols: number; rows: number } };
+    assert.equal(replayed.snapshot.cols, 80);
+    assert.equal(replayed.snapshot.rows, 16);
     await call("close", { id: session.id });
     assert.deepEqual(await call("list"), []);
 
@@ -49,6 +57,9 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [cli, "mcp"], env: inherited, stderr: "pipe" }));
     const tools = await client.listTools();
     assert.ok(tools.tools.some((tool) => tool.name === "terminal_observe"));
+    for (const name of ["terminal_compare", "terminal_replay", "terminal_scenario", "terminal_clickText"]) {
+      assert.ok(tools.tools.some((tool) => tool.name === name));
+    }
     const launch = await client.callTool({ name: "terminal_launch", arguments: { command: process.execPath, args: [fixture], cols: 60, rows: 12 } });
     const launchContent = launch.content as { type: string; text?: string }[];
     const mcpSession = JSON.parse(launchContent[0]!.text!) as SessionInfo;

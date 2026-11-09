@@ -6,12 +6,16 @@ import * as nodePty from "node-pty";
 import { TuiLensError } from "../core/errors.js";
 import { findText, regionFingerprint } from "../core/locator.js";
 import type {
-  InputAction, LaunchOptions, ManagerOptions, Observation, ObserveOptions,
+  InputAction, InputGuard, LaunchOptions, ManagerOptions, MatchOptions, Observation, ObserveOptions,
   Region, SessionInfo, TextMatch, WaitOptions, WaitResult,
 } from "../core/types.js";
 import { launchOptions, waitOptions } from "../core/validation.js";
 import { createBrowserEngine } from "../engine/browser-engine.js";
 import { ManagedSession, type OperationControl, type SessionMetrics } from "./session.js";
+import { RecordingWriter } from "../recording/writer.js";
+import { replayRecording, type ReplayOptions } from "../recording/replay.js";
+import { compareArtifact, type VisualOptions } from "../visual/artifacts.js";
+import { runScenario } from "../scenario/runner.js";
 
 /** 应用服务同时供 CLI 与 MCP 使用，不依赖具体传输协议。 */
 export class SessionManager {
@@ -19,6 +23,7 @@ export class SessionManager {
   private readonly pendingLaunches = new Set<Promise<SessionInfo>>();
   private readonly closedIds = new Set<string>();
   private readonly launchCleanupErrors: unknown[] = [];
+  private readonly offline = new Map<Promise<unknown>, AbortController>();
   private disposed = false;
   private closing: Promise<void> | undefined;
 
@@ -27,7 +32,7 @@ export class SessionManager {
   async launch(options: LaunchOptions): Promise<SessionInfo> {
     launchOptions(options);
     if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
-    if (this.sessions.size + this.pendingLaunches.size >= 8) {
+    if (this.sessions.size + this.pendingLaunches.size + this.offline.size >= 8) {
       throw new TuiLensError("SESSION_LIMIT", "最多同时保留 8 个会话，请先关闭不再使用的会话");
     }
     const pending = this.launchProcess(options);
@@ -50,13 +55,19 @@ export class SessionManager {
     const rows = options.rows ?? 50;
     let pty: nodePty.IPty | undefined;
     let session: ManagedSession | undefined;
+    let recorder: RecordingWriter | undefined;
     const engine = await (this.options.engineFactory ?? createBrowserEngine)({
       cols, rows,
+      images: options.images ?? "off",
       onData: (data) => { session?.protocolResponse(data); },
       ...(this.options.executablePath ? { executablePath: this.options.executablePath } : {}),
       ...(this.options.fontFamily ? { fontFamily: this.options.fontFamily } : {}),
     });
     try {
+      if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "管理器在启动期间已关闭");
+      const sessionId = randomUUID();
+      if (options.recording) recorder = await RecordingWriter.create(resolve(this.options.artifactDir), sessionId,
+        { type: "header", version: 1, cols, rows, images: options.images ?? "off" }, options.recording.maxBytes);
       if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "管理器在启动期间已关闭");
       const env = Object.fromEntries(Object.entries(process.env).filter(
         (entry): entry is [string, string] => entry[1] !== undefined,
@@ -86,18 +97,22 @@ export class SessionManager {
         env.COLORTERM = "truecolor";
         env.FORCE_COLOR = "3";
       }
-      pty = nodePty.spawn(options.command, options.args ?? [], { name: "xterm-256color", cols, rows, cwd, env });
+      const command = process.platform === "win32" && ["node", "nodejs", "node.exe"].includes(options.command.toLowerCase())
+        ? process.execPath : options.command;
+      pty = nodePty.spawn(command, options.args ?? [], { name: "xterm-256color", cols, rows, cwd, env });
       const info: SessionInfo = {
-        id: randomUUID(), pid: pty.pid, cols, rows, status: "running",
+        id: sessionId, pid: pty.pid, cols, rows, status: "running",
         exitCode: null, createdAt: new Date().toISOString(),
+        ...(recorder ? { recordingPath: recorder.path } : {}),
       };
-      session = new ManagedSession(info, engine, pty, resolve(this.options.artifactDir));
+      session = new ManagedSession(info, engine, pty, resolve(this.options.artifactDir), recorder);
       this.sessions.set(info.id, session);
       return session.info();
     } catch (error) {
       const cleanupErrors: unknown[] = [];
       try { pty?.kill(); } catch (cleanupError) { cleanupErrors.push(cleanupError); }
       try { await engine.close(); } catch (cleanupError) { cleanupErrors.push(cleanupError); }
+      try { await recorder?.close(); } catch (cleanupError) { cleanupErrors.push(cleanupError); }
       if (cleanupErrors.length) {
         this.launchCleanupErrors.push(...cleanupErrors);
         throw new AggregateError([error, ...cleanupErrors], "启动失败且部分资源清理失败");
@@ -124,21 +139,52 @@ export class SessionManager {
     return this.session(id).metrics();
   }
 
+  async replay(path: string, options: ReplayOptions = {}) {
+    if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
+    if (this.sessions.size + this.pendingLaunches.size + this.offline.size >= 8) {
+      throw new TuiLensError("SESSION_LIMIT", "会话和回放任务总数不能超过 8");
+    }
+    const controller = new AbortController();
+    const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+    const task = replayRecording(path, this.options, { ...options, signal });
+    this.offline.set(task, controller);
+    try { return await task; } finally { this.offline.delete(task); }
+  }
+  scenario(specification: unknown, signal?: AbortSignal) { return runScenario(this, specification, this.options.artifactDir, signal); }
+  async compare(id: string, options: VisualOptions, control?: OperationControl) {
+    const observation = await this.observe(id, options.region ? { region: options.region } : {}, control);
+    return compareArtifact(observation.screenshot!.path, options, this.options.artifactDir);
+  }
+
   observe(id: string, options?: ObserveOptions, control?: OperationControl): Promise<Observation> {
     return this.session(id).observe(options, control);
   }
 
-  input(id: string, action: InputAction): Promise<SessionInfo> {
-    return this.session(id).input(action);
+  input(id: string, action: InputAction, guard?: InputGuard, control?: OperationControl): Promise<SessionInfo> {
+    return this.session(id).input(action, guard, control);
   }
 
-  resize(id: string, cols: number, rows: number): Promise<SessionInfo> {
-    return this.session(id).resize(cols, rows);
+  resize(id: string, cols: number, rows: number, control?: OperationControl): Promise<SessionInfo> {
+    return this.session(id).resize(cols, rows, control);
   }
 
-  async find(id: string, text: string, region?: Region, control?: OperationControl): Promise<TextMatch[]> {
+  async find(id: string, text: string, region?: Region, control?: OperationControl, options?: MatchOptions): Promise<TextMatch[]> {
     const observation = await this.observe(id, { screenshot: false }, control);
-    return findText(observation.snapshot, text, region);
+    return findText(observation.snapshot, text, region, options).map((match) => ({
+      ...match, frameId: observation.snapshot.frameId,
+      fingerprint: regionFingerprint(observation.snapshot, match.region),
+    }));
+  }
+
+  /** 原子点击使用已观察目标区域的指纹，动画改变其他区域不使它失效。 */
+  async clickText(id: string, text: string, region?: Region, options: MatchOptions = {}, control?: OperationControl): Promise<SessionInfo> {
+    const observation = await this.observe(id, { screenshot: false }, control);
+    const matches = findText(observation.snapshot, text, region,
+      options.nth === undefined ? { selection: "unique", ...options } : options);
+    if (matches.length !== 1) throw new TuiLensError("AMBIGUOUS_MATCH", "点击需要唯一匹配，或显式指定 nth");
+    const match = matches[0]!;
+    return this.input(id, { type: "click", x: match.region.x + Math.floor(match.region.width / 2), y: match.region.y },
+      { region: { bounds: match.region, fingerprint: regionFingerprint(observation.snapshot, match.region) } }, control);
   }
 
   async wait(id: string, options: WaitOptions): Promise<WaitResult> {
@@ -156,6 +202,9 @@ export class SessionManager {
       try {
         await session.waitForExit(remainingControl());
         const observation = await session.observe({ screenshot: false }, remainingControl());
+        if (options.afterFrameId !== undefined && observation.snapshot.frameId <= options.afterFrameId) {
+          return this.timeoutEvidence(session, timeout, options.signal);
+        }
         return { observation, elapsedMs: performance.now() - started };
       } catch (error) {
         if (!(error instanceof TuiLensError) || !["WAIT_TIMEOUT", "OPERATION_TIMEOUT", "FRAME_PENDING"].includes(error.code)) throw error;
@@ -164,6 +213,24 @@ export class SessionManager {
     }
     while (performance.now() - started < timeout) {
       if (options.signal?.aborted) throw new TuiLensError("ABORTED", "等待已取消");
+      const only = options.conditions.length === 1 ? options.conditions[0] : undefined;
+      if (only?.kind === "text" && !only.region && !only.style && only.count === undefined) {
+        try {
+          const found = await session.hasText(only.text, remainingControl());
+          if (found !== undefined && (only.absent ? found : !found)) {
+            await sleep(25, undefined, options.signal ? { signal: options.signal } : {});
+            continue;
+          }
+        } catch (error) {
+          if (options.signal?.aborted) throw new TuiLensError("ABORTED", "等待已取消");
+          if (error instanceof TuiLensError && error.code === "FRAME_PENDING") {
+            await sleep(8);
+            continue;
+          }
+          if (error instanceof TuiLensError && error.code === "OPERATION_TIMEOUT") break;
+          throw error;
+        }
+      }
       let observation: Observation;
       try {
         observation = await session.observe({ screenshot: false }, remainingControl());
@@ -175,8 +242,10 @@ export class SessionManager {
       const matches = options.conditions.map((condition, index) => {
         switch (condition.kind) {
           case "text": {
-            const found = findText(observation.snapshot, condition.text, condition.region).length > 0;
-            return condition.absent ? !found : found;
+            const count = findText(observation.snapshot, condition.text, condition.region,
+              condition.style ? { style: condition.style } : undefined).length;
+            if (condition.count !== undefined) return count === condition.count;
+            return condition.absent ? count === 0 : count > 0;
           }
           case "size":
             return observation.snapshot.cols === condition.cols && observation.snapshot.rows === condition.rows;
@@ -193,7 +262,9 @@ export class SessionManager {
           }
         }
       });
-      if (matches.every(Boolean)) return { observation, elapsedMs: now - started };
+      if (matches.every(Boolean) && (options.afterFrameId === undefined || observation.snapshot.frameId > options.afterFrameId)) {
+        return { observation, elapsedMs: now - started };
+      }
       try {
         await sleep(Math.min(50, Math.max(1, timeout - (performance.now() - started))), undefined,
           options.signal ? { signal: options.signal } : {});
@@ -240,6 +311,8 @@ export class SessionManager {
   }
 
   private async closeResources(): Promise<void> {
+    for (const controller of this.offline.values()) controller.abort();
+    await Promise.allSettled([...this.offline.keys()]);
     // 启动中的引擎也属于本管理器；closeAll 不能在它们完成清理前返回。
     await Promise.allSettled([...this.pendingLaunches]);
     const entries = [...this.sessions.entries()];

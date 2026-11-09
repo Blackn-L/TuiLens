@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "launch": {
+    "command": "node",
+    "args": ["examples/echo-tui.mjs"],
+    "cols": 80,
+    "rows": 16,
+    "recording": {}
+  },
+  "steps": [
+    { "type": "wait", "name": "ready", "conditions": [{ "kind": "text", "text": "READY" }] },
+    { "type": "observe", "name": "initial" },
+    { "type": "input", "name": "update", "action": { "type": "text", "text": "g" } },
+    { "type": "wait", "conditions": [{ "kind": "text", "text": "UPDATED" }] },
+    { "type": "input", "name": "drag", "action": { "type": "drag", "from": { "x": 2, "y": 3 }, "to": { "x": 20, "y": 3 }, "modifiers": { "shift": true } } },
+    { "type": "wait", "conditions": [{ "kind": "text", "text": "DRAG_RECEIVED" }] },
+    { "type": "observe", "name": "crop", "region": { "x": 0, "y": 7, "width": 30, "height": 4 } },
+    { "type": "input", "name": "exit", "action": { "type": "key", "key": "Ctrl+q" } },
+    { "type": "wait", "conditions": [{ "kind": "exited" }] }
+  ]
+}

@@ -3,8 +3,10 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { chromium, type Browser, type Page } from "playwright";
 import { TuiLensError } from "../core/errors.js";
-import type { BrowserEngineOptions, TerminalEngine, TerminalSnapshot, TerminalState } from "../core/types.js";
+import type { BrowserEngineOptions, Region, TerminalEngine, TerminalSnapshot, TerminalState } from "../core/types.js";
 import { initializeBrowserRuntime } from "./browser-runtime.js";
+import { installKittyRuntime } from "./kitty-runtime.js";
+import { KITTY_DIACRITICS } from "./kitty-diacritics.js";
 
 const require = createRequire(import.meta.url);
 const DEFAULT_FONT = "'Cascadia Mono','DejaVu Sans Mono','Noto Sans Mono CJK SC','Noto Sans CJK SC','Microsoft YaHei','Segoe UI Emoji','Noto Color Emoji',monospace";
@@ -39,6 +41,8 @@ function assertDimensions(cols: number, rows: number): void {
 export async function createBrowserEngine(options: BrowserEngineOptions): Promise<TerminalEngine> {
   assertDimensions(options.cols, options.rows);
   const fontSize = options.fontSize ?? 16;
+  const images = options.images ?? "off";
+  if (!["off", "sixel", "all"].includes(images)) throw new TuiLensError("INVALID_IMAGE_PROFILE", "不支持的图片配置");
   if (!Number.isFinite(fontSize) || fontSize < 8 || fontSize > 48) {
     throw new TuiLensError("INVALID_FONT_SIZE", "字体大小必须在 8–48 像素范围内");
   }
@@ -75,11 +79,14 @@ export async function createBrowserEngine(options: BrowserEngineOptions): Promis
     });
     await page.addScriptTag({ path: terminalModule });
     await page.addScriptTag({ path: addonModule });
+    if (images !== "off") await page.addScriptTag({ path: require.resolve("@xterm/addon-image") });
+    if (images === "all") await page.evaluate(installKittyRuntime, KITTY_DIACRITICS);
     await page.evaluate(initializeBrowserRuntime, {
       cols: options.cols,
       rows: options.rows,
       fontFamily: options.fontFamily ?? DEFAULT_FONT,
       fontSize,
+      images,
     });
     await resizeViewport();
   } catch (error) {
@@ -132,17 +139,41 @@ export async function createBrowserEngine(options: BrowserEngineOptions): Promis
       await resizeViewport();
     },
     state,
+    async hasText(text): Promise<boolean> {
+      assertOpen();
+      await assertFrameReady();
+      return page.evaluate((value) => window.__tuilens.hasText(value), text);
+    },
     async snapshot(frameId): Promise<TerminalSnapshot> {
       assertOpen();
       await assertFrameReady();
-      await settle();
+      // write 已保证解析完成。纯状态读取不等待绘制，避免轮询挡住后续协议查询；
+      // PNG 仍在同一会话屏障内等待绘制，保持状态与图像对应。
       return page.evaluate((id) => window.__tuilens.snapshot(id), frameId);
     },
-    async screenshot(): Promise<{ png: Buffer; width: number; height: number }> {
+    async screenshot(region?: Region): Promise<{ png: Buffer; width: number; height: number }> {
       assertOpen();
       await assertFrameReady();
       await settle();
       const size = await page.evaluate(() => window.__tuilens.size());
+      if (region) {
+        const { cols, rows } = await state();
+        if (!Object.values(region).every(Number.isInteger) || region.x < 0 || region.y < 0
+          || region.width < 1 || region.height < 1 || region.x + region.width > cols || region.y + region.height > rows) {
+          throw new TuiLensError("INVALID_REGION", "截图区域必须位于终端字符网格内");
+        }
+        const rectangle = await page.locator(".xterm-screen").boundingBox();
+        if (!rectangle) throw new TuiLensError("ENGINE_FAILED", "终端画布不可见");
+        const x = Math.floor(rectangle.x + rectangle.width * region.x / cols);
+        const y = Math.floor(rectangle.y + rectangle.height * region.y / rows);
+        const right = Math.ceil(rectangle.x + rectangle.width * (region.x + region.width) / cols);
+        const bottom = Math.ceil(rectangle.y + rectangle.height * (region.y + region.height) / rows);
+        const png = await page.screenshot({
+          type: "png", animations: "disabled", caret: "initial",
+          clip: { x, y, width: right - x, height: bottom - y },
+        });
+        return { png, width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+      }
       const png = await page.locator(".xterm-screen").screenshot({
         type: "png",
         animations: "disabled",

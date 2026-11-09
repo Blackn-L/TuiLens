@@ -2,6 +2,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createBrowserEngine } from "../src/engine/browser-engine.js";
 
+test("快速文本条件读取当前解析状态，支持中文且不等待截图", async () => {
+  const engine = await createBrowserEngine({ cols: 40, rows: 8, onData() {} });
+  try {
+    await engine.write("READY 中文 🚀");
+    assert.equal(await engine.hasText?.("中文"), true);
+    assert.equal(await engine.hasText?.("ABSENT"), false);
+    await engine.write("\x1b[2J\x1b[HNEW");
+    assert.equal(await engine.hasText?.("READY"), false);
+    assert.equal(await engine.hasText?.("NEW"), true);
+  } finally { await engine.close(); }
+});
+
 test("鼠标编码与跟踪范围独立，模式镜像符合 xterm 查询响应", { timeout: 30_000 }, async () => {
   const responses: string[] = [];
   const engine = await createBrowserEngine({ cols: 20, rows: 4, onData: (data) => responses.push(data) });

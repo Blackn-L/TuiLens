@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -8,6 +8,7 @@ import { ManagedSession } from "../src/session/session.js";
 import { SessionManager } from "../src/session/manager.js";
 import { TuiLensError } from "../src/core/errors.js";
 import type { TerminalEngine, TerminalSnapshot } from "../src/core/types.js";
+import { RecordingWriter } from "../src/recording/writer.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -276,6 +277,33 @@ test("真实 PTY 退出等待只读取最终快照且保留最后标记", { time
   } finally { await manager.closeAll(); }
 });
 
+test("普通文本等待仅在命中后传输完整快照", { timeout: 15000 }, async () => {
+  const memory = memoryEngine();
+  let output = "";
+  let probes = 0;
+  const manager = new SessionManager({ artifactDir: tmpdir(), engineFactory: async () => ({
+    ...memory.engine,
+    write: async (data) => { output += data; await memory.engine.write(data); },
+    hasText: async (text) => { probes += 1; return output.includes(text); },
+    snapshot: async (frameId) => {
+      const observed = await memory.engine.snapshot(frameId);
+      const text = output.includes("FAST_READY") ? "FAST_READY" : "START";
+      return { ...observed, cells: [[...text].map((character, x) => ({
+        x, y: 0, text: character, width: 1, fg: "#ffffff", bg: "#000000",
+        bold: false, italic: false, underline: false, inverse: false,
+      }))] };
+    },
+  }) });
+  try {
+    const session = await manager.launch({ command: process.execPath, args: ["-e",
+      "process.stdout.write('START\\n');setTimeout(()=>process.stdout.write('FAST_READY\\n'),150)"] });
+    const result = await manager.wait(session.id, { conditions: [{ kind: "text", text: "FAST_READY" }], timeoutMs: 5000 });
+    assert.match(result.observation.snapshot.text, /FAST_READY/);
+    assert.ok(probes >= 2);
+    assert.equal(memory.counts().snapshots, 1);
+  } finally { await manager.closeAll(); }
+});
+
 test("输出积压触发背压并在消费后恢复，计数不丢失", async () => {
   const gate = deferred<void>();
   const memory = memoryEngine();
@@ -311,4 +339,76 @@ test("FRAME_PENDING 持续存在时有界失败而不永久锁住会话", async 
     await f.session.input({ type: "key", key: "Escape" });
     assert.deepEqual(f.written, ["\x1b"]);
   } finally { await f.session.close(); }
+});
+
+test("取消排队中的输入和 resize 后不执行迟到操作", async () => {
+  const memory = memoryEngine();
+  const gate = deferred<void>();
+  let resized = 0;
+  const f = fixture({ ...memory.engine,
+    write: async () => { await gate.promise; },
+    resize: async () => { resized += 1; },
+  }, tmpdir());
+  try {
+    f.emit("BLOCK");
+    const controller = new AbortController();
+    const input = f.session.input({ type: "key", key: "Enter" }, undefined, { signal: controller.signal });
+    const resize = f.session.resize(20, 5, { signal: controller.signal });
+    const rejectedInput = assert.rejects(input, { code: "ABORTED" });
+    const rejectedResize = assert.rejects(resize, { code: "ABORTED" });
+    controller.abort();
+    gate.resolve();
+    await Promise.all([rejectedInput, rejectedResize]);
+    await f.session.observe({ screenshot: false });
+    assert.deepEqual(f.written, []);
+    assert.equal(resized, 0);
+  } finally { gate.resolve(); await f.session.close(); }
+});
+
+test("显式关闭丢弃在途输出时录制标记不完整", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tuilens-incomplete-"));
+  const writer = await RecordingWriter.create(directory, "close", { type: "header", version: 1, cols: 10, rows: 2, images: "off" });
+  const memory = memoryEngine();
+  const data = new Set<(value: string) => void>();
+  const exited = new Set<(event: { exitCode: number }) => void>();
+  const pty = { onData: (fn: (data: string) => void) => { data.add(fn); return { dispose: () => data.delete(fn) }; },
+    onExit: (fn: (event: { exitCode: number }) => void) => { exited.add(fn); return { dispose: () => exited.delete(fn) }; },
+    kill: () => { for (const fn of exited) fn({ exitCode: 0 }); }, pause() {}, resume() {},
+  } as unknown as IPty;
+  const session = new ManagedSession({ id: "cap", pid: 1, cols: 10, rows: 2, status: "running", exitCode: null, createdAt: "" },
+    memory.engine, pty, directory, writer);
+  try {
+    for (const fn of data) fn("MUST_PERSIST");
+    await session.close();
+    const records = (await readFile(writer.path, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(records.at(-1).truncated, true);
+  } finally { await session.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
+test("回放受统一生命周期管理，关闭后禁止创建并等待迟到引擎释放", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tuilens-replay-lifecycle-"));
+  const path = join(directory, "fixture.jsonl");
+  await writeFile(path, [
+    JSON.stringify({ type: "header", version: 1, cols: 10, rows: 2, images: "off" }),
+    JSON.stringify({ type: "end", truncated: false, atMs: 0 }), "",
+  ].join("\n"));
+  const ready = deferred<void>(), release = deferred<void>();
+  const memory = memoryEngine();
+  const manager = new SessionManager({ artifactDir: directory, engineFactory: async () => {
+    ready.resolve(); await release.promise; return memory.engine;
+  } });
+  try {
+    const replay = manager.replay(path);
+    const rejected = assert.rejects(replay, { code: "ABORTED" });
+    await ready.promise;
+    let finished = false;
+    const closing = manager.closeAll().then(() => { finished = true; });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(finished, false);
+    release.resolve();
+    await rejected;
+    await closing;
+    assert.equal(memory.counts().closes, 1);
+    await assert.rejects(manager.replay(path), { code: "MANAGER_CLOSED" });
+  } finally { release.resolve(); await manager.closeAll(); await rm(directory, { recursive: true, force: true }); }
 });

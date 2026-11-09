@@ -1,11 +1,14 @@
 import type { Terminal } from "@xterm/xterm";
-import type { TerminalSnapshot, TerminalState } from "../core/types.js";
+import type { ImageAddon, IImageAddonOptions } from "@xterm/addon-image";
+import type { ImageProfile, TerminalSnapshot, TerminalState } from "../core/types.js";
+import type { KittyRuntime } from "./kitty-runtime.js";
 
 export interface BrowserRuntime {
   write(data: string): Promise<void>;
   resize(cols: number, rows: number): void;
   settle(): Promise<void>;
   state(): TerminalState;
+  hasText(text: string): boolean;
   size(): { width: number; height: number };
   snapshot(frameId: number): TerminalSnapshot;
   dispose(): void;
@@ -16,6 +19,8 @@ interface RuntimeWindow extends Window {
   UnicodeGraphemesAddon: {
     UnicodeGraphemesAddon: new () => { activate(terminal: Terminal): void; dispose(): void };
   };
+  ImageAddon: { ImageAddon: new (options: IImageAddonOptions) => ImageAddon };
+  __tuilensCreateKitty: Window["__tuilensCreateKitty"];
   __tuilens: BrowserRuntime;
   __tuilensData(data: string): Promise<void>;
 }
@@ -25,6 +30,7 @@ export interface RuntimeOptions {
   rows: number;
   fontFamily: string;
   fontSize: number;
+  images: ImageProfile;
 }
 
 /** 此函数整体传入浏览器执行，不能引用外部运行时变量或 Node.js API。 */
@@ -103,7 +109,7 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
     mouseEncoding = "legacy";
     return false;
   }));
-  // 查询响应走与用户输入相同的 PTY 回路；不伪装 kitty/sixel 能力。
+  // 查询响应走与用户输入相同的 PTY 回路；仅加载的图片协议才能被检测到。
   const parseColor = (value: string): string | undefined => {
     if (/^#[0-9a-f]{6}$/i.test(value)) return value.toLowerCase();
     if (/^#[0-9a-f]{3}$/i.test(value)) {
@@ -154,7 +160,37 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
     await document.fonts.ready;
     // write 回调只保证解析完成；两次动画帧让 xterm 绘制及浏览器合成完成。
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    kitty?.render();
   };
+  let imageAddon: ImageAddon | undefined;
+  let kitty: KittyRuntime | undefined;
+  const nativeWrite = (data: string): Promise<void> => new Promise((resolve) => terminal.write(data, resolve));
+  if (options.images !== "off") {
+    imageAddon = new host.ImageAddon.ImageAddon({
+      enableSizeReports: true, sixelSupport: true, iipSupport: false,
+      sixelPaletteLimit: 4096, sixelSizeLimit: 8 * 1024 * 1024,
+      pixelLimit: 4 * 1024 * 1024, storageLimit: 32, showPlaceholder: false,
+    });
+    terminal.loadAddon(imageAddon);
+    // 上游解码器异步初始化但没有公开 ready Promise。用公开图像查询做有界预热，
+    // 避免启动后的第一张图片在解码器尚未就绪时被无声丢弃。
+    const deadline = Date.now() + 5000;
+    let ready = false;
+    do {
+      await nativeWrite("\x1b[H\x1bPq\"1;1;1;6#1;2;100;0;0#1~\x1b\\");
+      ready = Boolean(imageAddon.getImageAtBufferCell(0, 0));
+      if (!ready) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    } while (!ready && Date.now() < deadline);
+    await nativeWrite("\x1bc");
+    if (!ready) throw new Error("SIXEL 解码器未能初始化");
+    if (options.images === "all") {
+      kitty = host.__tuilensCreateKitty(terminal, (data) => { void host.__tuilensData(data); }, (cell) => {
+        if (cell.isBgRGB()) return `#${cell.getBgColor().toString(16).padStart(6, "0")}`;
+        if (cell.isBgPalette()) return palette[cell.getBgColor()] ?? background;
+        return background;
+      });
+    }
+  }
   // 输入和性能采样只读取协议状态，不能隐式遍历整个屏幕或等待动画帧。
   const state = (): TerminalState => ({
     cols: terminal.cols,
@@ -169,10 +205,17 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
     },
   });
   host.__tuilens = {
-    write: (data) => new Promise<void>((resolve) => terminal.write(data, resolve)),
+    write: (data) => kitty ? kitty.write(data) : nativeWrite(data),
     resize: (cols, rows) => { terminal.resize(cols, rows); },
     settle,
     state,
+    hasText: (text) => {
+      const buffer = terminal.buffer.active;
+      for (let y = 0; y < terminal.rows; y += 1) {
+        if (buffer.getLine(buffer.viewportY + y)?.translateToString(false).includes(text)) return true;
+      }
+      return false;
+    },
     size: () => {
       const element = container.querySelector<HTMLElement>(".xterm-screen");
       if (!element) throw new Error("Terminal screen is missing");
@@ -222,6 +265,8 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
     },
     dispose: () => {
       for (const listener of listeners) listener.dispose();
+      kitty?.dispose();
+      imageAddon?.dispose();
       terminal.dispose();
     },
   };

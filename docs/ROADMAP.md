@@ -1,27 +1,24 @@
-# 后续迭代
+# Roadmap
 
-首版优先完成可用协议与真实验收。每项迭代应保留现有行为测试和终端真实样本。
+[English](ROADMAP.md) · [简体中文](zh-CN/ROADMAP.md)
 
-## 性能测量
+## Implemented in 0.2
 
-1. 以固定输入与固定后端回放构造数小时任务，记录进程树 CPU/RSS、GC、输出队列与输入延迟。
-2. 同机隔离 CPU 或独立负载机；把被测进程产出、终端解析、绘制和采集分别计时。
-3. 增加原生无浏览器处理模式；先比较瓶颈，再决定 Rust PTY/队列/模拟器的迁移范围。
-4. 保留 TypeScript Agent 接口的可能性；低层通过版本化协议接入。
-5. 不把“关闭截图”标注为无开销；每份结果附宿主与采集配置。
+- SIXEL and bounded Kitty inline/virtual placement subset.
+- Region screenshots, read-only baselines, masks and diff artifacts.
+- Drag, explicit mouse down/up, modifiers and coordinate-aware wheel input.
+- Bounded recording, output replay and declarative scenarios.
+- Style-aware unique/nth locators and frame/region guards.
 
-## 观察与兼容
+## Next
 
-- 区域条件下移引擎，仅返回结果，减少全屏字符格跨进程传输。
-- 增加 cursor visible、字体指纹与 cell 像素度量等元数据。
-- 记录 Unicode 版本与字符宽度策略，提供不同引擎的对照用例。
-- 按后端声明 kitty/sixel 支持，不用环境变量冒充真实能力。
-- 对颜色禁用、ANSI 256、SSH、Windows ConPTY 扩大代表性样本。
+- Move regional condition evaluation into the engine to reduce full-grid transfers.
+- Add explicit rendering metadata, font fingerprints and cross-engine width checks.
+- Expand tested image protocol semantics without advertising unsupported behavior.
+- Isolate PTY workers to reduce native-module failure and teardown impact.
+- Measure process-tree resources and input latency over fixed, long-running workloads.
+- Evaluate a native processing engine using measured parser/IPC/rendering costs.
+- Add optional read-only live monitoring and explicit human control handoff.
+- Establish release packaging and API compatibility policies.
 
-## 工程化
-
-- 版本化命令与 MCP schema，补充向后兼容测试。
-- 引入可选原始字节录制、输入动作记录与确定性回放，明确容量和正文保留策略。
-- 增加基准门槛、CI 平台矩阵、依赖更新验证及制品分发。
-- 提供可选交互观察窗口；无界面自动化仍保持可用。
-- 研究独立 PTY worker，缩小原生模块异常与 Windows 清理告警的影响范围。
+A browser-free engine still needs reproducible overhead measurements; changing language alone does not guarantee accuracy.

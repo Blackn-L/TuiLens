@@ -4,3 +4,8 @@ export { findText, regionFingerprint } from "./core/locator.js";
 export { TuiLensError, errorRecord } from "./core/errors.js";
 export type * from "./core/types.js";
 export type { SessionMetrics, OperationControl } from "./session/session.js";
+export { compareImages } from "./visual/compare.js";
+export { replayRecording } from "./recording/replay.js";
+export { scenarioSchema } from "./scenario/schema.js";
+export type { ReplayOptions, ReplayResult } from "./recording/replay.js";
+export type { VisualOptions } from "./visual/artifacts.js";
