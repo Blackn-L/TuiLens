@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { encodeInput, encodeKey } from "../src/core/input.js";
 import { findText, regionFingerprint } from "../src/core/locator.js";
+import { methodSchemas } from "../src/core/protocol.js";
+import { clickTextOptions, launchOptions, waitOptions } from "../src/core/validation.js";
 import type { TerminalCell, TerminalSnapshot } from "../src/core/types.js";
 
 function cell(x: number, text: string, width = 1): TerminalCell {
@@ -18,7 +20,7 @@ const snapshot: TerminalSnapshot = {
       cell(7, " "), cell(8, " "), cell(9, " ")],
     [],
   ],
-  cursor: { x: 7, y: 0 },
+  cursor: { x: 7, y: 0, visible: true, style: "block", blink: false },
   modes: { alternateScreen: false, bracketedPaste: true, applicationCursorKeys: false, mouseTracking: "any", mouseEncoding: "sgr" },
 };
 
@@ -71,4 +73,24 @@ test("按键编码跟随应用光标模式与明确组合", () => {
   assert.equal(encodeKey("Alt+x", false), "\x1bx");
   assert.equal(encodeKey("Shift+Tab", false), "\x1b[Z");
   assert.throws(() => encodeKey("Meta+Foo", false), /不支持/u);
+});
+
+test("0.4 新契约严格校验启动应答、点击命中区和光标等待", () => {
+  launchOptions({ command: "node", protocolReplies: { mode: "auto", maxLatencyMs: 250 } });
+  clickTextOptions({ hitbox: { left: 1, right: 3, top: 0, bottom: 0 }, point: "right",
+    offset: { x: -1, y: 0 }, button: "left" });
+  waitOptions({ conditions: [{ kind: "cursor", visible: true, style: "bar" }] });
+  assert.equal(methodSchemas.inputAndWait.safeParse({
+    id: "00000000-0000-4000-8000-000000000000",
+    action: { type: "text", text: "PING" },
+    wait: { conditions: [{ kind: "text", text: "PONG" }], timeoutMs: 3000 },
+  }).success, true);
+  assert.throws(() => launchOptions({ command: "node", protocolReplies: { mode: "late" as "auto" } }),
+    { code: "INVALID_ARGUMENT" });
+  assert.throws(() => clickTextOptions({ hitbox: { left: -1 } }), { code: "INVALID_ARGUMENT" });
+  assert.throws(() => waitOptions({ conditions: [{ kind: "cursor" }] }), { code: "INVALID_ARGUMENT" });
+  assert.equal(methodSchemas.wait.safeParse({
+    id: "00000000-0000-4000-8000-000000000000",
+    conditions: [{ kind: "cursor" }],
+  }).success, false);
 });

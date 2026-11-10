@@ -11,6 +11,7 @@ export interface VisualOptions {
   pixelThreshold?: number;
   maxDiffRatio?: number;
   masks?: Region[];
+  cursor?: "hide" | "show";
 }
 
 /** 基准只读；接受新基准需要调用者显式复制，比较绝不覆盖输入文件。 */

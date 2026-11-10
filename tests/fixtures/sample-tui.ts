@@ -3,6 +3,7 @@ if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error("PTY required
 process.stdin.setRawMode(true);
 process.stdout.write("\x1b[?25l\x1b[?1003h\x1b[?1006h\x1b[?2004h\x1b[2J\x1b[HREADY\r\n");
 process.stdout.write("\x1b[31mRun\x1b[0m   \x1b[1;32mRun\x1b[0m\r\n中文 🚀 A⠀B");
+process.stdout.write("\x1b[9;1HCOLLAPSE   ▶");
 let drag = false;
 process.stdin.on("data", (data: Buffer) => {
   const value = data.toString();
@@ -13,6 +14,8 @@ process.stdin.on("data", (data: Buffer) => {
   }
   if (value === "g") process.stdout.write("\x1b[1;1HUPDATED");
   if (value.includes("\x1b[200~")) process.stdout.write("\x1b[5;1HPASTE_RECEIVED");
+  const collapse = /\x1b\[<0;(\d+);9M/.exec(value);
+  if (collapse && Number(collapse[1]) >= 13) process.stdout.write("\x1b[10;1HCOLLAPSED");
   if (/\x1b\[<3[26];/.test(value)) drag = true;
   if (drag && /\x1b\[<\d+;\d+;\d+m/.test(value)) process.stdout.write("\x1b[6;1HDRAG_RECEIVED");
 });

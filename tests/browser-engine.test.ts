@@ -64,6 +64,53 @@ test("同步输出未提交时只允许轻量状态读取，观察必须明确�
   }
 });
 
+test("光标可见性、样式和闪烁进入状态与快照，截图默认隐藏", { timeout: 30_000 }, async () => {
+  const engine = await createBrowserEngine({ cols: 20, rows: 4, onData() {} });
+  try {
+    await engine.write("\x1b[?25l\x1b[4 q");
+    const hiddenState = await engine.state();
+    assert.deepEqual(hiddenState.cursor, {
+      x: 0, y: 0, visible: false, style: "underline", blink: false,
+    });
+    const hiddenSnapshot = await engine.snapshot(1);
+    assert.deepEqual(hiddenSnapshot.cursor, hiddenState.cursor);
+
+    await engine.write("\x1b[?25h\x1b[1 q\x1b[1;1HA");
+    const shownState = await engine.state();
+    assert.equal(shownState.cursor.visible, true);
+    assert.equal(shownState.cursor.style, "block");
+    assert.equal(shownState.cursor.blink, true);
+
+    await engine.write("\x1b[2 q");
+    const hidden = await engine.screenshot();
+    const hiddenAgain = await engine.screenshot();
+    const shown = await engine.screenshot(undefined, { cursor: "show" });
+    assert.deepEqual(hidden.png, hiddenAgain.png);
+    assert.notDeepEqual(hidden.png, shown.png);
+  } finally { await engine.close(); }
+});
+
+test("resize 后截图直接使用新网格并保持 PNG 尺寸一致", { timeout: 30_000 }, async () => {
+  const engine = await createBrowserEngine({ cols: 20, rows: 8, onData() {} });
+  try {
+    await engine.write("\x1b[?25l\x1b[48;2;0;255;0m\x1b[2J");
+    const before = await engine.screenshot();
+    await engine.resize(60, 12);
+    const after = await engine.screenshot();
+    const state = await engine.state();
+    assert.equal(state.cols, 60);
+    assert.equal(state.rows, 12);
+    assert.equal(after.width, after.png.readUInt32BE(16));
+    assert.equal(after.height, after.png.readUInt32BE(20));
+    assert.ok(after.width > before.width);
+    await engine.resize(30, 10);
+    const again = await engine.screenshot();
+    assert.equal(again.width, again.png.readUInt32BE(16));
+    assert.equal(again.height, again.png.readUInt32BE(20));
+    assert.equal((await engine.state()).cols, 30);
+  } finally { await engine.close(); }
+});
+
 test("浏览器终端解析宽字符、样式与模式，并从同一画面输出 PNG", { timeout: 30_000 }, async () => {
   const responses: string[] = [];
   const engine = await createBrowserEngine({ cols: 40, rows: 8, onData: (data) => responses.push(data) });

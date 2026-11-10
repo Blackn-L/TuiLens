@@ -9,7 +9,7 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 
 ![TuiLens 示例界面](docs/assets/playground.png)
 
-> **状态：** 0.3.0 实验版本，用于功能和视觉测试。
+> **状态：** 0.4.0 实验版本，用于功能和视觉测试。
 > 浏览器渲染链路不属于低干扰性能测量环境。
 
 ## 功能
@@ -19,6 +19,9 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 - **输入操作：** 按键、括号粘贴、点击、按住/释放、拖拽、带位置滚轮和修饰键。
 - **录制回放：** 有容量限制的输出/输入/resize 记录；离线回放不执行录制的输入。
 - **可靠定位：** 区域和样式筛选、唯一/nth 匹配、帧或区域保护、组合条件等待。
+- **交互确认：** `input-wait` 发送一次输入后等待可见结果，支持文本、尺寸、稳定和光标条件。
+- **命中区控制：** `clickText` 可用 hitbox/point/offset 指定文字旁的真实可点击区域。
+- **终端应答护栏：** 默认丢弃超时或无查询匹配的 DA1/DA2、CPR/DSR 等自动应答。
 - **场景执行：** 声明式步骤、失败截图、报告和自动清理。
 - **Agent 接口：** CLI/MCP 共用接口，同时提供 SDK。
 
@@ -64,6 +67,7 @@ node dist/src/interfaces/cli.js launch --record --cols 80 --rows 16 -- node exam
 node dist/src/interfaces/cli.js observe SESSION_ID
 node dist/src/interfaces/cli.js type SESSION_ID g
 node dist/src/interfaces/cli.js wait SESSION_ID --text UPDATED
+node dist/src/interfaces/cli.js input-wait SESSION_ID PING --text INPUT_RECEIVED
 node dist/src/interfaces/cli.js drag SESSION_ID 2 3 20 3 --shift
 node dist/src/interfaces/cli.js observe SESSION_ID --region 0,7,30,4
 node dist/src/interfaces/cli.js key SESSION_ID Ctrl+q
@@ -72,7 +76,10 @@ node dist/src/interfaces/cli.js close SESSION_ID
 node dist/src/interfaces/cli.js shutdown
 ```
 
-坐标从 **0** 起算，单位为字符格。操作返回表示输入已送达，仍需等待实际页面结果。
+坐标从 **0** 起算，单位为字符格。普通输入返回表示已送达；需要确认渲染结果时使用
+`input-wait` 或显式等待。它不会自动重发输入。
+终端自动应答默认使用 `--protocol-replies auto`，只转发及时且存在查询匹配的已知应答。
+若应用在 TTY 已回显时查询，使用 `--protocol-replies suppress` 或应用侧探测开关。
 
 ## 图片与截图
 
@@ -97,10 +104,12 @@ node dist/src/interfaces/cli.js compare SESSION_ID --baseline baseline.png --reg
 ```sh
 node dist/src/interfaces/cli.js find SESSION_ID Run --unique
 node dist/src/interfaces/cli.js click-text SESSION_ID Run --nth 1
+node dist/src/interfaces/cli.js click-text --json '{"id":"SESSION_ID","text":"Collapse","options":{"hitbox":{"right":3},"point":"right"}}'
 node dist/src/interfaces/cli.js wait SESSION_ID --stable 250 --region 0,0,40,10
 ```
 
 `click-text` 默认要求唯一匹配；发现文字不等于识别业务按钮。
+可用 `hitbox`/`point`/`offset` 扩展命中区或选择文字右侧的箭头，并可指定鼠标按钮。
 JSON 接口还支持 `style`、`count`、`afterFrameId` 和输入保护条件。
 区域指纹可阻止对已变化目标的操作，同时容许其他区域继续动画。
 
@@ -139,9 +148,9 @@ MCP 客户端配置使用绝对路径启动 stdio 服务：
 ```
 
 工具包括 `terminal_launch`、`terminal_list`、`terminal_observe`、`terminal_find`、
-`terminal_clickText`、`terminal_input`、`terminal_resize`、`terminal_wait`、`terminal_compare`、
+`terminal_clickText`、`terminal_input`、`terminal_inputAndWait`、`terminal_resize`、`terminal_wait`、`terminal_compare`、
 `terminal_replay`、`terminal_scenario`、`terminal_metrics`、`terminal_close`。
-观察与回放返回 PNG image content 和文字元数据；MCP 断开时回收该连接创建的会话。
+观察、回放和启用截图的 inputAndWait 返回 PNG image content 和文字元数据；MCP 断开时回收该连接创建的会话。
 
 ## TypeScript SDK
 
@@ -180,6 +189,8 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 
 - Kitty 为明确列出的子集，不支持外部文件/共享内存、动画、压缩和任意图层。
 - 鼠标要求字符格 SGR 模式；系统输入法候选窗与系统剪贴板不属于当前渲染器。
+- 截图默认隐藏光标本体；快照仍返回可见性、样式和闪烁状态，但无法验证真实宿主光标或 IME。
+- `protocolReplies: "auto"` 只为及时且有查询匹配的已知自动应答放行；若应用在 TTY 已回显时查询，仍需 `suppress` 或应用侧开关。
 - 浏览器解析、绘制、截图和录制都有开销；轻量 metrics 不消除渲染成本。
 - 输出回放不等同于应用重跑；区域稳定不证明所有后台工作结束。
 - Windows node-pty 1.1.0 清理期间可能输出 `AttachConsole failed`，需确认进程退出并保留诊断。

@@ -94,7 +94,7 @@ async function closeBounded(engine: TerminalEngine): Promise<void> {
     await Promise.race([
       engine.close(),
       new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => reject(new TuiLensError("REPLAY_CLEANUP_TIMEOUT", "回放引擎未在 2 秒内关闭")), 2000);
+        timeout = setTimeout(() => reject(new TuiLensError("REPLAY_CLEANUP_TIMEOUT", "回放引擎未在 5 秒内关闭")), 5000);
       }),
     ]);
   } finally { clearTimeout(timeout); }

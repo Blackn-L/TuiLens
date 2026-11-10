@@ -1,15 +1,18 @@
 import { TuiLensError } from "../core/errors.js";
-import type { InputAction, InputGuard, LaunchOptions, MatchOptions, Observation, WaitCondition } from "../core/types.js";
+import type {
+  ClickTextOptions, InputAction, InputGuard, LaunchOptions, MatchOptions, Observation, WaitCondition,
+} from "../core/types.js";
 import type { VisualOptions } from "../visual/artifacts.js";
 import { methodSchemas, type Method } from "../interfaces/schemas.js";
 import type { SessionManager } from "../session/manager.js";
+import { VERSION } from "../version.js";
 
 export async function dispatch(manager: SessionManager, method: string, params: unknown, signal: AbortSignal): Promise<unknown> {
   if (!Object.hasOwn(methodSchemas, method)) throw new TuiLensError("UNKNOWN_METHOD", "未知命令");
   const result = methodSchemas[method as Method].safeParse(params);
   if (!result.success) throw new TuiLensError("INVALID_ARGUMENT", "命令参数不合法", result.error.issues);
   switch (method) {
-    case "ping": return { version: "0.3.0", pid: process.pid };
+    case "ping": return { version: VERSION, pid: process.pid };
     case "launch": {
       const session = await manager.launch(result.data as LaunchOptions);
       // 客户端取消启动时不得留下无法返回 ID 的孤儿会话。
@@ -27,19 +30,29 @@ export async function dispatch(manager: SessionManager, method: string, params: 
     }
     case "clickText": {
       const args = methodSchemas.clickText.parse(result.data);
-      return manager.clickText(args.id, args.text, args.region, args.options as MatchOptions | undefined, { signal });
+      return manager.clickText(args.id, args.text, args.region, args.options as ClickTextOptions | undefined, { signal });
     }
     case "observe": {
       const args = methodSchemas.observe.parse(result.data);
       return presentObservation(await manager.observe(args.id, {
         ...(args.screenshot === undefined ? {} : { screenshot: args.screenshot }),
         ...(args.region ? { region: args.region } : {}),
+        ...(args.cursor ? { cursor: args.cursor } : {}),
       }, { signal }), args.includeCells ?? false);
     }
     case "input": {
       const args = methodSchemas.input.parse(result.data);
       await manager.input(args.id, args.action as InputAction, args.guard as InputGuard | undefined, { signal });
       return { accepted: true };
+    }
+    case "inputAndWait": {
+      const args = methodSchemas.inputAndWait.parse(result.data);
+      const waited = await manager.inputAndWait(args.id, args.action as InputAction,
+        args.guard as InputGuard | undefined, {
+          ...(args.wait?.conditions ? { conditions: args.wait.conditions as WaitCondition[] } : {}),
+          ...(args.wait?.timeoutMs === undefined ? {} : { timeoutMs: args.wait.timeoutMs }),
+        }, { signal }, args.screenshot ?? false);
+      return { ...waited, observation: presentObservation(waited.observation, false) };
     }
     case "resize": {
       const args = methodSchemas.resize.parse(result.data);

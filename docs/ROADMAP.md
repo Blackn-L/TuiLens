@@ -10,6 +10,8 @@
 - Drag, explicit mouse down/up, modifiers and coordinate-aware wheel input.
 - Bounded recording, output replay and declarative scenarios.
 - Style-aware unique/nth locators and frame/region guards.
+- Terminal reply latency guard, inputAndWait, click hit areas, cursor metadata,
+  screenshot cursor hiding, render stabilization and Windows bare-command resolution (0.4).
 
 ## Next
 

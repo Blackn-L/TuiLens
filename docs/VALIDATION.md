@@ -12,6 +12,9 @@ Tests use standalone fixtures and generated image patterns. They require no exte
 Coverage includes browser Unicode/styles/modes, synchronized capture, native PTY input and exit,
 output backpressure, cancellation, concurrent daemon startup, CLI/MCP cleanup, image pixel rendering,
 region capture, visual masks, drag encoding, guarded targeting, recording limits, replay cancellation and scenario failures.
+New coverage includes timely/late terminal replies, split queries, suppress policy, reply metrics,
+clickText hit areas, one-shot inputAndWait confirmation, cursor metadata, hidden screenshot cursors,
+and PNG grid dimensions after resize.
 
 Inspect captures in `artifacts/engine/`, `artifacts/images/`, and `artifacts/visual/` for glyphs, colors and clipping.
 Text assertions alone do not prove visual correctness. CI artifacts are not automatically published because terminal output may contain data.

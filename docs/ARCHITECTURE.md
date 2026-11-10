@@ -29,6 +29,9 @@ scenarios do not import CLI implementations. `TerminalEngine` is the replaceable
 - Resize delivery and application layout completion are separate. Callers wait for visible layout conditions.
 - Input reads lightweight dimensions/modes. Guards are checked immediately before input, and cancelled queued actions are dropped.
 - Simple text waits probe the engine without transferring the full grid until a match; captures still wait for rendering.
+- Automatic terminal replies can be forwarded or dropped by latency policy; screenshots hide the cursor by default while snapshots retain visibility, style and blink metadata.
+- Capture forces a repaint and validates the grid and PNG dimensions; resize waits for stable canvas geometry.
+- inputAndWait sends one action and waits for observable evidence without automatic retry; timeouts retain accepted-input evidence.
 - A changed global frame rejects a frame guard. A region fingerprint can tolerate animation outside the target.
 - Replays and live sessions share an eight-operation budget and manager shutdown lifecycle.
 - Recordings are opt-in. They retain terminal content and mark dropped/truncated output explicitly.

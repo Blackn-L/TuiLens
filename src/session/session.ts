@@ -5,11 +5,12 @@ import type { IDisposable, IPty } from "node-pty";
 import { TuiLensError } from "../core/errors.js";
 import { encodeInput } from "../core/input.js";
 import type {
-  InputAction, InputGuard, Observation, ObserveOptions, SessionInfo, TerminalEngine,
+  CursorState, InputAction, InputGuard, Observation, ObserveOptions, SessionInfo, TerminalEngine,
 } from "../core/types.js";
 import { dimensions, inputGuard, regionWithin } from "../core/validation.js";
 import { regionFingerprint } from "../core/locator.js";
 import type { RecordingWriter } from "../recording/writer.js";
+import { ProtocolReplyGuard, type ProtocolRepliesOptions } from "./protocol-replies.js";
 
 const MAX_PENDING_BYTES = 16 * 1024 * 1024;
 const MAX_BATCH_CHARS = 32 * 1024;
@@ -22,6 +23,10 @@ export interface SessionMetrics {
   pauseCount: number;
   pauseDurationMs: number;
   writeBatches: number;
+  protocolQueries: number;
+  protocolRepliesForwarded: number;
+  protocolRepliesDropped: number;
+  lastProtocolReplyLatencyMs: number;
 }
 
 export interface OperationControl {
@@ -85,9 +90,11 @@ export class ManagedSession {
   private readonly exitWaiters = new Set<() => void>();
   private readonly closeController = new AbortController();
   private exited = false;
+  private readonly protocolGuard: ProtocolReplyGuard;
   private readonly counters: SessionMetrics = {
     receivedBytes: 0, appliedBytes: 0, pendingBytes: 0,
     peakPendingBytes: 0, pauseCount: 0, pauseDurationMs: 0, writeBatches: 0,
+    protocolQueries: 0, protocolRepliesForwarded: 0, protocolRepliesDropped: 0, lastProtocolReplyLatencyMs: 0,
   };
 
   constructor(
@@ -96,7 +103,9 @@ export class ManagedSession {
     private readonly pty: IPty,
     private readonly artifactDir: string,
     private readonly recorder?: RecordingWriter,
+    protocolReplies?: ProtocolRepliesOptions,
   ) {
+    this.protocolGuard = new ProtocolReplyGuard(protocolReplies);
     this.exitPromise = new Promise((resolve) => { this.resolveExit = resolve; });
     this.disposables.push(pty.onData((data) => this.receive(data)));
     this.disposables.push(pty.onExit(({ exitCode }) => {
@@ -119,6 +128,7 @@ export class ManagedSession {
   metrics(): SessionMetrics {
     return {
       ...this.counters,
+      ...this.protocolGuard.metrics(),
       pauseDurationMs: this.counters.pauseDurationMs
         + (this.pausedAt === undefined ? 0 : performance.now() - this.pausedAt),
     };
@@ -126,6 +136,7 @@ export class ManagedSession {
 
   protocolResponse(data: string): void {
     if (this.closing || this.exited || this.fault) return;
+    if (!this.protocolGuard.shouldForward(data)) return;
     try { this.pty.write(data); } catch (error) { this.setFault(error); }
   }
 
@@ -152,6 +163,7 @@ export class ManagedSession {
 
   private receive(data: string): void {
     if (this.closing || this.fault) return;
+    this.protocolGuard.observeOutput(data);
     const bytes = Buffer.byteLength(data);
     this.counters.receivedBytes += bytes;
     // 暂停时仍可能有数据在途；硬上限防止失控进程耗尽守护进程内存。
@@ -253,7 +265,7 @@ export class ManagedSession {
         const observation: Observation = { session: this.info(), snapshot, screenshot: null };
         if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
         if (options.screenshot !== false) {
-          const capture = await this.engine.screenshot(options.region);
+          const capture = await this.engine.screenshot(options.region, { cursor: options.cursor ?? "hide" });
           if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
           const prefix = join(this.artifactDir, `${this.details.id}-${this.frameId}-${++this.observationId}`);
           await mkdir(this.artifactDir, { recursive: true, mode: 0o700 });
@@ -262,6 +274,7 @@ export class ManagedSession {
           observation.screenshot = {
             path, width: capture.width, height: capture.height, frameId: snapshot.frameId,
             ...(options.region ? { region: options.region } : {}),
+            cursor: options.cursor === "show" ? "shown" : "hidden",
           };
           await writeFile(`${prefix}.json`, JSON.stringify(observation, null, 2), { mode: 0o600 });
         }
@@ -287,6 +300,14 @@ export class ManagedSession {
   }
 
   input(action: InputAction, guard?: InputGuard, control: OperationControl = {}): Promise<SessionInfo> {
+    return this.inputWithFrame(action, guard, control).then((result) => result.session);
+  }
+
+  inputWithFrame(action: InputAction, guard?: InputGuard, control: OperationControl = {}): Promise<{
+    session: SessionInfo;
+    frameId: number;
+    cursor: CursorState;
+  }> {
     this.assertUsable(true);
     this.sealBatch();
     let cancelled = false;
@@ -307,9 +328,10 @@ export class ManagedSession {
       // 输入只需模式和尺寸，不读整屏字符格，也不等待绘制。
       const state = await this.engine.state();
       check();
+      const inputFrameId = this.frameId;
       this.pty.write(encodeInput(action, state));
       await this.recorder?.append({ type: "input", action });
-      return this.info();
+      return { session: this.info(), frameId: inputFrameId, cursor: state.cursor };
     });
     return controlled(pending, { timeoutMs: 10000, ...control }).catch((error) => { cancelled = true; throw error; });
   }

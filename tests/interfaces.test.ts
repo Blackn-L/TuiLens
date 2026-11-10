@@ -28,6 +28,20 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
   try {
     const session = await call("launch", { command: "node", args: [fixture], cols: 60, rows: 12, recording: {} }) as SessionInfo;
     await call("wait", { id: session.id, conditions: [{ kind: "text", text: "TUILENS_READY" }] });
+    const clicked = await run(process.execPath, [cli, "click-text", "--json", JSON.stringify({
+      id: session.id, text: "TUILENS_READY", options: { selection: "unique" },
+    })], { env, maxBuffer: 20 * 1024 * 1024 });
+    const clickPayload = JSON.parse(clicked.stdout) as { ok: boolean; error?: { code?: string } };
+    assert.equal(clickPayload.ok, true, clicked.stdout);
+    assert.notEqual(clickPayload.error?.code, "UNKNOWN_METHOD");
+    const waitedInput = await run(process.execPath, [cli, "input-wait", "--json", JSON.stringify({
+      id: session.id,
+      action: { type: "text", text: "PING" },
+      wait: { conditions: [{ kind: "text", text: "INPUT_RECEIVED" }], timeoutMs: 5000 },
+    })], { env, maxBuffer: 20 * 1024 * 1024 });
+    const waitedPayload = JSON.parse(waitedInput.stdout) as { ok: boolean; error?: { code?: string } };
+    assert.equal(waitedPayload.ok, true, waitedInput.stdout);
+    assert.notEqual(waitedPayload.error?.code, "UNKNOWN_METHOD");
     const observation = await call("observe", { id: session.id }) as Observation;
     assert.equal(observation.snapshot.frameId, observation.screenshot?.frameId);
     assert.match(observation.snapshot.text, /中文 🚀 A⠀B/u);
@@ -55,16 +69,38 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     client = new Client({ name: "tuilens-test", version: "1" });
     const inherited = Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => e[1] !== undefined));
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [cli, "mcp"], env: inherited, stderr: "pipe" }));
+    assert.deepEqual(client.getServerVersion(), { name: "tuilens", version: "0.4.0" });
     const tools = await client.listTools();
-    assert.ok(tools.tools.some((tool) => tool.name === "terminal_observe"));
-    for (const name of ["terminal_compare", "terminal_replay", "terminal_scenario", "terminal_clickText"]) {
-      assert.ok(tools.tools.some((tool) => tool.name === name));
-    }
+    const expectedTools = [
+      "terminal_launch", "terminal_list", "terminal_observe", "terminal_input", "terminal_inputAndWait",
+      "terminal_find", "terminal_clickText", "terminal_resize", "terminal_wait", "terminal_metrics",
+      "terminal_close", "terminal_compare", "terminal_replay", "terminal_scenario",
+    ];
+    assert.equal(tools.tools.length, 14);
+    assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), expectedTools.sort());
     const launch = await client.callTool({ name: "terminal_launch", arguments: { command: process.execPath, args: [fixture], cols: 60, rows: 12 } });
     const launchContent = launch.content as { type: string; text?: string }[];
     const mcpSession = JSON.parse(launchContent[0]!.text!) as SessionInfo;
     const waiting = await client.callTool({ name: "terminal_wait", arguments: { id: mcpSession.id, conditions: [{ kind: "text", text: "TUILENS_READY" }] } });
     assert.notEqual(waiting.isError, true);
+    const confirmed = await client.callTool({
+      name: "terminal_inputAndWait",
+      arguments: {
+        id: mcpSession.id,
+        action: { type: "text", text: "PING" },
+        wait: { conditions: [{ kind: "text", text: "INPUT_RECEIVED" }], timeoutMs: 5000 },
+        screenshot: true,
+      },
+    });
+    assert.notEqual(confirmed.isError, true);
+    const confirmedContent = confirmed.content as { type: string; text?: string }[];
+    assert.ok(confirmedContent.some((item) => item.type === "image"));
+    const confirmedData = JSON.parse(confirmedContent[0]!.text!) as {
+      inputFrameId: number;
+      observation: { snapshot: { frameId: number; text: string } };
+    };
+    assert.ok(confirmedData.observation.snapshot.frameId > confirmedData.inputFrameId);
+    assert.match(confirmedData.observation.snapshot.text, /INPUT_RECEIVED/u);
     const captured = await client.callTool({ name: "terminal_observe", arguments: { id: mcpSession.id } });
     assert.notEqual(captured.isError, true);
     assert.ok((captured.content as { type: string }[]).some((item) => item.type === "image"));
@@ -74,7 +110,7 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     await lateLaunch;
     client = undefined;
     let remaining: unknown = null;
-    for (let i = 0; i < 40; i += 1) {
+    for (let i = 0; i < 100; i += 1) {
       remaining = await call("list");
       if (Array.isArray(remaining) && !remaining.length) break;
       await sleep(100);

@@ -32,6 +32,8 @@ test("真实终端：区域截图、比较、精确定位、过期保护、输�
     // 顶部文字改变不影响第二行按钮的区域指纹。
     await manager.input(session.id, { type: "click", x: 7, y: 1 },
       { region: { bounds: matches[0]!.region, fingerprint: matches[0]!.fingerprint! } });
+    await manager.clickText(session.id, "COLLAPSE", undefined, { hitbox: { right: 8 }, point: "right" });
+    await manager.wait(session.id, { conditions: [{ kind: "text", text: "COLLAPSED" }] });
     const changed = await manager.compare(session.id, { baseline: before.screenshot!.path, region });
     assert.equal(changed.pass, false);
     assert.ok(changed.differentPixels > 0);

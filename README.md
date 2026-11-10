@@ -9,7 +9,7 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 
 ![TuiLens playground](docs/assets/playground.png)
 
-> **Status:** experimental, version 0.3.0. Designed for functional and visual testing.
+> **Status:** experimental, version 0.4.0. Designed for functional and visual testing.
 > The browser renderer is not a low-overhead performance measurement environment.
 
 ## Features
@@ -19,6 +19,9 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 - **Interaction:** keys, bracketed paste, clicks, button down/up, drag, wheel coordinates, and modifiers.
 - **Recording and replay:** bounded output/input/resize recordings; offline replay never executes recorded input.
 - **Reliable targeting:** region and cell-style filters, unique/nth matches, frame or region guards, and conditional waits.
+- **Input confirmation:** `input-wait` sends one action, then waits for text, size, stability or cursor evidence.
+- **Hit-area control:** `clickText` accepts hitbox/point/offset for the real clickable area beside a label.
+- **Terminal reply guard:** late or unmatched DA1/DA2, CPR/DSR and related automatic replies are dropped by default.
 - **Scenario runner:** declarative steps with failure screenshots, reports, and automatic session cleanup.
 - **Agent interfaces:** shared CLI/MCP operations and a directly importable SDK.
 
@@ -65,6 +68,7 @@ Copy the returned `data.id` into the commands below:
 node dist/src/interfaces/cli.js observe SESSION_ID
 node dist/src/interfaces/cli.js type SESSION_ID g
 node dist/src/interfaces/cli.js wait SESSION_ID --text UPDATED
+node dist/src/interfaces/cli.js input-wait SESSION_ID PING --text INPUT_RECEIVED
 node dist/src/interfaces/cli.js drag SESSION_ID 2 3 20 3 --shift
 node dist/src/interfaces/cli.js observe SESSION_ID --region 0,7,30,4
 node dist/src/interfaces/cli.js key SESSION_ID Ctrl+q
@@ -74,7 +78,9 @@ node dist/src/interfaces/cli.js shutdown
 ```
 
 `SESSION_ID` is a placeholder for the returned UUID. Coordinates are **zero-based character cells**.
-A successful action means input was delivered; wait for an application-specific result to verify behavior.
+Plain input confirms delivery only; use `input-wait` or an explicit wait for a rendered result. Input is never retried automatically.
+Automatic terminal replies default to `--protocol-replies auto`: only timely, query-matched known replies are forwarded.
+If an application probes while its TTY already echoes, use `--protocol-replies suppress` or the application's own probe switch.
 
 ## Images and screenshots
 
@@ -99,10 +105,12 @@ See [image support](docs/IMAGES.md) and [visual comparisons](docs/VISUAL.md) for
 ```sh
 node dist/src/interfaces/cli.js find SESSION_ID Run --unique
 node dist/src/interfaces/cli.js click-text SESSION_ID Run --nth 1
+node dist/src/interfaces/cli.js click-text --json '{"id":"SESSION_ID","text":"Collapse","options":{"hitbox":{"right":3},"point":"right"}}'
 node dist/src/interfaces/cli.js wait SESSION_ID --stable 250 --region 0,0,40,10
 ```
 
 `click-text` requires a unique match unless a selection is explicit. Finding text does not imply a business control.
+Use `hitbox`/`point`/`offset` to target padding or an arrow beside the label, and optionally specify the mouse button.
 The JSON interface additionally supports `style`, `count`, `afterFrameId`, and input guards.
 A region fingerprint rejects a changed target while allowing unrelated animation elsewhere.
 
@@ -141,9 +149,9 @@ Configure your MCP client to launch this stdio server, using an **absolute path*
 ```
 
 Available tools: `terminal_launch`, `terminal_list`, `terminal_observe`, `terminal_find`,
-`terminal_clickText`, `terminal_input`, `terminal_resize`, `terminal_wait`, `terminal_compare`,
+`terminal_clickText`, `terminal_input`, `terminal_inputAndWait`, `terminal_resize`, `terminal_wait`, `terminal_compare`,
 `terminal_replay`, `terminal_scenario`, `terminal_metrics`, and `terminal_close`.
-`terminal_observe` and `terminal_replay` return PNG image content as well as text metadata.
+`terminal_observe`, `terminal_replay`, and screenshot-enabled `terminal_inputAndWait` return PNG image content as well as text metadata.
 Disconnecting releases sessions created by that MCP connection.
 
 ## TypeScript SDK
@@ -183,6 +191,8 @@ Set `TUILENS_HOME` to isolate its state directory (default: `~/.tuilens`). No pu
 
 - Kitty support is a documented subset; no external-file/shared-memory transport, animation, compression, or arbitrary layers.
 - Mouse input requires character-based SGR mode. System IME windows and system clipboard behavior are outside this renderer.
+- Screenshots hide the cursor by default; snapshots still expose visibility, style and blink, but real host cursor and IME behavior cannot be verified.
+- `protocolReplies: "auto"` forwards only timely, query-matched known replies. If an app probes while its TTY already echoes, use `suppress` or an app-side probe switch.
 - Browser parsing, rendering, capture and recording have overhead. `metrics` is lightweight, but does not remove the renderer's cost.
 - Replay reproduces output, not application behavior. Stable regions do not prove an application has finished all work.
 - Windows `node-pty 1.1.0` may print `AttachConsole failed` during cleanup; verify process termination and retain diagnostics.

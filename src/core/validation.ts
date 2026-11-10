@@ -1,5 +1,7 @@
 import { TuiLensError } from "./errors.js";
-import type { InputGuard, LaunchOptions, MatchOptions, MatchStyle, Region, WaitOptions } from "./types.js";
+import type {
+  ClickTextOptions, InputGuard, LaunchOptions, MatchOptions, MatchStyle, Region, WaitOptions,
+} from "./types.js";
 
 function object(value: unknown, label: string): asserts value is object {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -56,6 +58,19 @@ export function launchOptions(options: LaunchOptions): void {
     }
     if (options.recording.maxBytes !== undefined) integer(options.recording.maxBytes, "recording.maxBytes", 4096, 64 * 1024 * 1024);
   }
+  if (options.protocolReplies !== undefined) {
+    object(options.protocolReplies, "protocolReplies");
+    if (Object.keys(options.protocolReplies).some((key) => !["mode", "maxLatencyMs"].includes(key))) {
+      throw new TuiLensError("INVALID_ARGUMENT", "protocolReplies 含未知字段");
+    }
+    if (options.protocolReplies.mode !== undefined
+      && !["auto", "forward", "suppress"].includes(options.protocolReplies.mode)) {
+      throw new TuiLensError("INVALID_ARGUMENT", "不支持的 protocolReplies.mode");
+    }
+    if (options.protocolReplies.maxLatencyMs !== undefined) {
+      integer(options.protocolReplies.maxLatencyMs, "protocolReplies.maxLatencyMs", 0, 5000);
+    }
+  }
 }
 
 export function matchStyle(style: MatchStyle | undefined): void {
@@ -87,6 +102,43 @@ export function matchOptions(options: MatchOptions): void {
     integer(options.nth, "nth", 0, Number.MAX_SAFE_INTEGER);
     if (options.selection !== undefined && options.selection !== "all") {
       throw new TuiLensError("INVALID_ARGUMENT", "nth 不能与 unique、first 或 last 同时使用");
+    }
+  }
+}
+
+export function clickTextOptions(options: ClickTextOptions | undefined): void {
+  if (options === undefined) return;
+  object(options, "点击选项");
+  const { hitbox, point, offset, button, modifiers, ...matching } = options;
+  matchOptions(matching);
+  if (hitbox !== undefined) {
+    object(hitbox, "hitbox");
+    if (Object.keys(hitbox).some((key) => !["left", "right", "top", "bottom"].includes(key))) {
+      throw new TuiLensError("INVALID_ARGUMENT", "hitbox 含未知字段");
+    }
+    if (hitbox.left !== undefined) integer(hitbox.left, "hitbox.left", 0, 500);
+    if (hitbox.right !== undefined) integer(hitbox.right, "hitbox.right", 0, 500);
+    if (hitbox.top !== undefined) integer(hitbox.top, "hitbox.top", 0, 250);
+    if (hitbox.bottom !== undefined) integer(hitbox.bottom, "hitbox.bottom", 0, 250);
+  }
+  if (point !== undefined && !["center", "left", "right", "top", "bottom"].includes(point)) {
+    throw new TuiLensError("INVALID_ARGUMENT", "不支持的点击位置");
+  }
+  if (offset !== undefined) {
+    object(offset, "offset");
+    if (Object.keys(offset).some((key) => !["x", "y"].includes(key))) {
+      throw new TuiLensError("INVALID_ARGUMENT", "offset 含未知字段");
+    }
+    if (offset.x !== undefined) integer(offset.x, "offset.x", -500, 500);
+    if (offset.y !== undefined) integer(offset.y, "offset.y", -250, 250);
+  }
+  if (button !== undefined && !["left", "middle", "right"].includes(button)) {
+    throw new TuiLensError("INVALID_ARGUMENT", "无效鼠标按钮");
+  }
+  if (modifiers !== undefined) {
+    object(modifiers, "modifiers");
+    if (Object.entries(modifiers).some(([key, value]) => !["shift", "alt", "ctrl"].includes(key) || typeof value !== "boolean")) {
+      throw new TuiLensError("INVALID_ARGUMENT", "modifiers 只接受 shift、alt、ctrl 布尔值");
     }
   }
 }
@@ -144,6 +196,28 @@ export function waitOptions(options: WaitOptions): void {
       case "size":
         dimensions(condition.cols, condition.rows);
         break;
+      case "cursor": {
+        const fields = [
+          condition.x !== undefined,
+          condition.y !== undefined,
+          condition.visible !== undefined,
+          condition.style !== undefined,
+          condition.blink !== undefined,
+        ];
+        if (!fields.some(Boolean)) throw new TuiLensError("INVALID_ARGUMENT", "cursor 条件至少需要一个字段");
+        if (condition.x !== undefined) integer(condition.x, "cursor.x", 0, 499);
+        if (condition.y !== undefined) integer(condition.y, "cursor.y", 0, 249);
+        if (condition.style !== undefined && !["block", "underline", "bar"].includes(condition.style)) {
+          throw new TuiLensError("INVALID_ARGUMENT", "不支持的 cursor.style");
+        }
+        if (condition.visible !== undefined && typeof condition.visible !== "boolean") {
+          throw new TuiLensError("INVALID_ARGUMENT", "cursor.visible 必须是布尔值");
+        }
+        if (condition.blink !== undefined && typeof condition.blink !== "boolean") {
+          throw new TuiLensError("INVALID_ARGUMENT", "cursor.blink 必须是布尔值");
+        }
+        break;
+      }
       case "exited":
         break;
       default:

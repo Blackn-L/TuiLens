@@ -1,6 +1,6 @@
 import type { Terminal } from "@xterm/xterm";
 import type { ImageAddon, IImageAddonOptions } from "@xterm/addon-image";
-import type { ImageProfile, TerminalSnapshot, TerminalState } from "../core/types.js";
+import type { CursorState, ImageProfile, TerminalSnapshot, TerminalState } from "../core/types.js";
 import type { KittyRuntime } from "./kitty-runtime.js";
 
 export interface BrowserRuntime {
@@ -93,6 +93,9 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
   const listeners = [
     terminal.onData((data) => { void host.__tuilensData(data); }),
   ];
+  let cursorVisible = true;
+  let cursorStyle: CursorState["style"] = "block";
+  let cursorBlink = false;
   let mouseEncoding: "legacy" | "sgr" | "sgr-pixels" = "legacy";
   // xterm 的公开 modes 只暴露跟踪范围，编码需镜像已支持的 DECSET/DECRST。
   // 返回 false 让 xterm 继续执行默认处理；1005/1015 在 xterm 6 中不受支持。
@@ -101,12 +104,31 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
       for (const value of params) {
         if (value === 1006) mouseEncoding = final === "h" ? "sgr" : "legacy";
         if (value === 1016) mouseEncoding = final === "h" ? "sgr-pixels" : "legacy";
+        if (value === 25) cursorVisible = final === "h";
+        if (value === 12) cursorBlink = final === "h";
       }
       return false;
     }));
   }
+  listeners.push(terminal.parser.registerCsiHandler({ intermediates: " ", final: "q" }, (params) => {
+    const raw = params[0];
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    switch (value) {
+      case 0: case 1: cursorStyle = "block"; cursorBlink = true; break;
+      case 2: cursorStyle = "block"; cursorBlink = false; break;
+      case 3: cursorStyle = "underline"; cursorBlink = true; break;
+      case 4: cursorStyle = "underline"; cursorBlink = false; break;
+      case 5: cursorStyle = "bar"; cursorBlink = true; break;
+      case 6: cursorStyle = "bar"; cursorBlink = false; break;
+      default: break;
+    }
+    return false;
+  }));
   listeners.push(terminal.parser.registerEscHandler({ final: "c" }, () => {
     mouseEncoding = "legacy";
+    cursorVisible = true;
+    cursorStyle = "block";
+    cursorBlink = false;
     return false;
   }));
   // 查询响应走与用户输入相同的 PTY 回路；仅加载的图片协议才能被检测到。
@@ -156,10 +178,33 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
     background = "#101114";
     return false;
   }));
+  let renderVersion = 0;
+  const renderWaiters = new Set<() => void>();
+  listeners.push(terminal.onRender(() => {
+    renderVersion += 1;
+    for (const wake of renderWaiters) wake();
+    renderWaiters.clear();
+  }));
+  const nextFrame = (): Promise<void> => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  const waitForRender = (version: number, timeoutMs = 2000): Promise<void> => new Promise((resolve) => {
+    if (renderVersion > version) { resolve(); return; }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const done = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      renderWaiters.delete(done);
+      resolve();
+    };
+    renderWaiters.add(done);
+    timer = setTimeout(done, timeoutMs);
+  });
   const settle = async (): Promise<void> => {
     await document.fonts.ready;
+    const version = renderVersion;
+    terminal.refresh(0, terminal.rows - 1);
+    await waitForRender(version);
     // write 回调只保证解析完成；两次动画帧让 xterm 绘制及浏览器合成完成。
-    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    await nextFrame();
+    await nextFrame();
     kitty?.render();
   };
   let imageAddon: ImageAddon | undefined;
@@ -222,6 +267,16 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
     }
   }
   // 输入和性能采样只读取协议状态，不能隐式遍历整个屏幕或等待动画帧。
+  const cursorState = (): CursorState => {
+    const buffer = terminal.buffer.active;
+    return {
+      x: buffer.cursorX,
+      y: buffer.baseY + buffer.cursorY - buffer.viewportY,
+      visible: cursorVisible,
+      style: cursorStyle,
+      blink: cursorBlink,
+    };
+  };
   const state = (): TerminalState => ({
     cols: terminal.cols,
     rows: terminal.rows,
@@ -233,6 +288,7 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
       mouseEncoding,
       synchronizedOutput: terminal.modes.synchronizedOutputMode,
     },
+    cursor: cursorState(),
   });
   host.__tuilens = {
     write: (data) => kitty ? kitty.write(data) : nativeWrite(data),
@@ -289,7 +345,7 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
         text: lines.join("\n"),
         lines,
         cells,
-        cursor: { x: buffer.cursorX, y: buffer.baseY + buffer.cursorY - buffer.viewportY },
+        cursor: cursorState(),
         modes: state().modes,
       };
     },

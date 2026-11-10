@@ -3,6 +3,7 @@ import test from "node:test";
 import * as nodePty from "node-pty";
 import { encodeInput } from "../src/core/input.js";
 import { findText, regionFingerprint } from "../src/core/locator.js";
+import { clickTarget } from "../src/core/click-target.js";
 import { inputGuard, launchOptions, waitOptions } from "../src/core/validation.js";
 import type { InputAction, TerminalCell, TerminalSnapshot, TerminalState } from "../src/core/types.js";
 
@@ -10,6 +11,7 @@ const state: TerminalState = {
   cols: 20, rows: 8,
   modes: { alternateScreen: true, bracketedPaste: true,
     applicationCursorKeys: false, mouseTracking: "any", mouseEncoding: "sgr" },
+  cursor: { x: 0, y: 0, visible: true, style: "block", blink: false },
 };
 
 function snapshot(): TerminalSnapshot {
@@ -29,7 +31,8 @@ function snapshot(): TerminalSnapshot {
   }
   return {
     ...state, frameId: 1, capturedAt: "now", rows: 2, cols: 4,
-    text: "中🚀\n中🚀", lines: ["中🚀", "中🚀"], cells: rows, cursor: { x: 0, y: 0 },
+    text: "中🚀\n中🚀", lines: ["中🚀", "中🚀"], cells: rows,
+    cursor: { x: 0, y: 0, visible: true, style: "block", blink: false },
   };
 }
 
@@ -100,6 +103,19 @@ test("样式颜色按反色后的可见值匹配，限定区域不命中被切�
   })[0]?.region.y, 1);
   assert.equal(findText(screen, "中", { x: 1, y: 0, width: 3, height: 2 }).length, 0);
   assert.equal(findText(screen, "🚀", { x: 0, y: 0, width: 3, height: 2 }).length, 0);
+});
+
+test("点击命中区按文本范围扩展并可选择边缘点击点", () => {
+  const match = { x: 4, y: 3, width: 8, height: 1 };
+  assert.deepEqual(clickTarget(match, 40, 10), {
+    hitbox: match, point: { x: 8, y: 3 },
+  });
+  assert.deepEqual(clickTarget(match, 40, 10, { hitbox: { right: 3 }, point: "right" }), {
+    hitbox: { x: 4, y: 3, width: 11, height: 1 }, point: { x: 14, y: 3 },
+  });
+  assert.throws(() => clickTarget(match, 10, 10, { hitbox: { right: 3 }, point: "right" }),
+    { code: "INVALID_HITBOX" });
+  assert.throws(() => clickTarget(match, 40, 10, { offset: { x: 99 } }), { code: "INVALID_HITBOX" });
 });
 
 test("唯一匹配和序号匹配明确区分零结果与非法选项", () => {

@@ -30,10 +30,21 @@ export interface TerminalModes {
   synchronizedOutput?: boolean;
 }
 
+export type CursorStyle = "block" | "underline" | "bar";
+
+export interface CursorState {
+  x: number;
+  y: number;
+  visible: boolean;
+  style: CursorStyle;
+  blink: boolean;
+}
+
 export interface TerminalState {
   cols: number;
   rows: number;
   modes: TerminalModes;
+  cursor: CursorState;
 }
 
 export interface TerminalSnapshot {
@@ -44,7 +55,7 @@ export interface TerminalSnapshot {
   text: string;
   lines: string[];
   cells: TerminalCell[][];
-  cursor: { x: number; y: number };
+  cursor: CursorState;
   modes: TerminalModes;
 }
 
@@ -70,6 +81,21 @@ export interface MatchOptions {
   nth?: number;
 }
 
+export interface ClickHitbox {
+  left?: number;
+  right?: number;
+  top?: number;
+  bottom?: number;
+}
+
+export interface ClickTextOptions extends MatchOptions {
+  hitbox?: ClickHitbox;
+  point?: "center" | "left" | "right" | "top" | "bottom";
+  offset?: { x?: number; y?: number };
+  button?: "left" | "middle" | "right";
+  modifiers?: Modifiers;
+}
+
 export interface InputGuard {
   frameId?: number;
   region?: { bounds: Region; fingerprint: string };
@@ -88,6 +114,10 @@ export interface LaunchOptions {
   colorMode?: "truecolor" | "ansi256" | "none";
   images?: ImageProfile;
   recording?: { maxBytes?: number };
+  protocolReplies?: {
+    mode?: "auto" | "forward" | "suppress";
+    maxLatencyMs?: number;
+  };
 }
 
 export interface SessionInfo {
@@ -99,18 +129,28 @@ export interface SessionInfo {
   exitCode: number | null;
   createdAt: string;
   recordingPath?: string;
+  resolvedCommand?: string;
 }
 
 export interface Observation {
   session: SessionInfo;
   snapshot: TerminalSnapshot;
-  screenshot: null | { path: string; width: number; height: number; frameId: number; region?: Region };
+  screenshot: null | {
+    path: string;
+    width: number;
+    height: number;
+    frameId: number;
+    region?: Region;
+    cursor?: "hidden" | "shown";
+  };
 }
 
 export interface ObserveOptions {
   screenshot?: boolean;
   /** 字符格裁剪，仅影响 PNG；状态仍返回完整 viewport。 */
   region?: Region;
+  /** 默认隐藏截图光标，避免块状光标遮挡字符。 */
+  cursor?: "hide" | "show";
 }
 
 export type InputAction =
@@ -128,7 +168,8 @@ export type WaitCondition =
   | { kind: "text"; text: string; region?: Region; absent?: boolean; style?: MatchStyle; count?: number }
   | { kind: "size"; cols: number; rows: number }
   | { kind: "stable"; region?: Region; durationMs?: number }
-  | { kind: "exited" };
+  | { kind: "exited" }
+  | { kind: "cursor"; x?: number; y?: number; visible?: boolean; style?: CursorStyle; blink?: boolean };
 
 export interface WaitOptions {
   conditions: WaitCondition[];
@@ -156,7 +197,7 @@ export interface TerminalEngine {
   /** 可选快速文本条件：避免等待普通标记时跨进程传输整屏字符格。 */
   hasText?(text: string): Promise<boolean>;
   snapshot(frameId: number): Promise<TerminalSnapshot>;
-  screenshot(region?: Region): Promise<{ png: Buffer; width: number; height: number }>;
+  screenshot(region?: Region, options?: { cursor?: "hide" | "show" }): Promise<{ png: Buffer; width: number; height: number }>;
   close(): Promise<void>;
 }
 
@@ -170,6 +211,20 @@ export interface ManagerOptions {
 }
 
 export interface WaitResult {
+  observation: Observation;
+  elapsedMs: number;
+}
+
+export interface InputWaitOptions {
+  /** 为空时只等待输入后至少一个新 frameId。 */
+  conditions?: WaitCondition[];
+  timeoutMs?: number;
+}
+
+export interface InputAndWaitResult {
+  session: SessionInfo;
+  inputFrameId: number;
+  cursorBefore: CursorState;
   observation: Observation;
   elapsedMs: number;
 }

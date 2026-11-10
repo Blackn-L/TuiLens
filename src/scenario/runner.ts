@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { errorRecord, TuiLensError } from "../core/errors.js";
-import type { InputAction, LaunchOptions, MatchOptions, WaitCondition } from "../core/types.js";
+import type { ClickTextOptions, InputAction, LaunchOptions, WaitCondition } from "../core/types.js";
 import type { SessionManager } from "../session/manager.js";
 import { scenarioSchema } from "./schema.js";
 import type { VisualOptions } from "../visual/artifacts.js";
@@ -44,11 +44,14 @@ export async function runScenario(manager: SessionManager, specification: unknow
             break;
           }
           case "observe": {
-            const observation = await manager.observe(id, step.region ? { region: step.region } : {}, signal ? { signal } : {});
+            const observation = await manager.observe(id, {
+              ...(step.region ? { region: step.region } : {}),
+              ...(step.cursor ? { cursor: step.cursor } : {}),
+            }, signal ? { signal } : {});
             record.result = observation.screenshot;
             break;
           }
-          case "clickText": await manager.clickText(id, step.text, step.region, step.options as MatchOptions | undefined, signal ? { signal } : {}); break;
+          case "clickText": await manager.clickText(id, step.text, step.region, step.options as ClickTextOptions | undefined, signal ? { signal } : {}); break;
           case "compare": {
             const comparison = await manager.compare(id, step.options as VisualOptions, signal ? { signal } : {});
             record.result = comparison;

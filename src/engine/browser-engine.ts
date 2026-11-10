@@ -77,7 +77,7 @@ export async function createBrowserEngine(options: BrowserEngineOptions): Promis
     const addonModule = require.resolve("@xterm/addon-unicode-graphemes");
     await page.addStyleTag({ path: join(dirname(terminalModule), "../css/xterm.css") });
     await page.addStyleTag({
-      content: "html,body{margin:0;padding:0;overflow:hidden;background:#101114}#terminal{display:inline-block}.xterm{padding:0}.xterm-viewport{scrollbar-width:none!important}.xterm-viewport::-webkit-scrollbar{display:none}.xterm-scrollable-element>.scrollbar{display:none!important}",
+      content: "html,body{margin:0;padding:0;overflow:hidden;background:#101114}#terminal{display:inline-block}.xterm{padding:0}.xterm-viewport{scrollbar-width:none!important}.xterm-viewport::-webkit-scrollbar{display:none}.xterm-scrollable-element>.scrollbar{display:none!important}.tuilens-cursor-hidden .xterm-cursor{visibility:hidden!important;animation:none!important}",
     });
     await page.addScriptTag({ path: terminalModule });
     await page.addScriptTag({ path: addonModule });
@@ -122,13 +122,87 @@ export async function createBrowserEngine(options: BrowserEngineOptions): Promis
     await page.evaluate(() => window.__tuilens.settle());
   }
 
-  async function resizeViewport(): Promise<void> {
+  async function nextPaint(): Promise<void> {
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+  }
+
+  async function screenRect(): Promise<{ x: number; y: number; width: number; height: number }> {
+    const rectangle = await page.locator(".xterm-screen").boundingBox();
+    if (!rectangle) throw new TuiLensError("ENGINE_FAILED", "终端画布不可见");
+    return {
+      x: Math.floor(rectangle.x),
+      y: Math.floor(rectangle.y),
+      width: Math.max(1, Math.ceil(rectangle.width)),
+      height: Math.max(1, Math.ceil(rectangle.height)),
+    };
+  }
+
+  async function waitForGeometry(expected?: { cols: number; rows: number }) {
+    await settle();
+    let previous: { width: number; height: number } | undefined;
+    const deadline = Date.now() + 5000;
+    do {
+      const current = await state();
+      const rectangle = await screenRect();
+      const stable = previous !== undefined
+        && Math.abs(previous.width - rectangle.width) <= 1
+        && Math.abs(previous.height - rectangle.height) <= 1;
+      if (stable && (!expected || (current.cols === expected.cols && current.rows === expected.rows))) {
+        return { rectangle, current };
+      }
+      previous = rectangle;
+      await nextPaint();
+    } while (Date.now() < deadline);
+    throw new TuiLensError("ENGINE_FAILED", "终端画布尺寸未能稳定");
+  }
+
+  async function resizeViewport(expected?: { cols: number; rows: number }): Promise<void> {
     await settle();
     const size = await page.evaluate(() => window.__tuilens.size());
     await page.setViewportSize(size);
-    await settle();
-    const current = await state();
-    iip?.setGeometry({ cols: current.cols, rows: current.rows, ...size });
+    const { rectangle, current } = await waitForGeometry(expected);
+    iip?.setGeometry({ cols: current.cols, rows: current.rows, ...rectangle });
+  }
+
+  async function screenshot(region: Region | undefined, options: { cursor?: "hide" | "show" } = {}) {
+    assertOpen();
+    await assertFrameReady();
+    const hideCursor = options.cursor !== "show";
+    try {
+      if (hideCursor) {
+        await page.evaluate(() => document.documentElement.classList.add("tuilens-cursor-hidden"));
+      } else {
+        await page.evaluate(() => document.documentElement.classList.remove("tuilens-cursor-hidden"));
+      }
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await settle();
+        const { rectangle, current } = await waitForGeometry();
+        let clip = rectangle;
+        if (region) {
+          if (!Object.values(region).every(Number.isInteger) || region.x < 0 || region.y < 0
+            || region.width < 1 || region.height < 1 || region.x + region.width > current.cols
+            || region.y + region.height > current.rows) {
+            throw new TuiLensError("INVALID_REGION", "截图区域必须位于终端字符网格内");
+          }
+          const x = Math.floor(rectangle.x + rectangle.width * region.x / current.cols);
+          const y = Math.floor(rectangle.y + rectangle.height * region.y / current.rows);
+          const right = Math.ceil(rectangle.x + rectangle.width * (region.x + region.width) / current.cols);
+          const bottom = Math.ceil(rectangle.y + rectangle.height * (region.y + region.height) / current.rows);
+          clip = { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
+        }
+        const png = await page.screenshot({ type: "png", animations: "disabled", caret: "initial", clip });
+        const width = png.readUInt32BE(16);
+        const height = png.readUInt32BE(20);
+        if (width === clip.width && height === clip.height) return { png, width, height };
+      }
+      throw new TuiLensError("ENGINE_FAILED", "截图尺寸与终端画布不一致");
+    } finally {
+      if (hideCursor) {
+        await page.evaluate(() => document.documentElement.classList.remove("tuilens-cursor-hidden")).catch(() => undefined);
+      }
+    }
   }
 
   return {
@@ -141,7 +215,7 @@ export async function createBrowserEngine(options: BrowserEngineOptions): Promis
       assertOpen();
       assertDimensions(cols, rows);
       await page.evaluate(({ cols: width, rows: height }) => window.__tuilens.resize(width, height), { cols, rows });
-      await resizeViewport();
+      await resizeViewport({ cols, rows });
     },
     state,
     async hasText(text): Promise<boolean> {
@@ -156,36 +230,7 @@ export async function createBrowserEngine(options: BrowserEngineOptions): Promis
       // PNG 仍在同一会话屏障内等待绘制，保持状态与图像对应。
       return page.evaluate((id) => window.__tuilens.snapshot(id), frameId);
     },
-    async screenshot(region?: Region): Promise<{ png: Buffer; width: number; height: number }> {
-      assertOpen();
-      await assertFrameReady();
-      await settle();
-      const size = await page.evaluate(() => window.__tuilens.size());
-      if (region) {
-        const { cols, rows } = await state();
-        if (!Object.values(region).every(Number.isInteger) || region.x < 0 || region.y < 0
-          || region.width < 1 || region.height < 1 || region.x + region.width > cols || region.y + region.height > rows) {
-          throw new TuiLensError("INVALID_REGION", "截图区域必须位于终端字符网格内");
-        }
-        const rectangle = await page.locator(".xterm-screen").boundingBox();
-        if (!rectangle) throw new TuiLensError("ENGINE_FAILED", "终端画布不可见");
-        const x = Math.floor(rectangle.x + rectangle.width * region.x / cols);
-        const y = Math.floor(rectangle.y + rectangle.height * region.y / rows);
-        const right = Math.ceil(rectangle.x + rectangle.width * (region.x + region.width) / cols);
-        const bottom = Math.ceil(rectangle.y + rectangle.height * (region.y + region.height) / rows);
-        const png = await page.screenshot({
-          type: "png", animations: "disabled", caret: "initial",
-          clip: { x, y, width: right - x, height: bottom - y },
-        });
-        return { png, width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
-      }
-      const png = await page.locator(".xterm-screen").screenshot({
-        type: "png",
-        animations: "disabled",
-        caret: "initial",
-      });
-      return { png, ...size };
-    },
+    screenshot,
     async close(): Promise<void> {
       if (closed) return;
       closed = true;

@@ -21,6 +21,25 @@ Use with `find` or `clickText`. `selection` accepts `all`, `unique`, `first`, `l
 Every covered cell must match the requested foreground, background, bold, italic or underline style.
 `find` returns the frame and a region fingerprint for each match.
 
+`clickText` also accepts an explicit hit area:
+
+```json
+{
+  "id": "SESSION_UUID",
+  "text": "Collapse",
+  "options": {
+    "hitbox": { "right": 3 },
+    "point": "right",
+    "offset": { "x": 0, "y": 0 },
+    "button": "left",
+    "modifiers": { "shift": false }
+  }
+}
+```
+
+`hitbox` expands the text bounds in cells; `point` supports `center`, `left`, `right`, `top` and `bottom`.
+An expanded hitbox or final point outside the grid returns `INVALID_HITBOX`, and the guard fingerprint covers the full hitbox.
+
 ## Guarded input
 
 ```json
@@ -71,6 +90,27 @@ Conditions are ANDed. Text count is computed after style/region filtering.
 `afterFrameId` requires newer applied state. `size` only observes terminal dimensions;
 add a visible layout condition after resize. `stable` compares characters and styles, not image pixels.
 
+## Input confirmation
+
+```json
+{
+  "id": "SESSION_UUID",
+  "action": { "type": "text", "text": "PING" },
+  "wait": {
+    "conditions": [{ "kind": "text", "text": "INPUT_RECEIVED" }],
+    "timeoutMs": 10000
+  },
+  "screenshot": false
+}
+```
+
+`inputAndWait` sends the input exactly once and never retries it. With no conditions it waits for at least one new `frameId`.
+Success returns `session`, `inputFrameId`, `cursorBefore`, `observation` and `elapsedMs`.
+A timeout returns `WAIT_TIMEOUT` with `accepted: true` and `inputFrameId`.
+
+A cursor condition can combine `x`, `y`, `visible`, `style` and `blink` with AND semantics.
+`observe`/`compare` accept `cursor: "hide"` (default) or `"show"`; snapshots always include cursor metadata.
+
 ## Visual comparison
 
 ```json
@@ -79,6 +119,7 @@ add a visible layout condition after resize. `stable` compares characters and st
   "options": {
     "baseline": "baseline.png",
     "region": { "x": 0, "y": 0, "width": 40, "height": 10 },
+    "cursor": "hide",
     "pixelThreshold": 8,
     "maxDiffRatio": 0.001,
     "masks": [{ "x": 0, "y": 0, "width": 20, "height": 10 }]

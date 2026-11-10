@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0
+
+- Added delayed terminal-reply filtering, `protocolReplies` launch policy and protocol reply metrics.
+- Added `clickText` hitbox/point/offset targeting and mouse button/modifier support.
+- Added `inputAndWait` across SDK, CLI and MCP with text, size, stable, exit and cursor conditions.
+- Added cursor visibility/style/blink metadata and default hidden cursors in screenshots.
+- Added forced repaint and grid-geometry validation before capture to reduce stale resize PNGs.
+- Added Windows `PATH`/`PATHEXT` executable resolution for bare commands such as `ssh`.
+- Fixed `click-text --json` and `input-wait --json` method aliases.
+
 ## 0.3.0
 
 - Added the `iterm` image profile and OSC 1337 inline images in `all`.
@@ -21,6 +31,9 @@
 - Initial PTY, browser engine, CLI, MCP, SDK, observation and input support.
 
 ## 简体中文
+
+0.4.0：新增迟到终端应答过滤与策略、clickText 命中区、inputAndWait、光标元数据与截图默认隐藏光标、
+截图强制重绘和 resize 网格校验、Windows 裸命令 PATH/PATHEXT 解析，并修复 JSON 命令别名。
 
 0.3.0：新增 iterm 图片档与 OSC 1337 内联图片，支持分段传输、可选尺寸字段、
 宽高比例适配和有界校验；补充截图、异常恢复、PTY 和回放回归。

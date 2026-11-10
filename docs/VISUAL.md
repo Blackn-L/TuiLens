@@ -10,6 +10,7 @@
 | pixelThreshold | Maximum permitted channel difference, integer 0–255; default 0 |
 | maxDiffRatio | Maximum differing fraction of unmasked pixels, 0–1; default 0 |
 | masks | Pixel rectangles relative to the captured PNG, not terminal cells |
+| cursor | `hide` (default) or `show` when capturing the actual image |
 
 The result includes `pass`, `differentPixels`, `totalPixels`, `diffRatio`, dimensions and `diffPng`.
 The artifact interface saves the PNG and returns paths instead of the buffer.
@@ -24,4 +25,5 @@ The decoder accepts static, non-interlaced 8-bit PNG only: 32 MiB compressed, ma
 maximum 16777216 pixels, with container/CRC checks before accepting decoded output.
 
 Fix font, browser, scale, terminal size and image mode for each baseline. Mask only known nondeterministic regions.
+Captures hide the cursor by default; set `cursor: "show"` when cursor pixels are part of the expected baseline.
 Accepting a new baseline is an explicit file operation; comparisons never approve updates automatically.

@@ -1,6 +1,6 @@
 {
   "name": "tuilens",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Terminal automation for AI agents with PTY sessions, image-aware capture, visual testing and MCP.",
   "type": "module",
@@ -18,7 +18,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "npm run build && node --test dist/tests/*.test.js",
+    "test": "npm run build && node --test --test-concurrency=1 dist/tests/*.test.js",
     "benchmark:overhead": "npm run build && node dist/scripts/benchmark-overhead.js"
   },
   "dependencies": {
@@ -35,5 +35,8 @@
     "@types/node": "26.6.6",
     "@types/pngjs": "6.0.5",
     "typescript": "6.0.3"
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true
   }
 }

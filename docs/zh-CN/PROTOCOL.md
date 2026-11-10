@@ -21,6 +21,25 @@ nth 从 0 起算，不能与非 all 选择同时使用。
 匹配覆盖的每个字符格都须符合前景、背景、字重、斜体和下划线条件。
 find 会为结果返回 frameId 与区域指纹。
 
+clickText 还支持真实命中区：
+
+```json
+{
+  "id": "SESSION_UUID",
+  "text": "Collapse",
+  "options": {
+    "hitbox": { "right": 3 },
+    "point": "right",
+    "offset": { "x": 0, "y": 0 },
+    "button": "left",
+    "modifiers": { "shift": false }
+  }
+}
+```
+
+hitbox 以文字区域为基准向四周扩展；point 支持 center、left、right、top、bottom。
+扩展区域或最终点击点越界时返回 INVALID_HITBOX，区域指纹覆盖完整命中区。
+
 ## 保护操作与拖拽
 
 ```json
@@ -54,12 +73,34 @@ text 支持 region、style、count；afterFrameId 要求已应用状态比指定
 resize 后仅 size 条件不够，应加入新位置的可见内容条件。
 stable 比较字符和样式，不比较图片像素。
 
+## 输入确认
+
+```json
+{
+  "id": "SESSION_UUID",
+  "action": { "type": "text", "text": "PING" },
+  "wait": {
+    "conditions": [{ "kind": "text", "text": "INPUT_RECEIVED" }],
+    "timeoutMs": 10000
+  },
+  "screenshot": false
+}
+```
+
+inputAndWait 只发送一次输入，不自动重发。空条件时等待至少一个新 frameId；
+成功后返回 session、inputFrameId、cursorBefore、observation 和 elapsedMs。
+超时返回 WAIT_TIMEOUT，并标明 accepted:true 与 inputFrameId。
+
+cursor 条件可组合 x、y、visible、style、blink，全部字段按 AND 匹配。
+observe/compare 的 cursor 可设为 hide（默认）或 show；快照始终返回光标元数据。
+
 ```json
 {
   "id": "SESSION_UUID",
   "options": {
     "baseline": "baseline.png",
     "region": { "x": 0, "y": 0, "width": 40, "height": 10 },
+    "cursor": "hide",
     "pixelThreshold": 8, "maxDiffRatio": 0.001,
     "masks": [{ "x": 0, "y": 0, "width": 20, "height": 10 }]
   }

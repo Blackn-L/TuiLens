@@ -11,7 +11,7 @@ import type { EngineFactory, TerminalEngine, TerminalSnapshot } from "../src/cor
 const header = { type: "header", version: 1, cols: 10, rows: 2, images: "off" } as const;
 function snapshot(frameId: number): TerminalSnapshot {
   return { frameId, capturedAt: "now", cols: 10, rows: 2, text: "REPLAY", lines: ["REPLAY"],
-    cells: [], cursor: { x: 0, y: 0 },
+    cells: [], cursor: { x: 0, y: 0, visible: true, style: "block", blink: false },
     modes: { alternateScreen: false, bracketedPaste: false, applicationCursorKeys: false, mouseTracking: "none" } };
 }
 
@@ -20,7 +20,7 @@ function fake(overrides: Partial<TerminalEngine> = {}) {
   const engine: TerminalEngine = {
     write: async (data) => { calls.write.push(data); },
     resize: async (cols, rows) => { calls.resize.push([cols, rows]); },
-    state: async () => ({ cols: 10, rows: 2, modes: snapshot(0).modes }),
+    state: async () => snapshot(0),
     snapshot: async (frameId) => snapshot(frameId),
     screenshot: async () => { calls.screenshot += 1; return { png: Buffer.from("PNG fixture"), width: 10, height: 2 }; },
     close: async () => { calls.close += 1; },
@@ -167,7 +167,7 @@ test("计时回放等待取消统一为 ABORTED", { timeout: 5000 }, async () =>
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test("取消时引擎关闭悬挂也会有界失败并保留清理诊断", { timeout: 5000 }, async () => {
+test("取消时引擎关闭悬挂也会有界失败并保留清理诊断", { timeout: 10000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), "tuilens-replay-cleanup-abort-"));
   const controller = new AbortController();
   const memory = fake({
@@ -181,10 +181,10 @@ test("取消时引擎关闭悬挂也会有界失败并保留清理诊断", { tim
       { artifactDir: directory, engineFactory: async () => memory.engine }, { signal: controller.signal }),
     (error: unknown) => {
       assert.equal((error as { code: string }).code, "ABORTED");
-      assert.match((error as { details: { cleanup: string } }).details.cleanup, /2 秒/u);
+      assert.match((error as { details: { cleanup: string } }).details.cleanup, /5 秒/u);
       return true;
     });
-    assert.ok(performance.now() - started < 3500);
+    assert.ok(performance.now() - started < 7000);
     assert.deepEqual(await readdir(directory), ["input.jsonl"]);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

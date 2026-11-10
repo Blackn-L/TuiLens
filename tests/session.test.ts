@@ -6,6 +6,7 @@ import test from "node:test";
 import type { IPty } from "node-pty";
 import { ManagedSession } from "../src/session/session.js";
 import { SessionManager } from "../src/session/manager.js";
+import { ProtocolReplyGuard } from "../src/session/protocol-replies.js";
 import { TuiLensError } from "../src/core/errors.js";
 import type { TerminalEngine, TerminalSnapshot } from "../src/core/types.js";
 import { RecordingWriter } from "../src/recording/writer.js";
@@ -47,7 +48,7 @@ function fixture(engine: TerminalEngine, path: string) {
 
 function snapshot(text: string, frameId: number): TerminalSnapshot {
   return { frameId, capturedAt: "now", cols: 10, rows: 2, text, lines: [text],
-    cells: [], cursor: { x: 0, y: 0 },
+    cells: [], cursor: { x: 0, y: 0, visible: true, style: "block", blink: false },
     modes: { alternateScreen: false, bracketedPaste: false, applicationCursorKeys: false, mouseTracking: "none" } };
 }
 
@@ -115,11 +116,26 @@ function memoryEngine() {
   let states = 0;
   let closes = 0;
   const writes: string[] = [];
+  const snapshotWithCells = (frameId: number): TerminalSnapshot => {
+    const lines = current.split("\n");
+    return {
+      ...snapshot(current, frameId),
+      text: current,
+      lines,
+      cols: 160,
+      rows: 50,
+      cells: lines.map((line, y) => [...line].map((character, x) => ({
+        x, y, text: character, width: 1, fg: "#ffffff", bg: "#000000",
+        bold: false, italic: false, underline: false, inverse: false,
+      }))),
+    };
+  };
   const engine: TerminalEngine = {
     write: async (value) => { writes.push(value); current += value; },
-    state: async () => { states += 1; return snapshot(current, 0); },
+    state: async () => { states += 1; return snapshotWithCells(0); },
+    hasText: async (text) => current.includes(text),
     resize: async () => {},
-    snapshot: async (id) => { snapshots += 1; return snapshot(current, id); },
+    snapshot: async (id) => { snapshots += 1; return snapshotWithCells(id); },
     screenshot: async () => ({ png: Buffer.from(current), width: 10, height: 2 }),
     close: async () => { closes += 1; },
   };
@@ -147,6 +163,62 @@ test("同一批输出合并但显式输入保留顺序，并以轻量状态编�
     assert.equal(metrics.writeBatches, 2);
     assert.ok(metrics.peakPendingBytes > 0);
   } finally { await f.session.close(); }
+});
+
+test("协议应答只转发及时且有查询匹配的数据", async () => {
+  const guard = new ProtocolReplyGuard({ mode: "auto", maxLatencyMs: 20 });
+  guard.observeOutput("\x1b[");
+  guard.observeOutput("6n");
+  assert.equal(guard.shouldForward("\x1b[1;1R"), true);
+  guard.observeOutput("\x1b[c");
+  await new Promise<void>((resolve) => setTimeout(resolve, 30));
+  assert.equal(guard.shouldForward("\x1b[?1;2c"), false);
+  assert.equal(guard.shouldForward("\x1b[<1;1;1M"), true);
+  assert.equal(guard.shouldForward("\x1b[?1006;2$y"), false);
+  const metrics = guard.metrics();
+  assert.equal(metrics.protocolQueries, 2);
+  assert.equal(metrics.protocolRepliesForwarded, 2);
+  assert.equal(metrics.protocolRepliesDropped, 2);
+  assert.ok(metrics.lastProtocolReplyLatencyMs >= 20);
+  assert.equal(new ProtocolReplyGuard({ mode: "suppress" }).shouldForward("\x1b[1;1R"), false);
+});
+
+test("输入捕获 frameId 与光标，且显式输入只写一次", async () => {
+  const memory = memoryEngine();
+  const f = fixture(memory.engine, tmpdir());
+  try {
+    const result = await f.session.inputWithFrame({ type: "key", key: "Enter" });
+    assert.equal(result.frameId, 0);
+    assert.deepEqual(result.cursor, { x: 0, y: 0, visible: true, style: "block", blink: false });
+    assert.deepEqual(f.written, ["\r"]);
+  } finally { await f.session.close(); }
+});
+
+test("inputAndWait 在可观测输出后返回，超时保留已接收证据", { timeout: 10000 }, async () => {
+  const memory = memoryEngine();
+  const manager = new SessionManager({ artifactDir: tmpdir(), engineFactory: async () => memory.engine });
+  try {
+    const session = await manager.launch({ command: process.execPath, args: ["-e",
+      "process.stdin.setRawMode(true);process.stdin.resume();process.stdout.write('READY\\n');process.stdin.once('data',()=>setTimeout(()=>process.stdout.write('WAIT_ACK\\n'),60));setInterval(()=>{},1000)"] });
+    await manager.wait(session.id, { conditions: [{ kind: "text", text: "READY" }], timeoutMs: 2000 });
+    const confirmed = await manager.inputAndWait(session.id, { type: "text", text: "x" }, undefined, {
+      conditions: [{ kind: "text", text: "WAIT_ACK" }, { kind: "cursor", x: 0, y: 0, visible: true }],
+      timeoutMs: 2000,
+    });
+    assert.match(confirmed.observation.snapshot.text, /WAIT_ACK/u);
+    assert.equal(confirmed.session.status, "running");
+    assert.equal(confirmed.cursorBefore.visible, true);
+    await manager.close(session.id);
+
+    const stuck = await manager.launch({ command: process.execPath, args: ["-e",
+      "process.stdin.setRawMode(true);process.stdin.resume();process.stdout.write('READY\\n');setInterval(()=>{},1000)"] });
+    await manager.wait(stuck.id, { conditions: [{ kind: "text", text: "READY" }], timeoutMs: 2000 });
+    await assert.rejects(manager.inputAndWait(stuck.id, { type: "text", text: "x" }, undefined, {
+      conditions: [{ kind: "text", text: "NEVER" }], timeoutMs: 50,
+    }), (error: unknown) => error instanceof TuiLensError && error.code === "WAIT_TIMEOUT"
+      && (error.details as { accepted?: boolean; inputFrameId?: number }).accepted === true
+      && typeof (error.details as { inputFrameId?: number }).inputFrameId === "number");
+  } finally { await manager.closeAll(); }
 });
 
 test("大批 Unicode 输出按上限拆分且不破坏代理对", async () => {

@@ -5,11 +5,13 @@ import { setTimeout as sleep } from "node:timers/promises";
 import * as nodePty from "node-pty";
 import { TuiLensError } from "../core/errors.js";
 import { findText, regionFingerprint } from "../core/locator.js";
+import { clickTarget } from "../core/click-target.js";
+import { resolveExecutable } from "../core/executable.js";
 import type {
-  InputAction, InputGuard, LaunchOptions, ManagerOptions, MatchOptions, Observation, ObserveOptions,
-  Region, SessionInfo, TextMatch, WaitOptions, WaitResult,
+  ClickTextOptions, InputAction, InputAndWaitResult, InputGuard, InputWaitOptions, LaunchOptions, ManagerOptions,
+  MatchOptions, Observation, ObserveOptions, Region, SessionInfo, TextMatch, WaitOptions, WaitResult,
 } from "../core/types.js";
-import { launchOptions, waitOptions } from "../core/validation.js";
+import { clickTextOptions, integer, launchOptions, waitOptions } from "../core/validation.js";
 import { createBrowserEngine } from "../engine/browser-engine.js";
 import { ManagedSession, type OperationControl, type SessionMetrics } from "./session.js";
 import { RecordingWriter } from "../recording/writer.js";
@@ -84,6 +86,13 @@ export class SessionManager {
         COLORTERM: "truecolor",
         ...options.env,
       });
+      const pathOverride = Object.keys(options.env ?? {}).find((key) => key.toLowerCase() === "path");
+      if (pathOverride) {
+        for (const key of Object.keys(env)) {
+          if (key.toLowerCase() === "path") delete env[key];
+        }
+        env[pathOverride] = options.env![pathOverride]!;
+      }
       if (options.colorMode === "ansi256") {
         delete env.COLORTERM;
         delete env.NO_COLOR;
@@ -97,15 +106,17 @@ export class SessionManager {
         env.COLORTERM = "truecolor";
         env.FORCE_COLOR = "3";
       }
-      const command = process.platform === "win32" && ["node", "nodejs", "node.exe"].includes(options.command.toLowerCase())
+      const requested = process.platform === "win32" && ["node", "nodejs", "node.exe"].includes(options.command.toLowerCase())
         ? process.execPath : options.command;
-      pty = nodePty.spawn(command, options.args ?? [], { name: "xterm-256color", cols, rows, cwd, env });
+      const resolved = await resolveExecutable(requested, { cwd, env });
+      pty = nodePty.spawn(resolved.file, options.args ?? [], { name: "xterm-256color", cols, rows, cwd, env });
       const info: SessionInfo = {
         id: sessionId, pid: pty.pid, cols, rows, status: "running",
         exitCode: null, createdAt: new Date().toISOString(),
         ...(recorder ? { recordingPath: recorder.path } : {}),
+        ...(resolved.resolved ? { resolvedCommand: resolved.resolved } : {}),
       };
-      session = new ManagedSession(info, engine, pty, resolve(this.options.artifactDir), recorder);
+      session = new ManagedSession(info, engine, pty, resolve(this.options.artifactDir), recorder, options.protocolReplies);
       this.sessions.set(info.id, session);
       return session.info();
     } catch (error) {
@@ -152,7 +163,10 @@ export class SessionManager {
   }
   scenario(specification: unknown, signal?: AbortSignal) { return runScenario(this, specification, this.options.artifactDir, signal); }
   async compare(id: string, options: VisualOptions, control?: OperationControl) {
-    const observation = await this.observe(id, options.region ? { region: options.region } : {}, control);
+    const observation = await this.observe(id, {
+      ...(options.region ? { region: options.region } : {}),
+      ...(options.cursor ? { cursor: options.cursor } : {}),
+    }, control);
     return compareArtifact(observation.screenshot!.path, options, this.options.artifactDir);
   }
 
@@ -162,6 +176,57 @@ export class SessionManager {
 
   input(id: string, action: InputAction, guard?: InputGuard, control?: OperationControl): Promise<SessionInfo> {
     return this.session(id).input(action, guard, control);
+  }
+
+  async inputAndWait(
+    id: string,
+    action: InputAction,
+    guard?: InputGuard,
+    options: InputWaitOptions = {},
+    control?: OperationControl,
+    screenshot = false,
+  ): Promise<InputAndWaitResult> {
+    const session = this.session(id);
+    if (options.timeoutMs !== undefined) integer(options.timeoutMs, "wait.timeoutMs", 1, 300_000);
+    if (options.conditions?.length) {
+      waitOptions({
+        conditions: options.conditions,
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      });
+    }
+    const started = performance.now();
+    const accepted = await session.inputWithFrame(action, guard, control);
+    const timeout = options.timeoutMs ?? 10_000;
+    const remaining = () => Math.max(1, timeout - (performance.now() - started));
+    try {
+      const waited = await this.wait(id, {
+        conditions: options.conditions ?? [],
+        timeoutMs: remaining(),
+        afterFrameId: accepted.frameId,
+        ...(control?.signal ? { signal: control.signal } : {}),
+      }, true);
+      const observation = screenshot
+        ? await session.observe({ screenshot: true }, {
+          timeoutMs: remaining(),
+          ...(control?.signal ? { signal: control.signal } : {}),
+        })
+        : waited.observation;
+      return {
+        session: observation.session,
+        inputFrameId: accepted.frameId,
+        cursorBefore: accepted.cursor,
+        observation,
+        elapsedMs: performance.now() - started,
+      };
+    } catch (error) {
+      if (error instanceof TuiLensError && error.code === "WAIT_TIMEOUT") {
+        const details = error.details && typeof error.details === "object" ? error.details : {};
+        throw new TuiLensError("WAIT_TIMEOUT", error.message, {
+          ...details, accepted: true, inputFrameId: accepted.frameId,
+        });
+      }
+      throw error;
+    }
   }
 
   resize(id: string, cols: number, rows: number, control?: OperationControl): Promise<SessionInfo> {
@@ -177,18 +242,24 @@ export class SessionManager {
   }
 
   /** 原子点击使用已观察目标区域的指纹，动画改变其他区域不使它失效。 */
-  async clickText(id: string, text: string, region?: Region, options: MatchOptions = {}, control?: OperationControl): Promise<SessionInfo> {
+  async clickText(id: string, text: string, region?: Region, options: ClickTextOptions = {}, control?: OperationControl): Promise<SessionInfo> {
+    clickTextOptions(options);
     const observation = await this.observe(id, { screenshot: false }, control);
+    const { hitbox: _hitbox, point: _point, offset: _offset, button, modifiers, ...matching } = options;
     const matches = findText(observation.snapshot, text, region,
-      options.nth === undefined ? { selection: "unique", ...options } : options);
+      matching.nth === undefined ? { selection: "unique", ...matching } : matching);
     if (matches.length !== 1) throw new TuiLensError("AMBIGUOUS_MATCH", "点击需要唯一匹配，或显式指定 nth");
     const match = matches[0]!;
-    return this.input(id, { type: "click", x: match.region.x + Math.floor(match.region.width / 2), y: match.region.y },
-      { region: { bounds: match.region, fingerprint: regionFingerprint(observation.snapshot, match.region) } }, control);
+    const target = clickTarget(match.region, observation.snapshot.cols, observation.snapshot.rows, options);
+    return this.input(id, {
+      type: "click", x: target.point.x, y: target.point.y,
+      ...(button === undefined ? {} : { button }),
+      ...(modifiers === undefined ? {} : { modifiers }),
+    }, { region: { bounds: target.hitbox, fingerprint: regionFingerprint(observation.snapshot, target.hitbox) } }, control);
   }
 
-  async wait(id: string, options: WaitOptions): Promise<WaitResult> {
-    waitOptions(options);
+  async wait(id: string, options: WaitOptions, internal = false): Promise<WaitResult> {
+    if (!internal) waitOptions(options);
     const session = this.session(id);
     const started = performance.now();
     const timeout = options.timeoutMs ?? 10_000;
@@ -198,7 +269,7 @@ export class SessionManager {
       ...(options.signal ? { signal: options.signal } : {}),
     });
     // 生命周期等待不应轮询字符格；退出事件排在最后一批输出之后。
-    if (options.conditions.every((condition) => condition.kind === "exited")) {
+    if (options.conditions.length > 0 && options.conditions.every((condition) => condition.kind === "exited")) {
       try {
         await session.waitForExit(remainingControl());
         const observation = await session.observe({ screenshot: false }, remainingControl());
@@ -249,6 +320,14 @@ export class SessionManager {
           }
           case "size":
             return observation.snapshot.cols === condition.cols && observation.snapshot.rows === condition.rows;
+          case "cursor": {
+            const cursor = observation.snapshot.cursor;
+            return (condition.x === undefined || cursor.x === condition.x)
+              && (condition.y === undefined || cursor.y === condition.y)
+              && (condition.visible === undefined || cursor.visible === condition.visible)
+              && (condition.style === undefined || cursor.style === condition.style)
+              && (condition.blink === undefined || cursor.blink === condition.blink);
+          }
           case "exited":
             return observation.session.status === "exited";
           case "stable": {
