@@ -1,7 +1,27 @@
 import type { Terminal } from "@xterm/xterm";
 import type { ImageAddon, IImageAddonOptions } from "@xterm/addon-image";
-import type { CursorState, ImageProfile, TerminalSnapshot, TerminalState } from "../core/types.js";
+import type { CursorState, ImageProfile, TerminalModes, TerminalState } from "../core/types.js";
 import type { KittyRuntime } from "./kitty-runtime.js";
+import type { PackedGrid } from "./snapshot-codec.js";
+
+/**
+ * `snapshot` 的页面侧返回结构。字符网格以压缩字符串传出，
+ * `grid` 未请求时完全不构造，避免为大网格付出无谓的打包成本。
+ */
+export interface PackedSnapshot {
+  frameId: number;
+  capturedAt: string;
+  cols: number;
+  rows: number;
+  text: string;
+  lines: string[];
+  grid?: PackedGrid;
+  cursor: CursorState;
+  modes: TerminalModes;
+  /** 视口上方的回滚行；只有显式请求时才出现。 */
+  scrollback?: string[];
+  scrollbackTruncated?: boolean;
+}
 
 export interface BrowserRuntime {
   write(data: string): Promise<void>;
@@ -10,7 +30,7 @@ export interface BrowserRuntime {
   state(): TerminalState;
   hasText(text: string): boolean;
   size(): { width: number; height: number };
-  snapshot(frameId: number): TerminalSnapshot;
+  snapshot(frameId: number, includeGrid: boolean, scrollbackLines: number): PackedSnapshot;
   dispose(): void;
 }
 
@@ -129,6 +149,42 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
     cursorVisible = true;
     cursorStyle = "block";
     cursorBlink = false;
+    return false;
+  }));
+  // xterm 6 既不跟踪 Kitty keyboard protocol 也不处理 modifyOtherKeys，
+  // 但真实终端会在应用协商后改变按键编码。这里镜像协商状态供输入编码使用；
+  // 所有 handler 返回 false，让 xterm 继续按传统规则解析，不影响画面。
+  let kittyKeyboard = 0;
+  const kittyStack: number[] = [];
+  for (const prefix of [">", "=", "<"] as const) {
+    listeners.push(terminal.parser.registerCsiHandler({ prefix, final: "u" }, (params) => {
+      const raw = params[0];
+      const value = Array.isArray(raw) ? (raw[0] ?? 0) : (raw ?? 0);
+      if (prefix === ">") {
+        // CSI > flags u：压栈并启用。
+        kittyStack.push(kittyKeyboard);
+        kittyKeyboard = value;
+      } else if (prefix === "<") {
+        // CSI < number u：按数量弹栈，超量视为清空。
+        const count = Math.max(1, value);
+        for (let index = 0; index < count; index += 1) kittyKeyboard = kittyStack.pop() ?? 0;
+      } else {
+        // CSI = flags ; mode u：1 覆盖，2 增加，3 移除。
+        const mode = Array.isArray(params[1]) ? params[1][0] : (params[1] ?? 1);
+        if (mode === 2) kittyKeyboard |= value;
+        else if (mode === 3) kittyKeyboard &= ~value;
+        else kittyKeyboard = value;
+      }
+      return false;
+    }));
+  }
+  let modifyOtherKeys: number | undefined;
+  listeners.push(terminal.parser.registerCsiHandler({ prefix: ">", final: "m" }, (params) => {
+    const raw = params[0];
+    const code = Array.isArray(raw) ? raw[0] : raw;
+    if (code !== 4) return false;
+    const level = Array.isArray(params[1]) ? params[1][0] : params[1];
+    modifyOtherKeys = level === undefined ? 0 : level;
     return false;
   }));
   // 查询响应走与用户输入相同的 PTY 回路；仅加载的图片协议才能被检测到。
@@ -287,6 +343,12 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
       mouseTracking: terminal.modes.mouseTrackingMode,
       mouseEncoding,
       synchronizedOutput: terminal.modes.synchronizedOutputMode,
+      ...(kittyKeyboard > 0 || modifyOtherKeys !== undefined
+        ? { keyboard: {
+          ...(kittyKeyboard > 0 ? { kitty: kittyKeyboard } : {}),
+          ...(modifyOtherKeys !== undefined ? { modifyOtherKeys } : {}),
+        } }
+        : {}),
     },
     cursor: cursorState(),
   });
@@ -308,46 +370,103 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
       const rectangle = element.getBoundingClientRect();
       return { width: Math.ceil(rectangle.width), height: Math.ceil(rectangle.height) };
     },
-    snapshot: (frameId) => {
+    snapshot: (frameId, includeGrid, scrollbackLines) => {
       const buffer = terminal.buffer.active;
       const reusableCell = buffer.getNullCell();
-      const rgb = (value: number): string => `#${value.toString(16).padStart(6, "0")}`;
-      const cells: TerminalSnapshot["cells"] = [];
+      const hex6 = (value: number): string => value.toString(16).padStart(6, "0");
       const lines: string[] = [];
+      const textRows: string[] = [];
+      const styleRows: string[] = [];
+      // 回滚区只取视口之上的行；startY 为 0 表示没有可回滚内容。
+      const scrollback: string[] | undefined = scrollbackLines > 0
+        ? (() => {
+          const available = Math.max(0, buffer.viewportY);
+          const wanted = Math.min(scrollbackLines, available);
+          const from = available - wanted;
+          const rows: string[] = [];
+          for (let y = from; y < from + wanted; y += 1) {
+            rows.push(buffer.getLine(y)?.translateToString(true) ?? "");
+          }
+          return rows;
+        })()
+        : undefined;
       for (let y = 0; y < terminal.rows; y += 1) {
         const line = buffer.getLine(buffer.viewportY + y);
-        const row: TerminalSnapshot["cells"][number] = [];
+        lines.push(line?.translateToString(true) ?? "");
+        if (!includeGrid) continue;
+        // 单行内同时累积文本 token 与样式游程；空/空格/续格合并成游程以减小载荷。
+        const tokens: string[] = [];
+        const runs: string[] = [];
+        let pendingKind = "";
+        let pendingCount = 0;
+        let runCount = 0;
+        let runFg = "";
+        let runBg = "";
+        let runFlags = -1;
+        const flushRun = (): void => {
+          if (runCount === 0) return;
+          runs.push(`${runCount.toString(36)},${runFg},${runBg},${(runFlags >>> 0).toString(16)};`);
+          runCount = 0;
+          runFlags = -1;
+        };
         for (let x = 0; x < terminal.cols; x += 1) {
           const cell = line?.getCell(x, reusableCell);
-          const fg = cell?.isFgRGB() ? rgb(cell.getFgColor())
-            : cell?.isFgPalette() ? palette[cell.getFgColor()] ?? foreground : foreground;
-          const bg = cell?.isBgRGB() ? rgb(cell.getBgColor())
-            : cell?.isBgPalette() ? palette[cell.getBgColor()] ?? background : background;
-          row.push({
-            x, y,
-            text: cell?.getChars() ?? "",
-            width: cell?.getWidth() ?? 1,
-            fg, bg,
-            bold: Boolean(cell?.isBold()),
-            italic: Boolean(cell?.isItalic()),
-            underline: Boolean(cell?.isUnderline()),
-            inverse: Boolean(cell?.isInverse()),
-          });
+          const width = cell?.getWidth() ?? 1;
+          const chars = cell?.getChars() ?? "";
+          const kind = width === 0 ? "c" : chars === "" ? "e" : chars === " " ? "s" : width === 2 ? "T" : "t";
+          if (kind === "t" || kind === "T") {
+            if (pendingCount > 0) {
+              tokens.push(pendingCount === 1 ? pendingKind : `${pendingKind}${pendingCount.toString(36)}`);
+              pendingCount = 0;
+            }
+            tokens.push(kind + chars);
+          } else if (kind === pendingKind) {
+            pendingCount += 1;
+          } else {
+            if (pendingCount > 0) {
+              tokens.push(pendingCount === 1 ? pendingKind : `${pendingKind}${pendingCount.toString(36)}`);
+            }
+            pendingKind = kind;
+            pendingCount = 1;
+          }
+          const fg = cell?.isFgRGB() ? hex6(cell.getFgColor())
+            : cell?.isFgPalette() ? (palette[cell.getFgColor()] ?? foreground).slice(1) : foreground.slice(1);
+          const bg = cell?.isBgRGB() ? hex6(cell.getBgColor())
+            : cell?.isBgPalette() ? (palette[cell.getBgColor()] ?? background).slice(1) : background.slice(1);
+          const flags = (cell?.isBold() ? 1 : 0) | (cell?.isItalic() ? 2 : 0)
+            | (cell?.isUnderline() ? 4 : 0) | (cell?.isInverse() ? 8 : 0);
+          if (fg !== runFg || bg !== runBg || flags !== runFlags) {
+            flushRun();
+            runFg = fg;
+            runBg = bg;
+            runFlags = flags;
+          }
+          runCount += 1;
         }
-        cells.push(row);
-        lines.push(line?.translateToString(true) ?? "");
+        if (pendingCount > 0) {
+          tokens.push(pendingCount === 1 ? pendingKind : `${pendingKind}${pendingCount.toString(36)}`);
+        }
+        flushRun();
+        textRows.push(tokens.join("\u001f"));
+        styleRows.push(runs.join(""));
       }
-      return {
+      const snapshot: PackedSnapshot = {
         frameId,
         capturedAt: new Date().toISOString(),
         cols: terminal.cols,
         rows: terminal.rows,
         text: lines.join("\n"),
         lines,
-        cells,
         cursor: cursorState(),
         modes: state().modes,
       };
+      if (includeGrid) snapshot.grid = { text: textRows.join("\n"), style: styleRows.join("\n") };
+      if (scrollback) {
+        snapshot.scrollback = scrollback;
+        // 请求行数超过实际可用时明确标记，避免调用方误以为拿到了完整历史。
+        if (scrollback.length < scrollbackLines) snapshot.scrollbackTruncated = true;
+      }
+      return snapshot;
     },
     dispose: () => {
       for (const listener of listeners) listener.dispose();

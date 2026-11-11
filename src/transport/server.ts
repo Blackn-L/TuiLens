@@ -14,9 +14,12 @@ export async function serve(): Promise<void> {
   const paths = runtimePaths();
   await mkdir(paths.home, { recursive: true, mode: 0o700 });
   const token = randomBytes(32).toString("hex");
+  const configuredLimit = Number(process.env.TUILENS_MAX_SESSIONS);
   const manager = new SessionManager({
     artifactDir: paths.artifactDir,
     ...(process.env.TUILENS_BROWSER_PATH ? { executablePath: process.env.TUILENS_BROWSER_PATH } : {}),
+    // 守护进程共享同一浏览器宿主，矩阵测试可按需提高并发会话上限。
+    ...(Number.isInteger(configuredLimit) && configuredLimit > 0 ? { maxSessions: configuredLimit } : {}),
   });
   let stopping = false;
   const connections = new Set<Socket>();

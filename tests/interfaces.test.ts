@@ -74,9 +74,9 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     const expectedTools = [
       "terminal_launch", "terminal_list", "terminal_observe", "terminal_input", "terminal_inputAndWait",
       "terminal_find", "terminal_clickText", "terminal_resize", "terminal_wait", "terminal_metrics",
-      "terminal_close", "terminal_compare", "terminal_replay", "terminal_scenario",
+      "terminal_close", "terminal_compare", "terminal_replay", "terminal_scenario", "terminal_perf",
     ];
-    assert.equal(tools.tools.length, 14);
+    assert.equal(tools.tools.length, 15);
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), expectedTools.sort());
     const launch = await client.callTool({ name: "terminal_launch",
       arguments: { command: process.execPath, args: [fixture], cols: 60, rows: 12, colorMode: "truecolor" } });

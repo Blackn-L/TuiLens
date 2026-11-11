@@ -28,6 +28,17 @@ export interface TerminalModes {
   mouseEncoding?: "legacy" | "sgr" | "sgr-pixels";
   /** 同步输出期间，字符缓冲区可能已更新但可见画面尚未提交。 */
   synchronizedOutput?: boolean;
+  /**
+   * 应用已协商的键盘协议。`kitty` 为 Kitty keyboard protocol 的当前标志位，
+   * `modifyOtherKeys` 为 xterm XTMODKEYS 级别（0–2）。未协商时两者都缺省，
+   * 输入按传统 xterm 序列编码。
+   */
+  keyboard?: KeyboardProtocol;
+}
+
+export interface KeyboardProtocol {
+  kitty?: number;
+  modifyOtherKeys?: number;
 }
 
 export type CursorStyle = "block" | "underline" | "bar";
@@ -57,6 +68,13 @@ export interface TerminalSnapshot {
   cells: TerminalCell[][];
   cursor: CursorState;
   modes: TerminalModes;
+  /**
+   * 视口上方、仍保留在终端回滚区中的行（从旧到新）。
+   * 仅在请求了 `scrollback` 时出现；不含字符格。
+   */
+  scrollback?: string[];
+  /** 请求的回滚行多于实际可用时，说明被截断的起始位置。 */
+  scrollbackTruncated?: boolean;
 }
 
 export interface TextMatch {
@@ -153,6 +171,16 @@ export interface ObserveOptions {
   region?: Region;
   /** 默认隐藏截图光标，避免块状光标遮挡字符。 */
   cursor?: "hide" | "show";
+  /**
+   * 是否返回完整字符网格。默认为 true；只读取 text/lines/光标或仅需要截图时
+   * 置为 false，可以省掉整屏网格的跨进程传输。为 false 时 `cells` 是空数组。
+   */
+  cells?: boolean;
+  /**
+   * 同时返回视口上方的回滚行数（1–5000，从旧到新）。
+   * 回滚内容只有文本；用于断言已滚出屏幕的历史消息。
+   */
+  scrollback?: number;
 }
 
 export type InputAction =
@@ -169,6 +197,16 @@ export type InputAction =
 
 export interface FrameAccessOptions {
   allowPendingFrame?: boolean;
+  /**
+   * 默认为 true。为 false 时引擎不构造也不传输字符网格，
+   * 只返回 text、lines、cursor 与 modes；此类快照不能用于 find 或区域指纹。
+   */
+  cells?: boolean;
+  /**
+   * 同时返回视口上方的回滚行（1–5000 行，从旧到新）。
+   * 只包含文本，不包含字符格；用于断言已经滚出屏幕的历史内容。
+   */
+  scrollback?: number;
 }
 
 export type WaitCondition =
@@ -215,6 +253,8 @@ export interface ManagerOptions {
   executablePath?: string;
   fontFamily?: string;
   engineFactory?: EngineFactory;
+  /** 同时保留的会话（含回放任务）上限，默认 8；矩阵测试等场景可调高。 */
+  maxSessions?: number;
 }
 
 export interface WaitResult {

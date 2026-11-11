@@ -37,6 +37,9 @@ metrics <id>                        无截图、无全屏读取的计数
 compare <id> --baseline <PNG> [--region x,y,w,h] [--show-cursor]  生成视觉差异和报告
 replay <录制文件> [--speed 0]        离线回放输出，不执行输入或程序
 scenario --file <JSON>              执行声明式场景，失败留证并释放会话
+perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>]
+       [--max-regression 0.15] [--allow-env-mismatch]
+                                     性能场景：多轮采样、进程树内存、基线比较与劣化判定
 close <id>                          释放一个会话
 shutdown                            释放所有会话并关闭本机服务
 mcp                                 启动 MCP stdio 接口
@@ -70,6 +73,9 @@ async function main(): Promise<void> {
       frame: { type: "string" }, "after-frame": { type: "string" },
       "protocol-replies": { type: "string" }, "protocol-reply-latency": { type: "string" },
       "show-cursor": { type: "boolean" }, screenshot: { type: "boolean" },
+      "write-baseline": { type: "string" }, "max-regression": { type: "string" },
+      junit: { type: "string" },
+      "allow-env-mismatch": { type: "boolean" },
     },
   });
   let method = command;
@@ -93,6 +99,15 @@ async function main(): Promise<void> {
     }
     params = JSON.parse(content ?? "{}");
     if (method === "scenario") params = { specification: params };
+    if (method === "perf") {
+      params = {
+        specification: params,
+        ...(values.baseline ? { baseline: values.baseline } : {}),
+        ...(values["write-baseline"] ? { writeBaseline: values["write-baseline"] } : {}),
+        ...(values["max-regression"] === undefined ? {} : { maxRegression: Number(values["max-regression"]) }),
+        ...(values["allow-env-mismatch"] ? { allowEnvironmentMismatch: true } : {}),
+      };
+    }
   } else {
     const [id, first, second, third, fourth] = positionals;
     const region = values.region ? parseRegion(values.region) : undefined;
@@ -182,6 +197,9 @@ async function main(): Promise<void> {
           ...(values["after-frame"] === undefined ? {} : { afterFrameId: Number(values["after-frame"]) }) };
         break;
       }
+      case "perf": {
+        throw new TuiLensError("INVALID_ARGUMENT", "perf 需要 --file 或 --json 提供性能场景");
+      }
       case "list": case "ping": case "shutdown": params = {}; break;
       default: throw new TuiLensError("UNKNOWN_METHOD", "未知命令；使用 --help 查看帮助");
     }
@@ -196,7 +214,69 @@ async function main(): Promise<void> {
   process.once("SIGINT", () => abort.abort());
   const data = await request(method as Method, validated.data, { signal: abort.signal, autoStart: method !== "shutdown" });
   process.stdout.write(JSON.stringify({ ok: true, data }) + "\n");
+  if (values.junit) await writeJunit(values.junit, method, data);
   if (data && typeof data === "object" && "pass" in data && data.pass === false) process.exitCode = 1;
+}
+
+/**
+ * 把场景或性能结果写成 JUnit XML，方便 CI 直接展示每一步。
+ * 报告写出失败不应改变命令本身的判定结果，但要报错退出。
+ */
+async function writeJunit(path: string, method: string, data: unknown): Promise<void> {
+  const { renderJunit, failureOf } = await import("../testing/junit.js");
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const { dirname, resolve } = await import("node:path");
+  const suites: Parameters<typeof renderJunit>[0] = [];
+  if (method === "scenario") {
+    const result = data as {
+      pass: boolean; steps: { index: number; type: string; name?: string; elapsedMs: number;
+        error?: unknown }[];
+    };
+    suites.push({
+      name: "tuilens-scenario",
+      cases: result.steps.map((step) => ({
+        name: `${step.index + 1}. ${step.type}${step.name ? ` (${step.name})` : ""}`,
+        className: "scenario",
+        timeMs: step.elapsedMs,
+        ...(step.error ? { failure: failureOf(step.error) } : {}),
+      })),
+    });
+  } else if (method === "perf") {
+    const result = data as {
+      pass: boolean; metrics: { phase: string; name: string;
+        elapsedMs: { p50: number; p95: number; count: number } }[];
+      regressions: string[]; errors: { round: number; error: unknown }[];
+    };
+    suites.push({
+      name: "tuilens-perf",
+      cases: [
+        ...result.metrics.map((metric) => ({
+          name: `${metric.phase}/${metric.name} p50=${metric.elapsedMs.p50}ms`,
+          className: "perf",
+          timeMs: metric.elapsedMs.p50,
+          output: `samples=${metric.elapsedMs.count} p50=${metric.elapsedMs.p50}ms p95=${metric.elapsedMs.p95}ms`,
+        })),
+        ...result.errors.map((item) => ({
+          name: `round ${item.round}`,
+          className: "perf",
+          timeMs: 0,
+          failure: failureOf(item.error),
+        })),
+        ...result.regressions.map((text) => ({
+          name: `regression: ${text}`,
+          className: "perf",
+          timeMs: 0,
+          failure: { message: text, type: "PerfRegression" },
+        })),
+      ],
+    });
+  } else {
+    return;
+  }
+  const target = resolve(path);
+  await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+  await writeFile(target, renderJunit(suites), { mode: 0o644 });
+  process.stderr.write(`JUnit 报告已写入 ${target}\n`);
 }
 
 function parseRegion(value: string) {

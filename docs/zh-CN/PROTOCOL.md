@@ -56,6 +56,35 @@ hitbox 以文字区域为基准向四周扩展；point 支持 center、left、ri
 这是应用级导航请求，不是历史绝对行号寻址。应用须启用字符格 SGR 鼠标上报；
 应用的回滚容量和每次事件滚动行数仍生效。需要拖滚动条时用 drag，应用支持按键时也可用 Home、End、PageUp、PageDown。
 
+`to:"top"`/`"bottom"` 会拆成 20 批、每批 100 个事件写入 PTY，批次之间让出事件循环。
+事件总数不变，但不再是一次 20 KB 的突发写入，并且操作可以中途取消。
+普通滚轮滚动仍是单次写入。
+
+## 回滚区
+
+```json
+{ "id": "SESSION_UUID", "screenshot": false, "scrollback": 200 }
+```
+
+在 `snapshot.scrollback` 中返回视口上方的行，从旧到新，只包含文本（不含字符格）。
+行数范围 1～5000；实际可用行数少于请求时 `scrollbackTruncated` 为 `true`。
+适用于把历史交给终端回滚区、而不是在备用屏幕中重绘的应用。
+
+## 键盘协议
+
+`modes.keyboard` 反映应用协商到的键盘协议：
+
+```json
+{ "kitty": 1, "modifyOtherKeys": 2 }
+```
+
+- `kitty` 为 Kitty keyboard protocol 标志位（`CSI > flags u` 压栈、`CSI < n u` 弹栈、`CSI = flags ; mode u` 更新）。
+  非零时带修饰的按键编码为 `CSI code ; modifier u`，例如 `Shift+Enter` 为 `\x1b[13;2u`。
+- `modifyOtherKeys` 为 xterm XTMODKEYS 级别。级别 2 时，传统编码无法表达的
+  `Shift+Enter`、`Ctrl+Space` 使用 `CSI 27 ; modifier ; code ~`。
+- `Ctrl+字母` 即使在 `modifyOtherKeys` 下也保留传统 C0 字节（`Ctrl+a` → `\x01`），因为应用依赖这些字节。
+- 未协商任何协议时，`Shift+Enter`、`Ctrl+Space` 会返回 `UNSUPPORTED_KEY`，而不是静默发送一个 `\r`。
+
 ## 保护操作与拖拽
 
 ```json

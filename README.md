@@ -23,8 +23,12 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 - **Hit-area control:** `clickText` accepts hitbox/point/offset for the real clickable area beside a label.
 - **Pending-frame clicks:** opt in to `allowPendingFrame` when a synchronized frame prevents otherwise safe text targeting.
 - **Scroll navigation:** wheel input supports page units and bounded top/bottom navigation in application scrollback.
+- **Keyboard protocols:** traditional xterm encoding plus Kitty keyboard protocol (`CSI u`) and `modifyOtherKeys`, so `Shift+Enter`, `Ctrl+Enter` and `Ctrl+Space` reach applications that negotiate them.
+- **Scrollback assertions:** `observe.scrollback` returns history lines above the viewport, so content that scrolled away can still be asserted.
 - **Terminal reply guard:** late or unmatched DA1/DA2, CPR/DSR and related automatic replies are dropped by default; `suppress` preserves ordinary input.
 - **Scenario runner:** declarative steps with failure screenshots, reports, and automatic session cleanup.
+- **Performance testing:** declarative multi-round scenarios with setup history growth, process-tree RSS sampling, baseline files and regression gating.
+- **Test assertions:** a playwright-style `Terminal` handle with expected/actual/screenshot on failure, plus JUnit XML output for CI.
 - **Agent interfaces:** shared CLI/MCP operations and a directly importable SDK.
 
 ## Requirements
@@ -146,6 +150,64 @@ Replay applies output and resize events to a fresh engine. It does not rerun the
 commands, or recorded input. `speed=0` applies events immediately. Truncated replay requires `--allow-truncated`.
 
 [Scenario example](examples/scenario.json) · [recording and scenario semantics](docs/RECORDING.md)
+
+## Performance testing
+
+TUI agents accumulate conversation history, so response time tends to degrade over long sessions.
+`perf` runs a fixed workload across restart-isolated rounds and compares the result with a committed baseline.
+
+```sh
+node dist/src/interfaces/cli.js perf --file examples/perf.json \
+  --baseline perf/baseline.json --max-regression 0.15 --junit artifacts/junit-perf.xml
+node dist/src/interfaces/cli.js perf --file examples/perf.json --write-baseline perf/baseline.json
+```
+
+Each round restarts the application, so in-process state cannot leak between rounds. Every measurement is
+"input sent → evidence visible", which is the latency a user actually feels. `setup` steps rebuild state (for
+example 40 turns of history) before a phase is measured, and `{{seq}}` expands to the running input counter so
+every sample waits for *its own* new evidence instead of matching text that already existed.
+
+```json
+{
+  "version": 1,
+  "launch": { "command": "node", "args": ["examples/perf-tui.mjs"], "cols": 80, "rows": 24 },
+  "ready": [{ "kind": "text", "text": "TURN_0" }],
+  "warmupRounds": 1, "rounds": 3, "repeats": 3,
+  "phases": [{
+    "name": "short-history",
+    "samples": [{ "input": { "type": "text", "text": "x" },
+      "observe": [{ "kind": "text", "text": "TURN_{{seq}}" }] }]
+  }]
+}
+```
+
+Results include per-phase p50/p95/p99, a stability verdict (max ÷ p50), the application's **process-tree** peak RSS
+(not just the tool's), and per-metric comparison against the baseline. A p50 increase beyond `--max-regression`
+fails the run with a nonzero exit status.
+
+Baselines record the platform and grid; comparing across a different environment is refused unless you pass
+`--allow-env-mismatch`. Measurement boundaries are documented in [performance](docs/PERFORMANCE.md).
+
+## Testing API
+
+The SDK exposes a playwright-style handle for test files:
+
+```ts
+import { SessionManager, terminal } from "tuilens";
+
+const manager = new SessionManager({ artifactDir: "./artifacts" });
+const tui = await terminal(manager, { command: "my-tui", cols: 100, rows: 30 });
+await tui.expectText("Ready");
+await tui.type("hello");
+await tui.key("Shift+Enter");           // requires the application to negotiate CSI u
+await tui.expectText("Response", { timeoutMs: 10_000 });
+await tui.expectNoText("Error", { timeoutMs: 500 });
+```
+
+`expectNoText` waits the full window before passing: text that has simply not rendered yet must not be reported
+as absent. A failed assertion carries `expected`, `actual`, a screenshot path and a screen excerpt.
+
+Scenarios and performance runs can emit JUnit XML with `--junit <path>` for CI reporting.
 
 ## MCP
 

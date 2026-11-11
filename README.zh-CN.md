@@ -23,8 +23,13 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 - **命中区控制：** `clickText` 可用 hitbox/point/offset 指定文字旁的真实可点击区域。
 - **未提交帧点击：** 同步帧阻止正常定位时，可显式使用 `allowPendingFrame`。
 - **滚动导航：** 滚轮支持按页单位和应用回滚区的首尾定位。
+- **键盘协议：** 除传统 xterm 编码外支持 Kitty keyboard protocol（`CSI u`）与 `modifyOtherKeys`，
+  使 `Shift+Enter`、`Ctrl+Enter`、`Ctrl+Space` 能送达已协商这些协议的应用。
+- **回滚区断言：** `observe.scrollback` 返回视口上方的历史行，滚出屏幕的内容仍可断言。
 - **终端应答护栏：** 默认丢弃超时或无查询匹配的 DA1/DA2、CPR/DSR 等自动应答；`suppress` 保留普通输入。
 - **场景执行：** 声明式步骤、失败截图、报告和自动清理。
+- **性能测试：** 多轮声明式场景，支持历史增长准备、进程树内存采样、基线文件与劣化判定。
+- **断言层：** playwright 风格的 `Terminal` 句柄，失败时给出期望/实际/截图，并可输出 JUnit XML。
 - **Agent 接口：** CLI/MCP 共用接口，同时提供 SDK。
 
 ## 环境要求
@@ -144,6 +149,63 @@ node dist/src/interfaces/cli.js replay path/to/session.recording.jsonl --speed 2
 `speed=0` 表示立即应用；截断回放需要显式设置 `--allow-truncated`。
 
 [场景示例](examples/scenario.json) · [录制与场景规则](docs/zh-CN/RECORDING.md)
+
+## 性能测试
+
+TUI agent 会不断积累会话历史，响应时间往往随会话变长而劣化。
+`perf` 用固定工作负载跑多轮（每轮重启被测程序），并与提交在仓库里的基线比较。
+
+```sh
+node dist/src/interfaces/cli.js perf --file examples/perf.json \
+  --baseline perf/baseline.json --max-regression 0.15 --junit artifacts/junit-perf.xml
+node dist/src/interfaces/cli.js perf --file examples/perf.json --write-baseline perf/baseline.json
+```
+
+每轮都重新启动被测程序，进程内状态不会跨轮次泄漏。每个采样都是「输入发出 → 证据可见」，
+也就是用户真实感受到的延迟。`setup` 在测量前重建状态（例如 40 轮历史），
+`{{seq}}` 会展开为本次运行内的输入序号，确保每次采样等待的是**它自己**产生的新证据，
+而不是屏幕上早已存在的文本。
+
+```json
+{
+  "version": 1,
+  "launch": { "command": "node", "args": ["examples/perf-tui.mjs"], "cols": 80, "rows": 24 },
+  "ready": [{ "kind": "text", "text": "TURN_0" }],
+  "warmupRounds": 1, "rounds": 3, "repeats": 3,
+  "phases": [{
+    "name": "short-history",
+    "samples": [{ "input": { "type": "text", "text": "x" },
+      "observe": [{ "kind": "text", "text": "TURN_{{seq}}" }] }]
+  }]
+}
+```
+
+结果包含各阶段的 p50/p95/p99、抖动分级（max ÷ p50）、**被测程序进程树**的内存峰值
+（不只是工具自身），以及每个指标相对基线的变化。p50 超过 `--max-regression` 会以非零退出码失败。
+
+基线记录平台与网格；环境不一致时默认拒绝比较，确需比较时使用 `--allow-env-mismatch`。
+测量边界见[性能文档](docs/zh-CN/PERFORMANCE.md)。
+
+## 测试断言
+
+SDK 提供接近 playwright 的句柄：
+
+```ts
+import { SessionManager, terminal } from "tuilens";
+
+const manager = new SessionManager({ artifactDir: "./artifacts" });
+const tui = await terminal(manager, { command: "my-tui", cols: 100, rows: 30 });
+await tui.expectText("Ready");
+await tui.type("hello");
+await tui.key("Shift+Enter");           // 需要应用已协商 CSI u
+await tui.expectText("Response", { timeoutMs: 10_000 });
+await tui.expectNoText("Error", { timeoutMs: 500 });
+```
+
+`expectNoText` 会等满整个窗口才判定通过：只是还没渲染出来的文本不能被当成「不存在」。
+断言失败会带上期望、实际、截图路径与画面摘录。
+
+场景与性能运行都可以用 `--junit <路径>` 输出 JUnit XML，供 CI 展示。
 
 ## MCP
 

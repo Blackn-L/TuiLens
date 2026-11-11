@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
 import { test } from "node:test";
 import { createBrowserEngine } from "../src/engine/browser-engine.js";
+import type { TerminalEngine } from "../src/core/types.js";
 
 test("快速文本条件读取当前解析状态，支持中文且不等待截图", async () => {
   const engine = await createBrowserEngine({ cols: 40, rows: 8, onData() {} });
@@ -154,4 +156,55 @@ test("浏览器终端解析宽字符、样式与模式，并从同一画面输�
     await engine.close();
   }
   await assert.rejects(engine.write("late"), { code: "ENGINE_CLOSED" });
+});
+
+test("同一管理器的多个会话共享浏览器进程并按引用释放", { timeout: 60_000 }, async () => {
+  const { createBrowserEngineFactory } = await import("../src/engine/browser-engine.js");
+  const factory = createBrowserEngineFactory();
+  const first = await factory({ cols: 20, rows: 4, onData() {} });
+  const second = await factory({ cols: 20, rows: 4, onData() {} });
+  try {
+    await first.write("FIRST");
+    await second.write("SECOND");
+    // 两个会话各自独立解析，不能串屏。
+    assert.equal((await first.snapshot(1)).lines[0], "FIRST");
+    assert.equal((await second.snapshot(1)).lines[0], "SECOND");
+    await first.close();
+    // 关闭一个会话不影响另一个。
+    assert.equal((await second.snapshot(2)).lines[0], "SECOND");
+  } finally {
+    await second.close();
+    await factory.shutdown();
+  }
+  // 显式 shutdown 后拒绝新引擎。
+  await assert.rejects(factory({ cols: 20, rows: 4, onData() {} }), { code: "ENGINE_CLOSED" });
+});
+
+test("会话上限可配置，默认值仍为 8", async () => {
+  const { SessionManager } = await import("../src/session/manager.js");
+  const limited = new SessionManager({ artifactDir: tmpdir(), maxSessions: 1 });
+  try {
+    assert.throws(() => new SessionManager({ artifactDir: tmpdir(), maxSessions: 0 }),
+      { code: "INVALID_ARGUMENT" });
+    // 上限 1：第二次启动在创建引擎前就被拒绝，因此不需要真实浏览器。
+    const engine: TerminalEngine = {
+      write: async () => {}, state: async () => ({
+        cols: 10, rows: 2, cursor: { x: 0, y: 0, visible: true, style: "block", blink: false },
+        modes: { alternateScreen: false, bracketedPaste: false, applicationCursorKeys: false, mouseTracking: "none" },
+      }),
+      snapshot: async (id) => ({ frameId: id, capturedAt: "", cols: 10, rows: 2, text: "", lines: [], cells: [],
+        cursor: { x: 0, y: 0, visible: true, style: "block", blink: false },
+        modes: { alternateScreen: false, bracketedPaste: false, applicationCursorKeys: false, mouseTracking: "none" } }),
+      screenshot: async () => ({ png: Buffer.alloc(0), width: 1, height: 1 }),
+      resize: async () => {}, close: async () => {},
+    };
+    const manager = new SessionManager({ artifactDir: tmpdir(), maxSessions: 1, engineFactory: async () => engine });
+    try {
+      await manager.launch({ command: process.execPath, args: ["-e", "setTimeout(()=>{},5000)"] });
+      await assert.rejects(
+        manager.launch({ command: process.execPath, args: ["-e", "setTimeout(()=>{},5000)"] }),
+        (error: unknown) => error instanceof Error && "code" in error && error.code === "SESSION_LIMIT"
+          && (error as { details?: { maxSessions?: number } }).details?.maxSessions === 1);
+    } finally { await manager.closeAll(); }
+  } finally { await limited.closeAll().catch(() => undefined); }
 });

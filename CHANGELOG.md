@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Performance
+- **Snapshot transport rewritten.** Character grids are packed into two strings inside the browser and unpacked in Node. A 160×50 `observe` dropped from ~770 ms to ~4 ms; `find` from ~940 ms to ~5 ms.
+- `observe`/`snapshot` accept `cells:false`; `find`, `wait`, `compare`, `inputAndWait` and `timeoutEvidence` skip the grid when they do not need it. `observe` over CLI/MCP now builds the grid only when `includeCells` is requested.
+- Wait polling uses adaptive backoff (2 ms → 50 ms) instead of a fixed 50 ms tick, so `wait` and `perf` measurements are no longer quantized by the poll interval. Timeouts are now honored (~1.1 s for a 1 s timeout, previously ~2 s).
+
+### Added
+- `perf` command/MCP tool/SDK API: declarative performance scenarios with warmup rounds, per-round process restarts, `{{seq}}` evidence templates, setup history growth, process-tree RSS sampling, baseline files and threshold-based regression gating.
+- Testing assertion layer (`terminal()`, `Terminal#expectText/expectNoText/expectCursor/expectSize`) with expected/actual/screenshot on failure.
+- JUnit XML output (`--junit`) for scenarios and performance runs; CI uploads evidence artifacts and runs a perf gate on pull requests.
+- `observe.scrollback` reads viewport-above history lines (text only) so scrolled-away content can be asserted.
+- Kitty keyboard protocol (`CSI u`) and xterm `modifyOtherKeys` detection and encoding: `Shift+Enter`, `Ctrl+Enter`, `Ctrl+Space`, `Shift+Tab` and modified function keys are now expressible. Ctrl+letter keeps its traditional C0 byte under `modifyOtherKeys`.
+- `TerminalModes.keyboard` exposes negotiated keyboard protocol state.
+- `ManagerOptions.maxSessions` and `TUILENS_MAX_SESSIONS`; sessions now share one Chromium process via a reference-counted host.
+- `errorRecord` returns `messageEn` from a stable error-code catalog.
+- `LICENSE` (MIT) and `package.json` `files`/`license`/`repository` metadata.
+
+### Changed
+- Wheel `to:"top"/"bottom"` is written to the PTY in 20 batches of 100 events with event-loop yields, so long scrolls are cancellable and do not burst the application.
+- `createBrowserEngine` still owns an isolated browser; `SessionManager` uses a shared host by default.
+
 - Added explicit pending-frame `clickText` targeting with unchanged region guards.
 - Added page-unit wheel scrolling and bounded top/bottom navigation across SDK, CLI and MCP.
 - Preserved unrelated input under `protocolReplies:"suppress"` and improved invalid `colorMode` diagnostics.

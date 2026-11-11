@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { IDisposable, IPty } from "node-pty";
 import { TuiLensError } from "../core/errors.js";
-import { encodeInput } from "../core/input.js";
+import { encodeInput, encodeScrollBatches } from "../core/input.js";
 import type {
   CursorState, InputAction, InputGuard, Observation, ObserveOptions, SessionInfo, TerminalEngine,
   FrameAccessOptions,
@@ -264,7 +264,11 @@ export class ManagedSession {
       const pending = this.enqueue(async () => {
         this.assertUsable();
         if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
-        const snapshot = await this.engine.snapshot(this.frameId, frame);
+        const snapshot = await this.engine.snapshot(this.frameId, {
+          ...frame,
+          ...(options.cells === undefined ? {} : { cells: options.cells }),
+          ...(options.scrollback === undefined ? {} : { scrollback: options.scrollback }),
+        });
         if (options.region) regionWithin(options.region, snapshot.cols, snapshot.rows);
         const observation: Observation = { session: this.info(), snapshot, screenshot: null };
         if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
@@ -348,7 +352,20 @@ export class ManagedSession {
       const state = await this.engine.state();
       check();
       const inputFrameId = this.frameId;
-      this.pty.write(encodeInput(action, state));
+      // 到达首/尾的滚动分批发往 PTY：单次写入 2000 个事件会形成突发输入，
+      // 且无法在中间取消。普通输入仍是一次写入。
+      const batches = encodeScrollBatches(action, state);
+      if (batches) {
+        for (const batch of batches) {
+          check();
+          if (this.closing || this.exited) throw new TuiLensError("PROCESS_EXITED", "终端进程已经退出");
+          this.pty.write(batch);
+          // 让出事件循环，使取消、背压与退出事件能在这批之间生效。
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      } else {
+        this.pty.write(encodeInput(action, state));
+      }
       await this.recorder?.append({ type: "input", action });
       return { session: this.info(), frameId: inputFrameId, cursor: state.cursor };
     });

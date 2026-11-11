@@ -1,10 +1,14 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { chromium, type Browser, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
 import { TuiLensError } from "../core/errors.js";
-import type { BrowserEngineOptions, Region, TerminalEngine, TerminalSnapshot, TerminalState } from "../core/types.js";
+import type {
+  BrowserEngineOptions, EngineFactory, Region, TerminalEngine, TerminalSnapshot, TerminalState,
+} from "../core/types.js";
+import { BrowserHost } from "./browser-host.js";
 import { initializeBrowserRuntime } from "./browser-runtime.js";
+import { unpackGrid } from "./snapshot-codec.js";
 import { Osc1337Normalizer } from "./osc1337.js";
 import { installKittyRuntime } from "./kitty-runtime.js";
 import { KITTY_DIACRITICS } from "./kitty-diacritics.js";
@@ -40,6 +44,25 @@ function assertDimensions(cols: number, rows: number): void {
 }
 
 export async function createBrowserEngine(options: BrowserEngineOptions): Promise<TerminalEngine> {
+  return createEngine(options);
+}
+
+/**
+ * 绑定一个共享浏览器的引擎工厂：多个会话复用同一 Chromium 进程，
+ * 各自使用独立上下文与页面。返回的 `shutdown` 必须在管理器关闭时调用。
+ */
+export function createBrowserEngineFactory(executablePath?: string) {
+  const resolved = resolveBrowserExecutable(executablePath);
+  // 共享宿主保活：会话之间复用同一进程，只有管理器关闭时才真正释放。
+  const host = new BrowserHost(resolved, true);
+  const factory = ((options: BrowserEngineOptions) => createEngine(options, host)) as EngineFactory & {
+    shutdown(): Promise<void>;
+  };
+  factory.shutdown = () => host.shutdown();
+  return factory;
+}
+
+async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost): Promise<TerminalEngine> {
   assertDimensions(options.cols, options.rows);
   const fontSize = options.fontSize ?? 16;
   const images = options.images ?? "off";
@@ -48,17 +71,14 @@ export async function createBrowserEngine(options: BrowserEngineOptions): Promis
   if (!Number.isFinite(fontSize) || fontSize < 8 || fontSize > 48) {
     throw new TuiLensError("INVALID_FONT_SIZE", "字体大小必须在 8–48 像素范围内");
   }
+  const host = shared ?? new BrowserHost(resolveBrowserExecutable(options.executablePath));
+  const ownsHost = shared === undefined;
   let browser: Browser | undefined;
   let page: Page;
   let closed = false;
   let crashed = false;
-  const executablePath = resolveBrowserExecutable(options.executablePath);
   try {
-    browser = await chromium.launch({
-      headless: true,
-      ...(executablePath ? { executablePath } : {}),
-      args: ["--disable-background-timer-throttling", "--disable-renderer-backgrounding"],
-    });
+    browser = await host.acquire();
     const context = await browser.newContext({
       deviceScaleFactor: 1,
       viewport: { width: 1600, height: 1200 },
@@ -92,7 +112,9 @@ export async function createBrowserEngine(options: BrowserEngineOptions): Promis
     });
     await resizeViewport();
   } catch (error) {
-    await browser?.close().catch(() => undefined);
+    // 启动失败只归还本次引用；共享浏览器可能仍有其他会话在用。
+    if (ownsHost) await host.shutdown();
+    else host.release();
     if (error instanceof TuiLensError) throw error;
     throw new TuiLensError("BROWSER_START_FAILED", "无法启动终端浏览器。可设置 TUILENS_BROWSER_PATH 或执行 npx playwright install chromium。", {
       cause: error instanceof Error ? error.message : String(error),
@@ -228,16 +250,35 @@ export async function createBrowserEngine(options: BrowserEngineOptions): Promis
       if (!options?.allowPendingFrame) await assertFrameReady();
       // write 已保证解析完成。纯状态读取不等待绘制，避免轮询挡住后续协议查询；
       // PNG 仍在同一会话屏障内等待绘制，保持状态与图像对应。
-      return page.evaluate((id) => window.__tuilens.snapshot(id), frameId);
+      const includeGrid = options?.cells !== false;
+      const packed = await page.evaluate(
+        ({ id, grid, scrollback }) => window.__tuilens.snapshot(id, grid, scrollback),
+        { id: frameId, grid: includeGrid, scrollback: options?.scrollback ?? 0 });
+      return {
+        frameId: packed.frameId,
+        capturedAt: packed.capturedAt,
+        cols: packed.cols,
+        rows: packed.rows,
+        text: packed.text,
+        lines: packed.lines,
+        cells: packed.grid ? unpackGrid(packed.grid, packed.cols, packed.rows) : [],
+        cursor: packed.cursor,
+        modes: packed.modes,
+        ...(packed.scrollback ? { scrollback: packed.scrollback } : {}),
+        ...(packed.scrollbackTruncated ? { scrollbackTruncated: true } : {}),
+      };
     },
     screenshot,
     async close(): Promise<void> {
       if (closed) return;
       closed = true;
       try {
+        // 只释放本会话的页面与上下文；共享浏览器由宿主按引用计数管理。
         await page.evaluate(() => window.__tuilens.dispose());
       } finally {
-        await browser?.close();
+        try { await page.context().close(); } catch { /* 页面或浏览器可能已崩溃。 */ }
+        if (ownsHost) await host.shutdown();
+        else host.release();
       }
     },
   };
