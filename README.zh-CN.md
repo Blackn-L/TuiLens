@@ -21,7 +21,9 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 - **可靠定位：** 区域和样式筛选、唯一/nth 匹配、帧或区域保护、组合条件等待。
 - **交互确认：** `input-wait` 发送一次输入后等待可见结果，支持文本、尺寸、稳定和光标条件。
 - **命中区控制：** `clickText` 可用 hitbox/point/offset 指定文字旁的真实可点击区域。
-- **终端应答护栏：** 默认丢弃超时或无查询匹配的 DA1/DA2、CPR/DSR 等自动应答。
+- **未提交帧点击：** 同步帧阻止正常定位时，可显式使用 `allowPendingFrame`。
+- **滚动导航：** 滚轮支持按页单位和应用回滚区的首尾定位。
+- **终端应答护栏：** 默认丢弃超时或无查询匹配的 DA1/DA2、CPR/DSR 等自动应答；`suppress` 保留普通输入。
 - **场景执行：** 声明式步骤、失败截图、报告和自动清理。
 - **Agent 接口：** CLI/MCP 共用接口，同时提供 SDK。
 
@@ -112,6 +114,17 @@ node dist/src/interfaces/cli.js wait SESSION_ID --stable 250 --region 0,0,40,10
 可用 `hitbox`/`point`/`offset` 扩展命中区或选择文字右侧的箭头，并可指定鼠标按钮。
 JSON 接口还支持 `style`、`count`、`afterFrameId` 和输入保护条件。
 区域指纹可阻止对已变化目标的操作，同时容许其他区域继续动画。
+同步帧始终不结束时，可在 `clickText` 的 `options.allowPendingFrame:true` 显式放宽同步帧读取。
+它读取未提交的字符缓冲，仍校验目标区域指纹；不提供稳定 PNG，也不绕过 `frameId` 保护。
+普通观察与截图仍要求同步帧结束。
+
+```json
+{ "type": "scroll", "x": 20, "y": 10, "direction": "down", "unit": "page", "amount": 5 }
+{ "type": "scroll", "x": 20, "y": 10, "to": "top" }
+```
+
+滚动坐标选择应用中的悬停区域。按页滚动按终端行数展开；首尾导航使用有界滚轮事件序列，
+仍受应用消费方式和回滚区容量限制。单次 `amount` 上限为 100；需要拖动滚动条时使用显式 drag。
 
 所有命令均可通过 `--json`、`--file` 或 `--stdin` 传入结构化参数。
 详见[协议示例](docs/zh-CN/PROTOCOL.md)。
@@ -190,7 +203,7 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 - Kitty 为明确列出的子集，不支持外部文件/共享内存、动画、压缩和任意图层。
 - 鼠标要求字符格 SGR 模式；系统输入法候选窗与系统剪贴板不属于当前渲染器。
 - 截图默认隐藏光标本体；快照仍返回可见性、样式和闪烁状态，但无法验证真实宿主光标或 IME。
-- `protocolReplies: "auto"` 只为及时且有查询匹配的已知自动应答放行；若应用在 TTY 已回显时查询，仍需 `suppress` 或应用侧开关。
+- `protocolReplies: "auto"` 只为及时且有查询匹配的已知自动应答放行；`suppress` 只丢弃完整已知应答，不过滤任意输入。若应用在 TTY 已回显时查询，仍需 `suppress` 或应用侧开关。
 - 浏览器解析、绘制、截图和录制都有开销；轻量 metrics 不消除渲染成本。
 - 输出回放不等同于应用重跑；区域稳定不证明所有后台工作结束。
 - Windows node-pty 1.1.0 清理期间可能输出 `AttachConsole failed`，需确认进程退出并保留诊断。

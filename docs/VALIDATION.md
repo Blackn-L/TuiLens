@@ -14,7 +14,8 @@ output backpressure, cancellation, concurrent daemon startup, CLI/MCP cleanup, i
 region capture, visual masks, drag encoding, guarded targeting, recording limits, replay cancellation and scenario failures.
 New coverage includes timely/late terminal replies, split queries, suppress policy, reply metrics,
 clickText hit areas, one-shot inputAndWait confirmation, cursor metadata, hidden screenshot cursors,
-and PNG grid dimensions after resize.
+pending-frame click targeting with real PTY input, page/top/bottom scroll encoding,
+and PNG grid dimensions after resize. MCP launch is exercised with `colorMode:"truecolor"`.
 
 Inspect captures in `artifacts/engine/`, `artifacts/images/`, and `artifacts/visual/` for glyphs, colors and clipping.
 Text assertions alone do not prove visual correctness. CI artifacts are not automatically published because terminal output may contain data.

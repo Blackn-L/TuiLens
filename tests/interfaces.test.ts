@@ -78,8 +78,10 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     ];
     assert.equal(tools.tools.length, 14);
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), expectedTools.sort());
-    const launch = await client.callTool({ name: "terminal_launch", arguments: { command: process.execPath, args: [fixture], cols: 60, rows: 12 } });
+    const launch = await client.callTool({ name: "terminal_launch",
+      arguments: { command: process.execPath, args: [fixture], cols: 60, rows: 12, colorMode: "truecolor" } });
     const launchContent = launch.content as { type: string; text?: string }[];
+    assert.notEqual(launch.isError, true, launchContent[0]?.text ?? "MCP launch failed");
     const mcpSession = JSON.parse(launchContent[0]!.text!) as SessionInfo;
     const waiting = await client.callTool({ name: "terminal_wait", arguments: { id: mcpSession.id, conditions: [{ kind: "text", text: "TUILENS_READY" }] } });
     assert.notEqual(waiting.isError, true);

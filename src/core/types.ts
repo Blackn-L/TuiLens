@@ -89,6 +89,8 @@ export interface ClickHitbox {
 }
 
 export interface ClickTextOptions extends MatchOptions {
+  /** 显式读取同步输出尚未提交的字符格；区域指纹保护仍然有效。 */
+  allowPendingFrame?: boolean;
   hitbox?: ClickHitbox;
   point?: "center" | "left" | "right" | "top" | "bottom";
   offset?: { x?: number; y?: number };
@@ -161,8 +163,13 @@ export type InputAction =
   | { type: "move"; x: number; y: number; modifiers?: Modifiers }
   | { type: "mouseDown" | "mouseUp"; x: number; y: number; button?: "left" | "middle" | "right"; modifiers?: Modifiers }
   | { type: "drag"; from: { x: number; y: number }; to: { x: number; y: number }; steps?: number; button?: "left" | "middle" | "right"; modifiers?: Modifiers }
-  | { type: "scroll"; x: number; y: number; direction: "up" | "down"; amount?: number; modifiers?: Modifiers }
+  | { type: "scroll"; x: number; y: number; direction: "up" | "down"; unit?: "line" | "page"; amount?: number; modifiers?: Modifiers }
+  | { type: "scroll"; x: number; y: number; to: "top" | "bottom"; modifiers?: Modifiers }
   | { type: "raw"; data: string };
+
+export interface FrameAccessOptions {
+  allowPendingFrame?: boolean;
+}
 
 export type WaitCondition =
   | { kind: "text"; text: string; region?: Region; absent?: boolean; style?: MatchStyle; count?: number }
@@ -196,7 +203,7 @@ export interface TerminalEngine {
   state(): Promise<TerminalState>;
   /** 可选快速文本条件：避免等待普通标记时跨进程传输整屏字符格。 */
   hasText?(text: string): Promise<boolean>;
-  snapshot(frameId: number): Promise<TerminalSnapshot>;
+  snapshot(frameId: number, options?: FrameAccessOptions): Promise<TerminalSnapshot>;
   screenshot(region?: Region, options?: { cursor?: "hide" | "show" }): Promise<{ png: Buffer; width: number; height: number }>;
   close(): Promise<void>;
 }

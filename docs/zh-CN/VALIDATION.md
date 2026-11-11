@@ -17,6 +17,8 @@ npm test
 - 字符格定位、输入编码、区域稳定判断。
 - 迟到/及时终端应答、跨分片查询、suppress 策略和应答 metrics。
 - clickText 命中区、inputAndWait 单次输入确认、超时证据和光标条件。
+- 真实 PTY 未提交帧点击、区域指纹保护、按页和首尾滚动编码。
+- MCP 使用 `colorMode:"truecolor"` 启动，非法 colorMode 诊断包含收到的值。
 - 光标可见性/样式/闪烁、截图默认隐藏，以及 resize 后 PNG 网格尺寸。
 - CLI 与 MCP 的会话、图片返回及断开清理。
 - 并发启动、状态发布失败及服务重启。

@@ -6,6 +6,7 @@ import { TuiLensError } from "../core/errors.js";
 import { encodeInput } from "../core/input.js";
 import type {
   CursorState, InputAction, InputGuard, Observation, ObserveOptions, SessionInfo, TerminalEngine,
+  FrameAccessOptions,
 } from "../core/types.js";
 import { dimensions, inputGuard, regionWithin } from "../core/validation.js";
 import { regionFingerprint } from "../core/locator.js";
@@ -230,9 +231,10 @@ export class ManagedSession {
     }).catch((error: unknown) => this.setFault(error));
   }
 
-  observe(options: ObserveOptions = {}, control: OperationControl = {}): Promise<Observation> {
+  observe(options: ObserveOptions = {}, control: OperationControl = {},
+    frame: FrameAccessOptions = {}): Promise<Observation> {
     this.assertUsable();
-    return this.observeReady(options, control);
+    return this.observeReady(options, control, frame);
   }
 
   async hasText(text: string, control: OperationControl): Promise<boolean | undefined> {
@@ -247,8 +249,10 @@ export class ManagedSession {
     return controlled(pending, control);
   }
 
-  private async observeReady(options: ObserveOptions, control: OperationControl): Promise<Observation> {
+  private async observeReady(options: ObserveOptions, control: OperationControl,
+    frame: FrameAccessOptions = {}): Promise<Observation> {
     const deadline = performance.now() + (control.timeoutMs ?? 10_000);
+    let lastError: unknown;
     const signal = control.signal
       ? AbortSignal.any([control.signal, this.closeController.signal])
       : this.closeController.signal;
@@ -260,7 +264,7 @@ export class ManagedSession {
       const pending = this.enqueue(async () => {
         this.assertUsable();
         if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
-        const snapshot = await this.engine.snapshot(this.frameId);
+        const snapshot = await this.engine.snapshot(this.frameId, frame);
         if (options.region) regionWithin(options.region, snapshot.cols, snapshot.rows);
         const observation: Observation = { session: this.info(), snapshot, screenshot: null };
         if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
@@ -289,10 +293,14 @@ export class ManagedSession {
         cancelled = true;
         if (this.closing) throw new TuiLensError("SESSION_CLOSED", "会话已关闭");
         if (!(error instanceof TuiLensError) || error.code !== "FRAME_PENDING") throw error;
+        if (frame.allowPendingFrame !== true) lastError = error;
         // 同步输出的结束序列仍需消费；必须释放队列后再等待，不能持锁等下一帧。
         await controlled(sleep(8), {
           signal,
           timeoutMs: Math.max(1, deadline - performance.now()),
+        }).catch((timeoutError: unknown) => {
+          if (lastError instanceof TuiLensError) throw lastError;
+          throw timeoutError;
         });
       }
     } while (performance.now() < deadline);
@@ -304,6 +312,15 @@ export class ManagedSession {
   }
 
   inputWithFrame(action: InputAction, guard?: InputGuard, control: OperationControl = {}): Promise<{
+    session: SessionInfo;
+    frameId: number;
+    cursor: CursorState;
+  }> {
+    return this.inputWithFrameOptions(action, guard, control);
+  }
+
+  inputWithFrameOptions(action: InputAction, guard: InputGuard | undefined, control: OperationControl = {},
+    frame: FrameAccessOptions = {}): Promise<{
     session: SessionInfo;
     frameId: number;
     cursor: CursorState;
@@ -320,7 +337,7 @@ export class ManagedSession {
         throw new TuiLensError("STALE_FRAME", "操作引用的画面已过期，请重新观察");
       }
       if (guard?.region) {
-        const snapshot = await this.engine.snapshot(this.frameId);
+        const snapshot = await this.engine.snapshot(this.frameId, frame);
         if (regionFingerprint(snapshot, guard.region.bounds) !== guard.region.fingerprint) {
           throw new TuiLensError("STALE_REGION", "操作目标区域已变化，请重新定位");
         }

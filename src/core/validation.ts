@@ -46,7 +46,9 @@ export function launchOptions(options: LaunchOptions): void {
     throw new TuiLensError("INVALID_ARGUMENT", "env 必须是有效的环境变量字符串映射");
   }
   if (options.colorMode !== undefined && !["truecolor", "ansi256", "none"].includes(options.colorMode)) {
-    throw new TuiLensError("INVALID_ARGUMENT", "不支持的 colorMode");
+    throw new TuiLensError("INVALID_ARGUMENT", "colorMode 必须是 truecolor、ansi256 或 none", {
+      received: options.colorMode,
+    });
   }
   if (options.images !== undefined && !["off", "sixel", "iterm", "all"].includes(options.images)) {
     throw new TuiLensError("INVALID_ARGUMENT", "不支持的 images");
@@ -109,8 +111,11 @@ export function matchOptions(options: MatchOptions): void {
 export function clickTextOptions(options: ClickTextOptions | undefined): void {
   if (options === undefined) return;
   object(options, "点击选项");
-  const { hitbox, point, offset, button, modifiers, ...matching } = options;
+  const { allowPendingFrame, hitbox, point, offset, button, modifiers, ...matching } = options;
   matchOptions(matching);
+  if (allowPendingFrame !== undefined && typeof allowPendingFrame !== "boolean") {
+    throw new TuiLensError("INVALID_ARGUMENT", "allowPendingFrame 必须是布尔值");
+  }
   if (hitbox !== undefined) {
     object(hitbox, "hitbox");
     if (Object.keys(hitbox).some((key) => !["left", "right", "top", "bottom"].includes(key))) {

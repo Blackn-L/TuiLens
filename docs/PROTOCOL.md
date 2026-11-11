@@ -40,6 +40,23 @@ Every covered cell must match the requested foreground, background, bold, italic
 `hitbox` expands the text bounds in cells; `point` supports `center`, `left`, `right`, `top` and `bottom`.
 An expanded hitbox or final point outside the grid returns `INVALID_HITBOX`, and the guard fingerprint covers the full hitbox.
 
+If synchronized output never commits, `clickText` additionally accepts `options.allowPendingFrame:true`.
+This is an explicit escape hatch for reading the pending character buffer, not a guarantee of a stable PNG.
+The target region is still fingerprint-checked immediately before clicking; frame guards, ordinary observe and screenshots are unchanged.
+
+## Scroll navigation
+
+```json
+{ "type": "scroll", "x": 20, "y": 10, "direction": "down", "unit": "page", "amount": 5 }
+{ "type": "scroll", "x": 20, "y": 10, "to": "top" }
+```
+
+`unit:"page"` expands each requested page to the current terminal row count. `amount` is 1–100 wheel units before expansion.
+`to:"top"`/`"bottom"` sends a bounded sequence of up/down wheel events at the chosen coordinates and cannot be combined with
+`direction`, `unit` or `amount`. These are application-level navigation requests, not absolute history-row addressing.
+The application must enable character-cell SGR mouse reporting; its scrollback size and per-event line consumption still apply.
+Use `drag` for scrollbar dragging or `key` for `Home`, `End`, `PageUp` and `PageDown` when the application handles those keys.
+
 ## Guarded input
 
 ```json
@@ -110,6 +127,14 @@ A timeout returns `WAIT_TIMEOUT` with `accepted: true` and `inputFrameId`.
 
 A cursor condition can combine `x`, `y`, `visible`, `style` and `blink` with AND semantics.
 `observe`/`compare` accept `cursor: "hide"` (default) or `"show"`; snapshots always include cursor metadata.
+
+## Automatic terminal replies
+
+`protocolReplies.mode:"auto"` forwards only known replies that match a recent query within `maxLatencyMs` (default 250).
+`"forward"` disables this filtering; `"suppress"` drops recognized complete DA1/DA2, CPR/DSR and related replies.
+Suppress preserves unrelated input instead of dropping all PTY input. Filtering is performed on renderer reply chunks;
+an application that probes in cooked/echo mode can still need an app-side probe switch or launch-time `suppress`.
+Use `metrics` to inspect forwarded/dropped reply counts. Suppression is not a substitute for correct application TTY mode handling.
 
 ## Visual comparison
 

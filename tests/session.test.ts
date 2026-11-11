@@ -181,6 +181,11 @@ test("协议应答只转发及时且有查询匹配的数据", async () => {
   assert.equal(metrics.protocolRepliesDropped, 2);
   assert.ok(metrics.lastProtocolReplyLatencyMs >= 20);
   assert.equal(new ProtocolReplyGuard({ mode: "suppress" }).shouldForward("\x1b[1;1R"), false);
+  const suppressed = new ProtocolReplyGuard({ mode: "suppress" });
+  assert.equal(suppressed.shouldForward("PING"), true);
+  assert.equal(suppressed.metrics().protocolRepliesForwarded, 1);
+  assert.equal(suppressed.metrics().protocolRepliesDropped, 0);
+  assert.equal(suppressed.shouldForward("\x1b[1;1R"), false);
 });
 
 test("输入捕获 frameId 与光标，且显式输入只写一次", async () => {
@@ -406,11 +411,54 @@ test("FRAME_PENDING 持续存在时有界失败而不永久锁住会话", async 
   try {
     const started = performance.now();
     await assert.rejects(f.session.observe({ screenshot: false }, { timeoutMs: 40 }),
-      (error: unknown) => error instanceof TuiLensError && ["FRAME_PENDING", "OPERATION_TIMEOUT"].includes(error.code));
+      { code: "FRAME_PENDING" });
     assert.ok(performance.now() - started < 1000);
     await f.session.input({ type: "key", key: "Escape" });
     assert.deepEqual(f.written, ["\x1b"]);
   } finally { await f.session.close(); }
+});
+
+test("clickText 显式允许未提交帧，同时保留目标区域指纹保护", async () => {
+  const memory = memoryEngine();
+  const frames: { id: number; pending: boolean }[] = [];
+  let text = "Run";
+  let mutateAfter = Number.POSITIVE_INFINITY;
+  const baseState = await memory.engine.state();
+  const manager = new SessionManager({ artifactDir: tmpdir(), engineFactory: async () => ({
+    ...memory.engine,
+    state: async () => ({
+      ...baseState,
+      modes: { ...baseState.modes, mouseTracking: "any", mouseEncoding: "sgr", synchronizedOutput: true },
+    }),
+    snapshot: async (id, options) => {
+      frames.push({ id, pending: options?.allowPendingFrame === true });
+      if (!options?.allowPendingFrame) throw new TuiLensError("FRAME_PENDING", "同步帧未提交");
+      if (frames.length > mutateAfter) text = "Changed";
+      const result = await memory.engine.snapshot(id);
+      return {
+        ...result, cols: 20, rows: 5,
+        text, lines: [text],
+        cells: [[text, "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""].map((text, x) => ({
+          x, y: 0, text, width: 1, fg: "#ffffff", bg: "#000000",
+          bold: false, italic: false, underline: false, inverse: false,
+        }))],
+        modes: { ...result.modes, mouseTracking: "any", mouseEncoding: "sgr", synchronizedOutput: true },
+      };
+    },
+  }) });
+  try {
+    const launched = await manager.launch({ command: process.execPath, args: ["-e", "setInterval(()=>{},1000)"] });
+    await manager.clickText(launched.id, "Run", undefined, { allowPendingFrame: true });
+    text = "Run";
+    mutateAfter = frames.length + 1;
+    await assert.rejects(manager.clickText(launched.id, "Run", undefined, { allowPendingFrame: true }), { code: "STALE_REGION" });
+    await assert.rejects(manager.clickText(launched.id, "Changed", undefined, {}, { timeoutMs: 50 }),
+      { code: "FRAME_PENDING" });
+    await assert.rejects(manager.clickText(launched.id, "Run", undefined, { allowPendingFrame: "yes" as unknown as boolean }),
+      { code: "INVALID_ARGUMENT" });
+    assert.equal(frames[0]?.pending, true);
+    assert.ok(frames.some(({ pending }) => !pending));
+  } finally { await manager.closeAll(); }
 });
 
 test("取消排队中的输入和 resize 后不执行迟到操作", async () => {

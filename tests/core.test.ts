@@ -3,6 +3,7 @@ import test from "node:test";
 import { encodeInput, encodeKey } from "../src/core/input.js";
 import { findText, regionFingerprint } from "../src/core/locator.js";
 import { methodSchemas } from "../src/core/protocol.js";
+import { TuiLensError } from "../src/core/errors.js";
 import { clickTextOptions, launchOptions, waitOptions } from "../src/core/validation.js";
 import type { TerminalCell, TerminalSnapshot } from "../src/core/types.js";
 
@@ -76,6 +77,10 @@ test("按键编码跟随应用光标模式与明确组合", () => {
 });
 
 test("0.4 新契约严格校验启动应答、点击命中区和光标等待", () => {
+  for (const colorMode of ["truecolor", "ansi256", "none"] as const) {
+    assert.equal(methodSchemas.launch.safeParse({ command: "node", colorMode }).success, true);
+    launchOptions({ command: "node", colorMode });
+  }
   launchOptions({ command: "node", protocolReplies: { mode: "auto", maxLatencyMs: 250 } });
   clickTextOptions({ hitbox: { left: 1, right: 3, top: 0, bottom: 0 }, point: "right",
     offset: { x: -1, y: 0 }, button: "left" });
@@ -87,10 +92,30 @@ test("0.4 新契约严格校验启动应答、点击命中区和光标等待", (
   }).success, true);
   assert.throws(() => launchOptions({ command: "node", protocolReplies: { mode: "late" as "auto" } }),
     { code: "INVALID_ARGUMENT" });
+  assert.throws(() => launchOptions({ command: "node", colorMode: 256 as unknown as "ansi256" }),
+    (error: unknown) => error instanceof TuiLensError && error.code === "INVALID_ARGUMENT"
+      && (error.details as { received?: unknown }).received === 256);
   assert.throws(() => clickTextOptions({ hitbox: { left: -1 } }), { code: "INVALID_ARGUMENT" });
+  assert.throws(() => clickTextOptions({ allowPendingFrame: "yes" as unknown as boolean }), { code: "INVALID_ARGUMENT" });
+  assert.equal(methodSchemas.clickText.safeParse({ id: "00000000-0000-4000-8000-000000000000",
+    text: "Run", options: { allowPendingFrame: true } }).success, true);
   assert.throws(() => waitOptions({ conditions: [{ kind: "cursor" }] }), { code: "INVALID_ARGUMENT" });
   assert.equal(methodSchemas.wait.safeParse({
     id: "00000000-0000-4000-8000-000000000000",
     conditions: [{ kind: "cursor" }],
   }).success, false);
+});
+
+test("翻页和首尾导航使用独立滚轮契约，不突破单次事件上限", () => {
+  const action = { type: "scroll", x: 7, y: 1, direction: "down", unit: "page" } as const;
+  assert.equal(encodeInput(action, snapshot), "\x1b[<65;8;2M".repeat(6));
+  assert.equal(methodSchemas.input.safeParse({ id: "00000000-0000-4000-8000-000000000000",
+    action: { ...action, amount: 3 } }).success, true);
+  assert.equal(encodeInput({ type: "scroll", x: 7, y: 1, to: "bottom" }, snapshot),
+    "\x1b[<65;8;2M".repeat(2000));
+  assert.equal(encodeInput({ type: "scroll", x: 7, y: 1, to: "top" }, snapshot),
+    "\x1b[<64;8;2M".repeat(2000));
+  assert.throws(() => encodeInput({ ...action, amount: 101 }, snapshot), { code: "INVALID_ARGUMENT" });
+  assert.equal(methodSchemas.input.safeParse({ id: "00000000-0000-4000-8000-000000000000",
+    action: { type: "scroll", x: 7, y: 1, to: "top", amount: 3 } }).success, false);
 });

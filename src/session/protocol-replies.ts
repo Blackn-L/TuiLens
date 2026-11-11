@@ -69,8 +69,12 @@ export class ProtocolReplyGuard {
 
   shouldForward(data: string): boolean {
     if (this.mode === "suppress") {
-      this.state.protocolRepliesDropped += 1;
-      return false;
+      const kind = REPLY_PATTERNS.find(([, pattern]) => pattern.test(data))?.[0];
+      if (kind) {
+        this.pending.get(kind)?.shift();
+        this.state.protocolRepliesDropped += 1;
+        return false;
+      }
     }
     if (this.mode === "forward") {
       this.state.protocolRepliesForwarded += 1;

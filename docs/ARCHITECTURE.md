@@ -25,11 +25,13 @@ scenarios do not import CLI implementations. `TerminalEngine` is the replaceable
 - Received output is batched, then applied in order. Input and resize seal earlier batches before entering the queue.
 - A capture reads state and PNG behind one observation barrier; newer output queues until capture ends.
 - Synchronized output must finish before capture. `FRAME_PENDING` retries happen outside the queue.
+- Explicit `clickText.allowPendingFrame` permits pending character-buffer targeting while retaining the region guard; screenshots remain strict.
+- Wheel input supports page expansion and bounded top/bottom navigation; it does not invent application-independent absolute scroll offsets.
 - Image decode is part of ordered processing. Only enabled protocols are advertised.
 - Resize delivery and application layout completion are separate. Callers wait for visible layout conditions.
 - Input reads lightweight dimensions/modes. Guards are checked immediately before input, and cancelled queued actions are dropped.
 - Simple text waits probe the engine without transferring the full grid until a match; captures still wait for rendering.
-- Automatic terminal replies can be forwarded or dropped by latency policy; screenshots hide the cursor by default while snapshots retain visibility, style and blink metadata.
+- Automatic terminal replies can be forwarded or dropped by latency policy; suppress drops recognized replies rather than all input. Screenshots hide the cursor by default while snapshots retain visibility, style and blink metadata.
 - Capture forces a repaint and validates the grid and PNG dimensions; resize waits for stable canvas geometry.
 - inputAndWait sends one action and waits for observable evidence without automatic retry; timeouts retain accepted-input evidence.
 - A changed global frame rejects a frame guard. A region fingerprint can tolerate animation outside the target.

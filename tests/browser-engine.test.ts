@@ -52,6 +52,9 @@ test("同步输出未提交时只允许轻量状态读取，观察必须明确�
     assert.equal("text" in pending, false);
     await assert.rejects(engine.snapshot(1), { code: "FRAME_PENDING" });
     await assert.rejects(engine.screenshot(), { code: "FRAME_PENDING" });
+    const pendingSnapshot = await engine.snapshot(1, { allowPendingFrame: true });
+    assert.equal(pendingSnapshot.modes.synchronizedOutput, true);
+    await assert.rejects(engine.snapshot(1), { code: "FRAME_PENDING" });
     // 结束序列是另一次写入；调用方必须能先结束观察再让此写入通过。
     await engine.write("\x1b[?2026l");
     assert.equal((await engine.state()).modes.synchronizedOutput, false);

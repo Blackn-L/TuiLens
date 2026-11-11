@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added explicit pending-frame `clickText` targeting with unchanged region guards.
+- Added page-unit wheel scrolling and bounded top/bottom navigation across SDK, CLI and MCP.
+- Preserved unrelated input under `protocolReplies:"suppress"` and improved invalid `colorMode` diagnostics.
+- Added real PTY pending-click and MCP `colorMode:"truecolor"` regression coverage.
+
 ## 0.4.0
 
 - Added delayed terminal-reply filtering, `protocolReplies` launch policy and protocol reply metrics.
@@ -31,6 +38,9 @@
 - Initial PTY, browser engine, CLI, MCP, SDK, observation and input support.
 
 ## 简体中文
+
+未发布：新增未提交帧的显式 clickText 定位（保留区域指纹）、按页和首尾滚动导航；
+suppress 不再吞掉无关输入，非法 colorMode 诊断包含收到的值，并补充真实 PTY 与 MCP 回归。
 
 0.4.0：新增迟到终端应答过滤与策略、clickText 命中区、inputAndWait、光标元数据与截图默认隐藏光标、
 截图强制重绘和 resize 网格校验、Windows 裸命令 PATH/PATHEXT 解析，并修复 JSON 命令别名。

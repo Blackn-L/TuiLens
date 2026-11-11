@@ -244,18 +244,20 @@ export class SessionManager {
   /** 原子点击使用已观察目标区域的指纹，动画改变其他区域不使它失效。 */
   async clickText(id: string, text: string, region?: Region, options: ClickTextOptions = {}, control?: OperationControl): Promise<SessionInfo> {
     clickTextOptions(options);
-    const observation = await this.observe(id, { screenshot: false }, control);
-    const { hitbox: _hitbox, point: _point, offset: _offset, button, modifiers, ...matching } = options;
+    const observation = await this.session(id).observe({ screenshot: false }, control,
+      { allowPendingFrame: options.allowPendingFrame ?? false });
+    const { allowPendingFrame, hitbox: _hitbox, point: _point, offset: _offset, button, modifiers, ...matching } = options;
     const matches = findText(observation.snapshot, text, region,
       matching.nth === undefined ? { selection: "unique", ...matching } : matching);
     if (matches.length !== 1) throw new TuiLensError("AMBIGUOUS_MATCH", "点击需要唯一匹配，或显式指定 nth");
     const match = matches[0]!;
     const target = clickTarget(match.region, observation.snapshot.cols, observation.snapshot.rows, options);
-    return this.input(id, {
+    return this.session(id).inputWithFrameOptions({
       type: "click", x: target.point.x, y: target.point.y,
       ...(button === undefined ? {} : { button }),
       ...(modifiers === undefined ? {} : { modifiers }),
-    }, { region: { bounds: target.hitbox, fingerprint: regionFingerprint(observation.snapshot, target.hitbox) } }, control);
+    }, { region: { bounds: target.hitbox, fingerprint: regionFingerprint(observation.snapshot, target.hitbox) } }, control,
+    { allowPendingFrame: allowPendingFrame ?? false }).then((result) => result.session);
   }
 
   async wait(id: string, options: WaitOptions, internal = false): Promise<WaitResult> {

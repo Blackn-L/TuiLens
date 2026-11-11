@@ -40,6 +40,22 @@ clickText 还支持真实命中区：
 hitbox 以文字区域为基准向四周扩展；point 支持 center、left、right、top、bottom。
 扩展区域或最终点击点越界时返回 INVALID_HITBOX，区域指纹覆盖完整命中区。
 
+同步输出始终不提交时，`clickText` 还支持 `options.allowPendingFrame:true`。
+这是显式读取未提交字符缓冲的逃生口，不保证 PNG 稳定；点击前仍重新校验目标区域指纹。
+帧保护、普通观察和截图行为不变。
+
+## 滚动导航
+
+```json
+{ "type": "scroll", "x": 20, "y": 10, "direction": "down", "unit": "page", "amount": 5 }
+{ "type": "scroll", "x": 20, "y": 10, "to": "top" }
+```
+
+`unit:"page"` 将每页展开为当前终端行数。展开前的 `amount` 范围为 1～100。
+`to:"top"`/`"bottom"` 在指定位置发送有界向上/向下滚轮事件序列，不能与 direction、unit、amount 同用。
+这是应用级导航请求，不是历史绝对行号寻址。应用须启用字符格 SGR 鼠标上报；
+应用的回滚容量和每次事件滚动行数仍生效。需要拖滚动条时用 drag，应用支持按键时也可用 Home、End、PageUp、PageDown。
+
 ## 保护操作与拖拽
 
 ```json
@@ -93,6 +109,14 @@ inputAndWait 只发送一次输入，不自动重发。空条件时等待至少�
 
 cursor 条件可组合 x、y、visible、style、blink，全部字段按 AND 匹配。
 observe/compare 的 cursor 可设为 hide（默认）或 show；快照始终返回光标元数据。
+
+## 自动终端应答
+
+`protocolReplies.mode:"auto"` 只放行在 `maxLatencyMs`（默认 250）内匹配查询的已知应答。
+`"forward"` 不过滤；`"suppress"` 丢弃完整 DA1/DA2、CPR/DSR 等已知应答。
+suppress 保留无关输入，不再吞掉所有 PTY 输入。过滤针对渲染器应答分片；
+应用在 cooked/echo 模式查询时，仍应优先修正应用 TTY 模式，或使用应用探测开关及启动时的 suppress。
+可通过 metrics 查看转发/丢弃计数。suppress 不能替代应用正确的 TTY 模式处理。
 
 ```json
 {

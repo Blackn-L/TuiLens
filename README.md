@@ -21,7 +21,9 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 - **Reliable targeting:** region and cell-style filters, unique/nth matches, frame or region guards, and conditional waits.
 - **Input confirmation:** `input-wait` sends one action, then waits for text, size, stability or cursor evidence.
 - **Hit-area control:** `clickText` accepts hitbox/point/offset for the real clickable area beside a label.
-- **Terminal reply guard:** late or unmatched DA1/DA2, CPR/DSR and related automatic replies are dropped by default.
+- **Pending-frame clicks:** opt in to `allowPendingFrame` when a synchronized frame prevents otherwise safe text targeting.
+- **Scroll navigation:** wheel input supports page units and bounded top/bottom navigation in application scrollback.
+- **Terminal reply guard:** late or unmatched DA1/DA2, CPR/DSR and related automatic replies are dropped by default; `suppress` preserves ordinary input.
 - **Scenario runner:** declarative steps with failure screenshots, reports, and automatic session cleanup.
 - **Agent interfaces:** shared CLI/MCP operations and a directly importable SDK.
 
@@ -113,6 +115,18 @@ node dist/src/interfaces/cli.js wait SESSION_ID --stable 250 --region 0,0,40,10
 Use `hitbox`/`point`/`offset` to target padding or an arrow beside the label, and optionally specify the mouse button.
 The JSON interface additionally supports `style`, `count`, `afterFrameId`, and input guards.
 A region fingerprint rejects a changed target while allowing unrelated animation elsewhere.
+For a synchronized output frame that never closes, set `options.allowPendingFrame:true` explicitly on `clickText`.
+It reads the pending character buffer and retains the target-region fingerprint check. It does not provide a stable screenshot
+or bypass `frameId` guards. Ordinary observation and screenshots still require the frame to finish.
+
+```json
+{ "type": "scroll", "x": 20, "y": 10, "direction": "down", "unit": "page", "amount": 5 }
+{ "type": "scroll", "x": 20, "y": 10, "to": "top" }
+```
+
+Scroll coordinates select the hovered application region. Page units expand to terminal rows;
+top/bottom use bounded wheel-event sequences, so application-specific line consumption and scrollback limits still apply.
+`amount` remains capped at 100 per call. Use explicit drag operations for a scrollbar that requires dragging.
 
 All commands accept `--json`, `--file`, or `--stdin` for structured parameters.
 See [protocol examples](docs/PROTOCOL.md).
@@ -192,7 +206,7 @@ Set `TUILENS_HOME` to isolate its state directory (default: `~/.tuilens`). No pu
 - Kitty support is a documented subset; no external-file/shared-memory transport, animation, compression, or arbitrary layers.
 - Mouse input requires character-based SGR mode. System IME windows and system clipboard behavior are outside this renderer.
 - Screenshots hide the cursor by default; snapshots still expose visibility, style and blink, but real host cursor and IME behavior cannot be verified.
-- `protocolReplies: "auto"` forwards only timely, query-matched known replies. If an app probes while its TTY already echoes, use `suppress` or an app-side probe switch.
+- `protocolReplies: "auto"` forwards only timely, query-matched known replies. `suppress` drops only recognized complete replies, not arbitrary input. If an app probes while its TTY already echoes, use `suppress` or an app-side probe switch.
 - Browser parsing, rendering, capture and recording have overhead. `metrics` is lightweight, but does not remove the renderer's cost.
 - Replay reproduces output, not application behavior. Stable regions do not prove an application has finished all work.
 - Windows `node-pty 1.1.0` may print `AttachConsole failed` during cleanup; verify process termination and retain diagnostics.

@@ -223,9 +223,9 @@ export async function createBrowserEngine(options: BrowserEngineOptions): Promis
       await assertFrameReady();
       return page.evaluate((value) => window.__tuilens.hasText(value), text);
     },
-    async snapshot(frameId): Promise<TerminalSnapshot> {
+    async snapshot(frameId, options): Promise<TerminalSnapshot> {
       assertOpen();
-      await assertFrameReady();
+      if (!options?.allowPendingFrame) await assertFrameReady();
       // write 已保证解析完成。纯状态读取不等待绘制，避免轮询挡住后续协议查询；
       // PNG 仍在同一会话屏障内等待绘制，保持状态与图像对应。
       return page.evaluate((id) => window.__tuilens.snapshot(id), frameId);

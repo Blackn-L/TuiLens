@@ -4,6 +4,18 @@ const dimension = z.number().int().min(2).max(500);
 const coordinate = z.number().int().min(0).max(499);
 const modifiers = z.object({ shift: z.boolean().optional(), alt: z.boolean().optional(), ctrl: z.boolean().optional() }).strict();
 const button = z.enum(["left", "middle", "right"]);
+const scrollSchema = z.object({
+  type: z.literal("scroll"), x: coordinate, y: coordinate,
+  direction: z.enum(["up", "down"]).optional(), unit: z.enum(["line", "page"]).optional(),
+  amount: z.number().int().min(1).max(100).optional(), to: z.enum(["top", "bottom"]).optional(),
+  modifiers: modifiers.optional(),
+}).strict().superRefine((action, context) => {
+  const conflicts = action.to !== undefined
+    && (action.direction !== undefined || action.unit !== undefined || action.amount !== undefined);
+  if (action.to === undefined && action.direction === undefined || conflicts) {
+    context.addIssue({ code: "custom", message: "滚动需要 direction，或仅使用 to:top/bottom" });
+  }
+});
 const cursorCondition = z.object({
   x: coordinate.optional(),
   y: z.number().int().min(0).max(249).optional(),
@@ -39,6 +51,7 @@ export const matchOptionsSchema = z.object({
   nth: z.number().int().min(0).max(125000).optional(),
 }).strict();
 export const clickTextOptionsSchema = matchOptionsSchema.extend({
+  allowPendingFrame: z.boolean().optional(),
   hitbox: z.object({
     left: z.number().int().min(0).max(500).optional(),
     right: z.number().int().min(0).max(500).optional(),
@@ -64,7 +77,7 @@ const guardSchema = z.object({
   frameId: z.number().int().min(0).optional(),
   region: z.object({ bounds: regionSchema, fingerprint: z.string().min(1).max(32 * 1024 * 1024) }).strict().optional(),
 }).strict();
-export const inputSchema = z.discriminatedUnion("type", [
+export const inputSchema = z.union([
   z.object({ type: z.literal("text"), text }).strict(),
   z.object({ type: z.literal("paste"), text }).strict(),
   z.object({ type: z.literal("raw"), data: text }).strict(),
@@ -77,8 +90,7 @@ export const inputSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("drag"), from: z.object({ x: coordinate, y: coordinate }).strict(),
     to: z.object({ x: coordinate, y: coordinate }).strict(), steps: z.number().int().min(1).max(100).optional(),
     button: button.optional(), modifiers: modifiers.optional() }).strict(),
-  z.object({ type: z.literal("scroll"), x: coordinate, y: coordinate,
-    direction: z.enum(["up", "down"]), amount: z.number().int().min(1).max(100).optional(), modifiers: modifiers.optional() }).strict(),
+  scrollSchema,
 ]);
 export const conditionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: text.min(1), region: regionSchema.optional(), absent: z.boolean().optional(),

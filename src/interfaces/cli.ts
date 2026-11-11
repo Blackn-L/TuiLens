@@ -23,7 +23,8 @@ click <id> <x> <y>                   点击字符格
 click-text <id> <文本> [--nth 0]      默认要求唯一匹配，防止重名误点；JSON 支持 hitbox/point/offset
 drag <id> <x1> <y1> <x2> <y2>        带坐标拖拽；支持 --shift/--ctrl/--alt
 mouse-down / mouse-up <id> <x> <y>   独立按住/松开
-scroll <id> <x> <y> <up|down> [数量]  在指定位置滚轮
+scroll <id> <x> <y> <up|down> [数量] [--page]  在指定位置按行或按页滚动
+scroll <id> <x> <y> --top / --bottom         一次定位到回滚区首/尾
 resize <id> <列数> <行数>            变更尺寸，应用重排另行等待
 find <id> <文本> [--region x,y,w,h]   定位宽字符文本
 wait <id> --text <文本> [--region x,y,w,h] [--timeout 10000]
@@ -65,6 +66,7 @@ async function main(): Promise<void> {
       threshold: { type: "string" }, "max-diff": { type: "string" }, speed: { type: "string" },
       "allow-truncated": { type: "boolean" }, nth: { type: "string" }, unique: { type: "boolean" },
       shift: { type: "boolean" }, ctrl: { type: "boolean" }, alt: { type: "boolean" },
+      page: { type: "boolean" }, top: { type: "boolean" }, bottom: { type: "boolean" },
       frame: { type: "string" }, "after-frame": { type: "string" },
       "protocol-replies": { type: "string" }, "protocol-reply-latency": { type: "string" },
       "show-cursor": { type: "boolean" }, screenshot: { type: "boolean" },
@@ -134,7 +136,16 @@ async function main(): Promise<void> {
         x: Number(first), y: Number(second), modifiers } }; break;
       case "drag": method = "input"; params = { id, action: { type: "drag", from: { x: Number(first), y: Number(second) },
         to: { x: Number(third), y: Number(fourth) }, modifiers } }; break;
-      case "scroll": method = "input"; params = { id, action: { type: "scroll", x: Number(first), y: Number(second), direction: third, amount: Number(fourth ?? 3), modifiers } }; break;
+      case "scroll": {
+        if (values.top && values.bottom) throw new TuiLensError("INVALID_ARGUMENT", "--top 与 --bottom 不能同时使用");
+        if ((values.top || values.bottom) && values.page) throw new TuiLensError("INVALID_ARGUMENT", "--page 不能与滚动终点同时使用");
+        method = "input";
+        params = { id, action: values.top || values.bottom
+          ? { type: "scroll", x: Number(first), y: Number(second), to: values.top ? "top" : "bottom", modifiers }
+          : { type: "scroll", x: Number(first), y: Number(second), direction: third,
+            amount: Number(fourth ?? 3), ...(values.page ? { unit: "page" } : {}), modifiers } };
+        break;
+      }
       case "resize": params = { id, cols: Number(first), rows: Number(second) }; break;
       case "find": params = { id, text: first, ...(region ? { region } : {}), options: matchOptions }; break;
       case "click-text": method = "clickText"; params = { id, text: first, ...(region ? { region } : {}), options: matchOptions }; break;

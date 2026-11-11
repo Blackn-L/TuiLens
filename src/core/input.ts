@@ -145,11 +145,22 @@ export function encodeInput(action: InputAction, snapshot: TerminalState): strin
   const modifiers = modifierCode(action.modifiers);
   if (action.type === "move") return mouseEvent(35 | modifiers, coordinates);
   if (action.type === "scroll") {
+    if ("to" in action) {
+      if (action.to !== "top" && action.to !== "bottom") {
+        throw new TuiLensError("INVALID_ARGUMENT", "滚动终点必须为 top 或 bottom");
+      }
+      if (action.to === "top") return mouseEvent(64 | modifiers, coordinates).repeat(2000);
+      return mouseEvent(65 | modifiers, coordinates).repeat(2000);
+    }
+    if (action.unit !== undefined && action.unit !== "line" && action.unit !== "page") {
+      throw new TuiLensError("INVALID_ARGUMENT", "滚动单位必须为 line 或 page");
+    }
+    const amount = (action.amount ?? 3) * (action.unit === "page" ? snapshot.rows : 1);
     integer(action.amount ?? 3, "amount", 1, 100);
     if (action.direction !== "up" && action.direction !== "down") {
       throw new TuiLensError("INVALID_ARGUMENT", "滚轮方向必须为 up 或 down");
     }
-    return mouseEvent((action.direction === "up" ? 64 : 65) | modifiers, coordinates).repeat(action.amount ?? 3);
+    return mouseEvent((action.direction === "up" ? 64 : 65) | modifiers, coordinates).repeat(amount);
   }
   const code = buttonCode(action.button) | modifiers;
   if (action.type === "mouseDown") return mouseEvent(code, coordinates);
