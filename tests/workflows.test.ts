@@ -14,7 +14,7 @@ test("真实终端：区域截图、比较、精确定位、过期保护、输�
   const manager = new SessionManager({ artifactDir: directory });
   try {
     const session = await manager.launch({ command: process.execPath, args: [fixture], cols: 40, rows: 10, recording: {} });
-    await manager.wait(session.id, { conditions: [{ kind: "text", text: "READY" }] });
+    await manager.wait(session.id, { conditions: [{ kind: "text", text: "READY" }, { kind: "text", text: "COLLAPSE" }] });
     await assert.rejects(manager.find(session.id, "Run", undefined, undefined, { selection: "unique" }), { code: "AMBIGUOUS_MATCH" });
     const matches = await manager.find(session.id, "Run", undefined, undefined, { style: { bold: true }, selection: "unique" });
     assert.equal(matches.length, 1);
