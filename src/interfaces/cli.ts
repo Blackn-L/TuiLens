@@ -139,6 +139,9 @@ async function main(): Promise<void> {
       case "scroll": {
         if (values.top && values.bottom) throw new TuiLensError("INVALID_ARGUMENT", "--top 与 --bottom 不能同时使用");
         if ((values.top || values.bottom) && values.page) throw new TuiLensError("INVALID_ARGUMENT", "--page 不能与滚动终点同时使用");
+        if ((values.top || values.bottom) && (third !== undefined || fourth !== undefined)) {
+          throw new TuiLensError("INVALID_ARGUMENT", "--top/--bottom 不能与方向或数量同时使用");
+        }
         method = "input";
         params = { id, action: values.top || values.bottom
           ? { type: "scroll", x: Number(first), y: Number(second), to: values.top ? "top" : "bottom", modifiers }

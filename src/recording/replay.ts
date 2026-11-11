@@ -88,13 +88,17 @@ function parseRecording(text: string, allowTruncated: boolean) {
   return { start, events, truncated: ending.truncated };
 }
 
-async function closeBounded(engine: TerminalEngine): Promise<void> {
+const ABORT_CLEANUP_TIMEOUT_MS = 5_000;
+const COMPLETE_CLEANUP_TIMEOUT_MS = 20_000;
+
+async function closeBounded(engine: TerminalEngine, timeoutMs: number): Promise<void> {
   let timeout: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
       engine.close(),
       new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => reject(new TuiLensError("REPLAY_CLEANUP_TIMEOUT", "回放引擎未在 5 秒内关闭")), 5000);
+        timeout = setTimeout(() => reject(new TuiLensError("REPLAY_CLEANUP_TIMEOUT",
+          `回放引擎未在 ${timeoutMs / 1000} 秒内关闭`)), timeoutMs);
       }),
     ]);
   } finally { clearTimeout(timeout); }
@@ -115,7 +119,8 @@ export async function replayRecording(path: string, manager: ManagerOptions, opt
     ...(manager.fontFamily ? { fontFamily: manager.fontFamily } : {}),
   });
   let closing: Promise<void> | undefined;
-  const close = () => closing ??= closeBounded(engine);
+  const close = () => closing ??= closeBounded(engine,
+    options.signal?.aborted ? ABORT_CLEANUP_TIMEOUT_MS : COMPLETE_CLEANUP_TIMEOUT_MS);
   const onAbort = () => { void close().catch(() => undefined); };
   options.signal?.addEventListener("abort", onAbort, { once: true });
   let frameId = 0;

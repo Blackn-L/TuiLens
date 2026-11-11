@@ -19,6 +19,8 @@ import { replayRecording, type ReplayOptions } from "../recording/replay.js";
 import { compareArtifact, type VisualOptions } from "../visual/artifacts.js";
 import { runScenario } from "../scenario/runner.js";
 
+const MIN_SCREENSHOT_TIMEOUT_MS = 5_000;
+
 /** 应用服务同时供 CLI 与 MCP 使用，不依赖具体传输协议。 */
 export class SessionManager {
   private readonly sessions = new Map<string, ManagedSession>();
@@ -207,7 +209,7 @@ export class SessionManager {
       }, true);
       const observation = screenshot
         ? await session.observe({ screenshot: true }, {
-          timeoutMs: remaining(),
+          timeoutMs: Math.max(MIN_SCREENSHOT_TIMEOUT_MS, remaining()),
           ...(control?.signal ? { signal: control.signal } : {}),
         })
         : waited.observation;
@@ -219,9 +221,10 @@ export class SessionManager {
         elapsedMs: performance.now() - started,
       };
     } catch (error) {
-      if (error instanceof TuiLensError && error.code === "WAIT_TIMEOUT") {
-        const details = error.details && typeof error.details === "object" ? error.details : {};
-        throw new TuiLensError("WAIT_TIMEOUT", error.message, {
+      if (error instanceof TuiLensError) {
+        const details = error.details && typeof error.details === "object" && !Array.isArray(error.details)
+          ? error.details as Record<string, unknown> : {};
+        throw new TuiLensError(error.code, error.message, {
           ...details, accepted: true, inputFrameId: accepted.frameId,
         });
       }

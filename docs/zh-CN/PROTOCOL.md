@@ -106,6 +106,7 @@ stable 比较字符和样式，不比较图片像素。
 inputAndWait 只发送一次输入，不自动重发。空条件时等待至少一个新 frameId；
 成功后返回 session、inputFrameId、cursorBefore、observation 和 elapsedMs。
 超时返回 WAIT_TIMEOUT，并标明 accepted:true 与 inputFrameId。
+启用截图时使用独立的有界采集预算，等待成功不会因截图超时而变成无法判断输入是否送达的失败。
 
 cursor 条件可组合 x、y、visible、style、blink，全部字段按 AND 匹配。
 observe/compare 的 cursor 可设为 hide（默认）或 show；快照始终返回光标元数据。

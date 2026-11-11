@@ -116,6 +116,8 @@ test("翻页和首尾导航使用独立滚轮契约，不突破单次事件上�
   assert.equal(encodeInput({ type: "scroll", x: 7, y: 1, to: "top" }, snapshot),
     "\x1b[<64;8;2M".repeat(2000));
   assert.throws(() => encodeInput({ ...action, amount: 101 }, snapshot), { code: "INVALID_ARGUMENT" });
+  assert.throws(() => encodeInput({ type: "scroll", x: 7, y: 1, to: "top", amount: 3 } as never, snapshot),
+    { code: "INVALID_ARGUMENT" });
   assert.equal(methodSchemas.input.safeParse({ id: "00000000-0000-4000-8000-000000000000",
     action: { type: "scroll", x: 7, y: 1, to: "top", amount: 3 } }).success, false);
 });

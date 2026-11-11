@@ -225,6 +225,7 @@ export interface WaitResult {
 export interface InputWaitOptions {
   /** 为空时只等待输入后至少一个新 frameId。 */
   conditions?: WaitCondition[];
+  /** 仅限制等待；截图启用时另有独立的最小采集预算。 */
   timeoutMs?: number;
 }
 

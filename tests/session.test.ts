@@ -226,6 +226,44 @@ test("inputAndWait 在可观测输出后返回，超时保留已接收证据", {
   } finally { await manager.closeAll(); }
 });
 
+test("inputAndWait 输入后截图失败仍保留已接收证据", { timeout: 10000 }, async () => {
+  const memory = memoryEngine();
+  const engine: TerminalEngine = {
+    ...memory.engine,
+    screenshot: async () => { throw new TuiLensError("OPERATION_TIMEOUT", "截图超时"); },
+  };
+  const manager = new SessionManager({ artifactDir: tmpdir(), engineFactory: async () => engine });
+  try {
+    const session = await manager.launch({ command: process.execPath, args: ["-e",
+      "process.stdin.setRawMode(true);process.stdin.resume();process.stdout.write('READY\\n');process.stdin.once('data',()=>process.stdout.write('ACK\\n'));setInterval(()=>{},1000)"] });
+    await manager.wait(session.id, { conditions: [{ kind: "text", text: "READY" }], timeoutMs: 2000 });
+    await assert.rejects(manager.inputAndWait(session.id, { type: "text", text: "x" }, undefined, {
+      conditions: [{ kind: "text", text: "ACK" }], timeoutMs: 2000,
+    }, undefined, true), (error: unknown) => error instanceof TuiLensError && error.code === "OPERATION_TIMEOUT"
+      && (error.details as { accepted?: boolean; inputFrameId?: number }).accepted === true
+      && typeof (error.details as { inputFrameId?: number }).inputFrameId === "number");
+  } finally { await manager.closeAll(); }
+});
+
+test("FRAME_PENDING 重试等待期间取消返回 ABORTED", async () => {
+  const memory = memoryEngine();
+  const snapshotStarted = deferred<void>();
+  const f = fixture({
+    ...memory.engine,
+    snapshot: async () => {
+      snapshotStarted.resolve();
+      throw new TuiLensError("FRAME_PENDING", "同步帧未提交");
+    },
+  }, tmpdir());
+  const controller = new AbortController();
+  try {
+    const observing = f.session.observe({ screenshot: false }, { signal: controller.signal, timeoutMs: 5000 });
+    await snapshotStarted.promise;
+    controller.abort();
+    await assert.rejects(observing, { code: "ABORTED" });
+  } finally { await f.session.close(); }
+});
+
 test("大批 Unicode 输出按上限拆分且不破坏代理对", async () => {
   const memory = memoryEngine();
   const f = fixture(memory.engine, tmpdir());

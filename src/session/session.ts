@@ -299,7 +299,9 @@ export class ManagedSession {
           signal,
           timeoutMs: Math.max(1, deadline - performance.now()),
         }).catch((timeoutError: unknown) => {
-          if (lastError instanceof TuiLensError) throw lastError;
+          if (lastError instanceof TuiLensError
+            && timeoutError instanceof TuiLensError
+            && timeoutError.code === "OPERATION_TIMEOUT") throw lastError;
           throw timeoutError;
         });
       }

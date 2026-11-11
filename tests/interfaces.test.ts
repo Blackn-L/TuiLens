@@ -127,3 +127,21 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
+
+test("CLI scroll 拒绝顶/底与方向或数量冲突", async () => {
+  const home = await mkdtemp(join(tmpdir(), "tuilens-scroll-conflict-"));
+  try {
+    const result = await run(process.execPath, [
+      cli, "scroll", "00000000-0000-4000-8000-000000000000", "0", "0", "up", "--top",
+    ], { env: { ...process.env, TUILENS_HOME: home }, maxBuffer: 1024 * 1024 })
+      .catch((error: { stdout?: string }) => error);
+    const payload = JSON.parse((result as { stdout?: string }).stdout ?? "{}") as {
+      ok: boolean;
+      error?: { code?: string };
+    };
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error?.code, "INVALID_ARGUMENT");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});

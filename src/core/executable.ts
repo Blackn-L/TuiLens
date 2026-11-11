@@ -63,7 +63,9 @@ export async function resolveExecutable(
   const win = path.win32;
   const pathext = environmentValue(options.env, "PATHEXT") ?? DEFAULT_PATHEXT;
   const extensions = extensionCandidates(pathext);
-  const hasExtension = win.extname(command).length > 0;
+  const commandExtension = win.extname(command).toLowerCase();
+  const hasExtension = commandExtension.length > 0
+    && extensions.some((extension) => extension.toLowerCase() === commandExtension);
   const explicitPath = win.isAbsolute(command) || WINDOWS_PATH_SEPARATOR.test(command);
   const candidates: string[] = [];
 

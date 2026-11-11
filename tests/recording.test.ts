@@ -109,6 +109,17 @@ test("回放应用输出和 resize，但不会执行录制输入", async () => {
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test("成功回放允许引擎清理超过 5 秒", { timeout: 20000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tuilens-replay-slow-close-"));
+  const memory = fake({ close: async () => { await sleep(5100); } });
+  try {
+    const path = await recording(directory, [{ type: "end", truncated: false, atMs: 0 }]);
+    const result = await replayRecording(path, { artifactDir: directory, engineFactory: async () => memory.engine });
+    assert.equal(result.events, 1);
+    assert.equal(result.snapshot.text, "REPLAY");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test("快照内取消不会继续截图或写出成功产物", async () => {
   const directory = await mkdtemp(join(tmpdir(), "tuilens-replay-snapshot-abort-"));
   const controller = new AbortController();

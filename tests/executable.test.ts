@@ -31,6 +31,22 @@ test("Windows 裸命令按 PATH/PATHEXT 解析并优先原生可执行文件", {
   }
 });
 
+test("Windows 版本化文件名仍补 PATHEXT", { skip: !windows }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tuilens-exec-versioned-"));
+  try {
+    await writeFile(join(directory, "python3.11.exe"), "");
+    const resolved = await resolveExecutable("python3.11", {
+      cwd: directory,
+      env: { PATH: directory, PATHEXT: ".EXE" },
+      platform: "win32",
+    });
+    assert.equal(resolved.file, join(directory, "python3.11.exe"));
+    assert.equal(resolved.resolved, join(directory, "python3.11.exe"));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("Windows 显式相对/绝对路径可省略扩展名", { skip: !windows }, async () => {
   const directory = await mkdtemp(join(tmpdir(), "tuilens-exec-path-"));
   try {

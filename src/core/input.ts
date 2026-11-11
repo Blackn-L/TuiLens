@@ -146,6 +146,10 @@ export function encodeInput(action: InputAction, snapshot: TerminalState): strin
   if (action.type === "move") return mouseEvent(35 | modifiers, coordinates);
   if (action.type === "scroll") {
     if ("to" in action) {
+      const conflicting = action as typeof action & { direction?: unknown; unit?: unknown; amount?: unknown };
+      if (conflicting.direction !== undefined || conflicting.unit !== undefined || conflicting.amount !== undefined) {
+        throw new TuiLensError("INVALID_ARGUMENT", "滚动终点不能与方向、单位或数量同时使用");
+      }
       if (action.to !== "top" && action.to !== "bottom") {
         throw new TuiLensError("INVALID_ARGUMENT", "滚动终点必须为 top 或 bottom");
       }

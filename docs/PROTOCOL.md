@@ -124,6 +124,7 @@ add a visible layout condition after resize. `stable` compares characters and st
 `inputAndWait` sends the input exactly once and never retries it. With no conditions it waits for at least one new `frameId`.
 Success returns `session`, `inputFrameId`, `cursorBefore`, `observation` and `elapsedMs`.
 A timeout returns `WAIT_TIMEOUT` with `accepted: true` and `inputFrameId`.
+A requested screenshot uses a separate bounded capture budget, so a successful wait is not turned into an ambiguous input failure.
 
 A cursor condition can combine `x`, `y`, `visible`, `style` and `blink` with AND semantics.
 `observe`/`compare` accept `cursor: "hide"` (default) or `"show"`; snapshots always include cursor metadata.
