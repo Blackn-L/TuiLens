@@ -24,6 +24,8 @@ Inputs must be regular files when using the artifact API. Reads are bounded from
 The decoder accepts static, non-interlaced 8-bit PNG only: 32 MiB compressed, maximum side 8192,
 maximum 16777216 pixels, with container/CRC checks before accepting decoded output.
 
-Fix font, browser, scale, terminal size and image mode for each baseline. Mask only known nondeterministic regions.
+Fix font, browser, renderer, scale, terminal size and image mode for each baseline. The actual renderer is
+written to observation and comparison metadata; re-record baselines when switching between `dom` and `webgl`.
+Mask only known nondeterministic regions.
 Captures hide the cursor by default; set `cursor: "show"` when cursor pixels are part of the expected baseline.
 Accepting a new baseline is an explicit file operation; comparisons never approve updates automatically.

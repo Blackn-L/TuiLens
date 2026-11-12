@@ -17,6 +17,7 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 ## 功能
 
 - **原生图片：** 按需启用 SIXEL、iTerm2 OSC 1337 内联图片和有界 Kitty 子集，支持 Unicode 虚拟放置。
+- **绘制后端：** 默认继续使用 DOM；可按需启用 WebGL，获得连续块字符和高保真截图。实际 renderer 会随会话和视觉产物回传、记录。
 - **视觉测试：** 字符格区域截图、PNG 比较、像素遮罩、差异图与报告。
 - **输入操作：** 按键、括号粘贴、点击、按住/释放、拖拽、带位置滚轮和修饰键。
 - **录制回放：** 有容量限制的输出/输入/resize 记录；离线回放不执行录制的输入。
@@ -138,6 +139,11 @@ CLI、MCP 和 SDK 的结构化错误同时提供 `messageEn` 与 `messageZh`，`
 使用 `launch --images sixel`、`launch --images iterm` 或 `launch --images all`，默认 `off`。
 `iterm` 启用 OSC 1337 内联图片及分段传输。`all` 包含三种已实现的图片协议，
 不代表完整 Kitty 或 OSC 1337 扩展兼容。
+
+`launch --renderer webgl` 启用 xterm.js WebGL 绘制；默认是 `--renderer dom`。需要在截图中保证块字符/框线连续时
+建议使用 WebGL。它可能把字符格宽取整（例如 160 列从 1500px 变为 1440px），切换后应重新录制视觉基准。
+`session.renderer`、录制头、scenario/perf 环境、观察 JSON 和比较 JSON 都会记录实际 renderer。
+WebGL 无法启动时会回退 DOM 并回传 `dom`，不会静默声称使用了 WebGL。
 
 ```sh
 node dist/src/interfaces/cli.js observe SESSION_ID --region 0,0,40,10

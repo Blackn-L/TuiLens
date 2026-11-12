@@ -77,6 +77,7 @@ application hands history to the terminal scrollback rather than repainting it i
 {
   "command": "node",
   "args": ["app.mjs"],
+  "renderer": "webgl",
   "terminalProfile": "kitty",
   "graphics": { "sixel": false, "kitty": true, "iterm": false }
 }
@@ -85,6 +86,11 @@ application hands history to the terminal scrollback rather than repainting it i
 `terminalProfile` accepts a built-in preset key/name or a JSON profile path. The returned session includes
 the resolved name in `terminalProfile`. `graphics` overrides individual image protocols; legacy `images`
 still works but maps to the same capabilities. See [terminal profiles](PROFILES.md).
+
+`renderer` selects `dom` (default) or `webgl`. The returned session includes the actual value in `renderer`;
+WebGL failure falls back to DOM and returns `dom`. The actual renderer is also written to recording headers,
+scenario/perf environments, observation metadata and visual comparison JSON. WebGL may use integer cell
+widths, so screenshot dimensions can change; re-record visual baselines when switching renderers.
 
 ## Keyboard protocols
 

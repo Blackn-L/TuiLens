@@ -12,7 +12,8 @@ const HELP_EN = `TuiLens ${VERSION} - terminal observation and control for agent
 Usage: tuilens <command> [session-id] [options]
 All results are JSON; coordinates are zero-based character cells.
 
-launch --cwd <path> [--terminal-profile kitty|wezterm|...|<JSON>] [--images off|sixel|iterm|all] [--record]
+launch --cwd <path> [--terminal-profile kitty|wezterm|...|<JSON>] [--images off|sixel|iterm|all]
+       [--renderer dom|webgl] [--record]
        [--protocol-replies auto|forward|suppress] [--protocol-reply-latency 250] -- <program> [args...]
                                      --images is deprecated; use profile or graphics for image capabilities
 launch --json <JSON>                 also accepts --file <path> or --stdin
@@ -59,7 +60,8 @@ const HELP_ZH = `TuiLens ${VERSION} — 面向 Agent 的终端观察与操作
 用法：tuilens <命令> [会话 ID] [参数]
 所有结果为 JSON；坐标从 0 起算、以字符格计量。
 
-launch --cwd <路径> [--terminal-profile kitty|wezterm|...|<JSON>] [--images off|sixel|iterm|all] [--record]
+launch --cwd <路径> [--terminal-profile kitty|wezterm|...|<JSON>] [--images off|sixel|iterm|all]
+       [--renderer dom|webgl] [--record]
        [--protocol-replies auto|forward|suppress] [--protocol-reply-latency 250] -- <程序> [参数...]
                                      --images 已弃用；profile 或 graphics 提供正交的图片能力
 launch --json <JSON>                 也可使用 --file <文件> 或 --stdin
@@ -122,7 +124,7 @@ async function main(): Promise<void> {
       "no-screenshot": { type: "boolean" }, cells: { type: "boolean" }, text: { type: "string" },
       region: { type: "string" }, stable: { type: "string" }, timeout: { type: "string" },
       absent: { type: "boolean" }, exited: { type: "boolean" },
-      images: { type: "string" }, record: { type: "boolean" }, baseline: { type: "string" },
+      images: { type: "string" }, renderer: { type: "string" }, record: { type: "boolean" }, baseline: { type: "string" },
       threshold: { type: "string" }, "max-diff": { type: "string" }, speed: { type: "string" },
       "allow-truncated": { type: "boolean" }, nth: { type: "string" }, unique: { type: "boolean" },
       shift: { type: "boolean" }, ctrl: { type: "boolean" }, alt: { type: "boolean" },
@@ -200,6 +202,7 @@ async function main(): Promise<void> {
           command: program[0], args: program.slice(1), cwd: values.cwd ?? process.cwd(), env,
           cols: Number(values.cols ?? 160), rows: Number(values.rows ?? 50),
           ...(values["color-mode"] ? { colorMode: values["color-mode"] } : {}),
+          ...(values.renderer ? { renderer: values.renderer } : {}),
           ...(values.images ? { images: values.images } : {}),
           ...(values["terminal-profile"] ? { terminalProfile: values["terminal-profile"] } : {}),
           ...(values.record ? { recording: {} } : {}),

@@ -14,6 +14,7 @@ test("真实终端：区域截图、比较、精确定位、过期保护、输�
   const manager = new SessionManager({ artifactDir: directory });
   try {
     const session = await manager.launch({ command: process.execPath, args: [fixture], cols: 40, rows: 10, recording: {} });
+    assert.equal(session.renderer, "dom");
     await manager.wait(session.id, { conditions: [{ kind: "text", text: "READY" }, { kind: "text", text: "COLLAPSE" }] });
     await assert.rejects(manager.find(session.id, "Run", undefined, undefined, { selection: "unique" }), { code: "AMBIGUOUS_MATCH" });
     const matches = await manager.find(session.id, "Run", undefined, undefined, { style: { bold: true }, selection: "unique" });
@@ -47,6 +48,7 @@ test("真实终端：区域截图、比较、精确定位、过期保护、输�
     await manager.input(session.id, { type: "key", key: "Ctrl+q" });
     const final = await manager.wait(session.id, { conditions: [{ kind: "exited" }] });
     const replay = await manager.replay(session.recordingPath!);
+    assert.equal(replay.renderer, "dom");
     assert.equal(replay.snapshot.text, final.observation.snapshot.text);
     assert.match(replay.snapshot.text, /RECORD_FINAL/);
     assert.equal(replay.snapshot.cols, 50);
@@ -81,6 +83,7 @@ test("场景执行保留失败证据，成功和失败都关闭会话", { timeou
     ] });
     assert.ok(!("matrix" in passed));
     assert.equal(passed.pass, true);
+    assert.equal(passed.renderer, "dom");
     assert.deepEqual(manager.list(), []);
     const failed = await manager.scenario({ version: 1, launch, steps: [
       { type: "wait", conditions: [{ kind: "text", text: "READY" }] },
@@ -88,6 +91,7 @@ test("场景执行保留失败证据，成功和失败都关闭会话", { timeou
     ] });
     assert.ok(!("matrix" in failed));
     assert.equal(failed.pass, false);
+    assert.equal(failed.renderer, "dom");
     assert.ok(failed.failureScreenshot);
     assert.ok((await stat(failed.reportPath)).size > 0);
     assert.deepEqual(manager.list(), []);

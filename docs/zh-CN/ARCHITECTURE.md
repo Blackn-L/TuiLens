@@ -5,6 +5,9 @@
 TuiLens 提供面向 Agent 的终端运行环境。首版复用 PTY 与 xterm.js，
 提供会话、观察、等待、操作协议、CLI 和 MCP。
 
+浏览器引擎默认使用 xterm.js DOM renderer；显式启用 WebGL 时加载 `@xterm/addon-webgl`，
+上下文创建失败则回退 DOM。引擎回传实际 renderer，并传播到会话、录制头、scenario/perf 环境和视觉元数据。
+
 ## 分层
 
 - `src/core/`：公开类型、协议、校验、定位、输入编码和有界文件读取。

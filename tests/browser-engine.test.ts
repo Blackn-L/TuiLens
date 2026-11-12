@@ -1,8 +1,49 @@
 import assert from "node:assert/strict";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
+import { PNG } from "pngjs";
 import { createBrowserEngine } from "../src/engine/browser-engine.js";
 import type { TerminalEngine } from "../src/core/types.js";
+
+/** 统计块字符条带中明显低于中位亮度的周期暗列。 */
+function darkBlockColumns(png: PNG, columns = 160, blocks = 120): number[] {
+  const width = Math.round(blocks * png.width / columns);
+  const luminance = (x: number, y: number): number => {
+    const offset = (y * png.width + x) * 4;
+    return 0.2126 * png.data[offset]! + 0.7152 * png.data[offset + 1]! + 0.0722 * png.data[offset + 2]!;
+  };
+  let top = png.height;
+  let bottom = -1;
+  for (let y = 0; y < png.height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * png.width + x) * 4;
+      const r = png.data[offset]!;
+      const g = png.data[offset + 1]!;
+      const b = png.data[offset + 2]!;
+      if (b > 80 && b > r * 1.5 && b > g * 1.2) {
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+      }
+    }
+  }
+  if (bottom < top) return [];
+  const values: number[] = [];
+  for (let x = 0; x < width; x += 1) {
+    let total = 0;
+    for (let y = top; y <= bottom; y += 1) total += luminance(x, y);
+    values.push(total / (bottom - top + 1));
+  }
+  const sorted = [...values].sort((left, right) => left - right);
+  const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
+  const threshold = median * 0.95;
+  const minima: number[] = [];
+  for (let x = 1; x < values.length - 1; x += 1) {
+    if (values[x]! <= values[x - 1]! && values[x]! < values[x + 1]! && values[x]! < threshold) {
+      minima.push(x);
+    }
+  }
+  return minima;
+}
 
 test("快速文本条件读取当前解析状态，支持中文且不等待截图", async () => {
   const engine = await createBrowserEngine({ cols: 40, rows: 8, onData() {} });
@@ -218,4 +259,23 @@ test("会话上限可配置，默认值仍为 8", async () => {
           && (error as { details?: { maxSessions?: number } }).details?.maxSessions === 1);
     } finally { await manager.closeAll(); }
   } finally { await limited.closeAll().catch(() => undefined); }
+});
+
+test("默认 DOM；显式 WebGL 的 120 个块字符不产生周期暗列", { timeout: 30_000 }, async () => {
+  const dom = await createBrowserEngine({ cols: 40, rows: 8, onData() {} });
+  try {
+    assert.equal(dom.renderer, "dom");
+  } finally {
+    await dom.close();
+  }
+
+  const engine = await createBrowserEngine({ cols: 160, rows: 8, renderer: "webgl", onData() {} });
+  try {
+    assert.equal(engine.renderer, "webgl");
+    await engine.write(`\x1b[?25l\x1b[38;2;0;120;255m${"▄".repeat(120)}\x1b[0m`);
+    const png = PNG.sync.read((await engine.screenshot()).png);
+    assert.deepEqual(darkBlockColumns(png), [], "WebGL 块字符条带不应出现 9/10px 周期暗列");
+  } finally {
+    await engine.close();
+  }
 });

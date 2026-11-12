@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { readBoundedFile } from "../core/bounded-file.js";
 import { errorRecord, TuiLensError, type ErrorRecord } from "../core/errors.js";
 import { pick } from "../core/i18n.js";
-import type { InputAction, LaunchOptions, WaitCondition } from "../core/types.js";
+import type { InputAction, LaunchOptions, RendererKind, WaitCondition } from "../core/types.js";
 import type { SessionManager } from "../session/manager.js";
 import { ProcessTreeSampler } from "./resource.js";
 import { perfSpecSchema, type PerfSample, type PerfSpec } from "./schema.js";
@@ -60,6 +60,8 @@ export interface Environment {
   rows: number;
   /** 新报告记录实际 profile；旧基线缺省时仍允许比较。 */
   terminalProfile?: string;
+  /** 新报告记录实际 renderer；旧基线缺省时仍允许比较。 */
+  renderer?: RendererKind;
 }
 
 export interface PerfError {
@@ -285,6 +287,7 @@ async function runPerfSingle(
   let rssIntervalMs = 0;
   let warmupStartupMs: number | null = null;
   let terminalProfile = spec.launch.terminalProfile ?? "xterm-256color";
+  let renderer: RendererKind | undefined;
 
   for (let round = 1; round <= rounds + warmupRounds; round += 1) {
     if (options.signal?.aborted) throw new TuiLensError("ABORTED", "性能运行已取消");
@@ -297,6 +300,7 @@ async function runPerfSingle(
       const session = await manager.launch(launch);
       sessionId = session.id;
       terminalProfile = session.terminalProfile ?? terminalProfile;
+      if (session.renderer) renderer = session.renderer;
       // 就绪条件必须在测量开始前成立：程序进入 raw mode 之前的输入会被吞掉，
       // 否则首个采样会以一个假超时结束整轮。
       if (spec.ready?.length) {
@@ -369,6 +373,7 @@ async function runPerfSingle(
     platform: process.platform, node: process.version, arch: process.arch,
     cols: spec.launch.cols ?? 160, rows: spec.launch.rows ?? 50,
     terminalProfile,
+    ...(renderer ? { renderer } : {}),
   };
   const baseline = options.baseline ? await readBaseline(options.baseline) : undefined;
   const comparisons: MetricComparison[] = [];
@@ -378,7 +383,9 @@ async function runPerfSingle(
       && baseline.environment.cols === environment.cols
       && baseline.environment.rows === environment.rows
       && (baseline.environment.terminalProfile === undefined
-        || baseline.environment.terminalProfile === environment.terminalProfile);
+        || baseline.environment.terminalProfile === environment.terminalProfile)
+      && (baseline.environment.renderer === undefined
+        || baseline.environment.renderer === environment.renderer);
     if (!matches && options.allowEnvironmentMismatch !== true) {
       throw new TuiLensError("PERF_ENVIRONMENT_MISMATCH", "基线环境与当前运行不一致，不能直接比较", {
         baseline: baseline.environment, current: environment,

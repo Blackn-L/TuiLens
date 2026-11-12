@@ -50,6 +50,11 @@ export function launchOptions(options: LaunchOptions): void {
       received: options.colorMode,
     });
   }
+  if (options.renderer !== undefined && !["dom", "webgl"].includes(options.renderer)) {
+    throw new TuiLensError("INVALID_ARGUMENT", "renderer 必须是 dom 或 webgl", {
+      received: options.renderer,
+    });
+  }
   if (options.images !== undefined && !["off", "sixel", "iterm", "all"].includes(options.images)) {
     throw new TuiLensError("INVALID_ARGUMENT", "不支持的 images");
   }
