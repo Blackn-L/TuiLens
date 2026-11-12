@@ -125,8 +125,12 @@ export class SessionManager {
     try {
       if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "管理器在启动期间已关闭");
       const sessionId = randomUUID();
-      if (options.recording) recorder = await RecordingWriter.create(resolve(this.options.artifactDir), sessionId,
-        { type: "header", version: 1, cols, rows, images: options.images ?? "off" }, options.recording.maxBytes);
+      if (options.recording) {
+        const { env: _env, source: _source, ...renderProfile } = profile;
+        recorder = await RecordingWriter.create(resolve(this.options.artifactDir), sessionId,
+          { type: "header", version: 1, cols, rows, images: "off", profile: renderProfile },
+          options.recording.maxBytes);
+      }
       if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "管理器在启动期间已关闭");
       const env = Object.fromEntries(Object.entries(process.env).filter(
         (entry): entry is [string, string] => entry[1] !== undefined,

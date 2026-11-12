@@ -147,6 +147,11 @@ const presets = listTerminalProfiles();
 场景矩阵返回 `matrix: true`，每个 profile 在 `runs` 中有一份独立报告和解析后的 `terminalProfile`。
 性能矩阵返回 `matrix: true`、按 profile 分组的 `runs`，以及包含每个指标 p50/p95/稳定性 的 `table`。
 基线文件只能用于单 profile；多 profile 矩阵会拒绝共享基线，避免悄悄比较不同终端。
+某个 profile 无法启动或没有有效测量时，会生成 `reportPath: null` 的失败项，不会丢弃其他 profile
+已经完成的结果。
+
+录制保存最终解析出的渲染能力和应答，不保存环境变量或 profile 文件路径；回放不依赖外部 JSON
+profile 仍然存在。只有 `images` 的旧录制保持原有回放行为。
 
 `examples/profile-matrix.json` 会用最小 DA1/DA2/XTVERSION/Kitty 探针运行全部内置 preset。
 

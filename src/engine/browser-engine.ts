@@ -125,8 +125,9 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
       fontSize,
       scrollback,
       graphics,
-      replies: profile.replies,
-      ...(profile.capabilities.keyboard ? { keyboard: profile.capabilities.keyboard } : {}),
+      ...(options.profile ? { replies: profile.replies } : {}),
+      ...(options.profile && profile.capabilities.keyboard?.kitty !== undefined
+        ? { keyboard: profile.capabilities.keyboard } : {}),
     });
     await resizeViewport();
   } catch (error) {

@@ -155,6 +155,12 @@ A scenario matrix returns `matrix: true`, one entry in `runs` per profile, each 
 and resolved `terminalProfile`. A performance matrix returns `matrix: true`, a per-profile `runs` array,
 and a `table` with each metric's p50/p95/stability for every profile. A baseline file can be used with one
 profile; multi-profile matrices reject a shared baseline instead of silently comparing different terminals.
+A profile that cannot launch or produces no measurements is reported as a failed entry with
+`reportPath: null`; it does not discard the other profiles' results.
+
+Recordings persist the resolved renderer capabilities and replies without environment variables or the
+profile's filesystem path. Replay therefore does not depend on an external JSON profile remaining available.
+Older recordings that contain only `images` retain their previous replay behavior.
 
 `examples/profile-matrix.json` runs a minimal DA1/DA2/XTVERSION/Kitty probe across all built-in presets.
 

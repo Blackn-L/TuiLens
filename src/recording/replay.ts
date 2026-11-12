@@ -5,14 +5,28 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 import { TuiLensError } from "../core/errors.js";
 import { readBoundedFile } from "../core/bounded-file.js";
-import type { ManagerOptions, TerminalEngine, TerminalSnapshot } from "../core/types.js";
+import type { ManagerOptions, ResolvedTerminalProfile, TerminalEngine, TerminalSnapshot } from "../core/types.js";
 import { createBrowserEngine } from "../engine/browser-engine.js";
+import { profileFileSchema } from "../profiles/resolver.js";
 
 const columns = z.number().int().min(2).max(500);
 const rows = z.number().int().min(2).max(250);
 const time = z.number().finite().min(0).max(7 * 24 * 60 * 60 * 1000);
+export type RecordingTerminalProfile = Omit<ResolvedTerminalProfile, "env" | "source"> & {
+  env?: Record<string, never>;
+};
+
+const recordingProfile = profileFileSchema.omit({ extends: true }).extend({
+  name: z.string().trim().min(1).max(160),
+  env: z.record(z.string(), z.never()).optional(),
+}).strict();
 const header = z.object({ type: z.literal("header"), version: z.literal(1), cols: columns, rows,
-  images: z.enum(["off", "sixel", "iterm", "all"]) }).strict();
+  images: z.enum(["off", "sixel", "iterm", "all"]), profile: recordingProfile.optional() }).strict()
+  .superRefine((value, context) => {
+    if (value.profile && value.images !== "off") {
+      context.addIssue({ code: "custom", message: "新录制应使用 profile 表示最终 graphics，而不是同时保留 images 覆盖" });
+    }
+  });
 const event = z.discriminatedUnion("type", [
   z.object({ type: z.literal("output"), data: z.string().max(1024 * 1024), atMs: time }).strict(),
   z.object({ type: z.literal("resize"), cols: columns, rows, atMs: time }).strict(),
@@ -104,6 +118,26 @@ async function closeBounded(engine: TerminalEngine, timeoutMs: number): Promise<
   } finally { clearTimeout(timeout); }
 }
 
+function replayProfile(profile: z.infer<typeof recordingProfile>): ResolvedTerminalProfile {
+  const resolved = withoutUndefined({
+    ...profile,
+    replies: profile.replies ?? {},
+    env: {},
+    source: { kind: "preset", reference: profile.name },
+  });
+  return resolved as ResolvedTerminalProfile;
+}
+
+function withoutUndefined<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((item) => withoutUndefined(item)) as T;
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => item !== undefined)
+      .map(([key, item]) => [key, withoutUndefined(item)])) as T;
+  }
+  return value;
+}
+
 /** 回放只应用输出和 resize，从不执行录制的命令、输入或其他文件中的代码。 */
 export async function replayRecording(path: string, manager: ManagerOptions, options: ReplayOptions = {}): Promise<ReplayResult> {
   checkAbort(options.signal);
@@ -114,7 +148,9 @@ export async function replayRecording(path: string, manager: ManagerOptions, opt
   const { start, events, truncated } = parseRecording(data.toString("utf8"), options.allowTruncated ?? false);
   checkAbort(options.signal);
   const engine = await (manager.engineFactory ?? createBrowserEngine)({
-    cols: start.cols, rows: start.rows, images: start.images, onData: () => {},
+    cols: start.cols, rows: start.rows,
+    ...(start.profile ? {} : { images: start.images }),
+    ...(start.profile ? { profile: replayProfile(start.profile) } : {}), onData: () => {},
     ...(manager.executablePath ? { executablePath: manager.executablePath } : {}),
     ...(manager.fontFamily ? { fontFamily: manager.fontFamily } : {}),
   });

@@ -23,7 +23,7 @@ const terminalReply = z.string().max(4096)
   .refine((value) => !value.includes("\0") && !/[\r\n]/u.test(value)
     && (value === "" || value.startsWith("\x1b")), "终端应答必须是空串或单个 ESC 序列");
 
-const profileFileSchema = z.object({
+export const profileFileSchema = z.object({
   name: profileName.optional(),
   extends: profileReference.optional(),
   versionRange: z.string().trim().min(1).max(160).optional(),

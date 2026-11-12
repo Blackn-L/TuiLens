@@ -7,6 +7,8 @@
 Opt in with `launch.recording = { maxBytes: 16777216 }` or CLI `--record`.
 The result includes `recordingPath`. NDJSON records contain a versioned header, output, input, resize, exit and end events.
 No command, working directory or environment is copied into the header. Terminal content and input themselves may contain sensitive data.
+The header embeds the resolved renderer profile (capabilities and replies) without its source path or
+environment, so image protocols and scrollback survive replay. Legacy headers without this field remain valid.
 
 The file limit is 4 KiB–64 MiB. Reaching capacity or discarding received output at close/failure marks it truncated.
 A missing end marker is incomplete, not a successful recording. Disabled recording performs no journal I/O.

@@ -256,39 +256,42 @@ async function writeJunit(path: string, method: string, data: unknown): Promise<
     } else appendScenario(result);
   } else if (method === "perf") {
     const result = data as {
-      pass: boolean; matrix?: boolean; runs?: unknown[]; metrics: { phase: string; name: string;
+      pass: boolean; matrix?: boolean; runs?: unknown[]; profile?: string; error?: unknown;
+      metrics: { phase: string; name: string;
         elapsedMs: { p50: number; p95: number; count: number } }[];
       regressions: string[]; errors: { round: number; error: unknown }[];
     };
     const appendPerf = (run: typeof result, suffix = ""): void => {
       suites.push({
         name: `tuilens-perf${suffix}`,
-        cases: [
-          ...run.metrics.map((metric) => ({
-            name: `${metric.phase}/${metric.name} p50=${metric.elapsedMs.p50}ms`,
-            className: "perf",
-            timeMs: metric.elapsedMs.p50,
-            output: `samples=${metric.elapsedMs.count} p50=${metric.elapsedMs.p50}ms p95=${metric.elapsedMs.p95}ms`,
-          })),
-          ...run.errors.map((item) => ({
-            name: `round ${item.round}`,
-            className: "perf",
-            timeMs: 0,
-            failure: failureOf(item.error),
-          })),
-          ...run.regressions.map((text) => ({
-            name: `regression: ${text}`,
-            className: "perf",
-            timeMs: 0,
-            failure: { message: text, type: "PerfRegression" },
-          })),
-        ],
+        cases: run.error !== undefined
+          ? [{ name: `profile ${run.profile ?? suffix}`, className: "perf", timeMs: 0, failure: failureOf(run.error) }]
+          : [
+            ...run.metrics.map((metric) => ({
+              name: `${metric.phase}/${metric.name} p50=${metric.elapsedMs.p50}ms`,
+              className: "perf",
+              timeMs: metric.elapsedMs.p50,
+              output: `samples=${metric.elapsedMs.count} p50=${metric.elapsedMs.p50}ms p95=${metric.elapsedMs.p95}ms`,
+            })),
+            ...run.errors.map((item) => ({
+              name: `round ${item.round}`,
+              className: "perf",
+              timeMs: 0,
+              failure: failureOf(item.error),
+            })),
+            ...run.regressions.map((text) => ({
+              name: `regression: ${text}`,
+              className: "perf",
+              timeMs: 0,
+              failure: { message: text, type: "PerfRegression" },
+            })),
+          ],
       });
     };
     if (result.matrix === true && Array.isArray(result.runs)) {
       for (const [index, item] of result.runs.entries()) {
         const run = item as typeof result & { environment?: { terminalProfile?: string } };
-        appendPerf(run, `:${run.environment?.terminalProfile ?? index + 1}`);
+        appendPerf(run, `:${run.profile ?? run.environment?.terminalProfile ?? index + 1}`);
       }
     } else appendPerf(result);
   } else {

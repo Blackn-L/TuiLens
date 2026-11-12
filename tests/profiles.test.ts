@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ import { runPerf } from "../src/perf/runner.js";
 import type { Observation } from "../src/core/types.js";
 import { rewriteProfileReplies } from "../src/session/protocol-replies.js";
 import { methodSchemas } from "../src/core/protocol.js";
+import { PNG } from "pngjs";
 
 const probe = fileURLToPath(new URL("./fixtures/profile-probe.js", import.meta.url));
 const sample = fileURLToPath(new URL("./fixtures/sample-tui.js", import.meta.url));
@@ -210,6 +211,97 @@ test("场景与性能矩阵按 profiles 列表重复同一工作负载", { timeo
       performance.runs.map((run) => run.environment.terminalProfile),
       ["kitty-0.40", "linux-console-6"],
     );
+  } finally {
+    await manager.closeAll();
+    await rm(directory, { recursive: true, force: true, maxRetries: 5 });
+  }
+});
+
+test("profile 录制在源文件删除后仍保留图片能力", { timeout: 30_000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tuilens-profile-replay-"));
+  const manager = new SessionManager({ artifactDir: directory });
+  const redSixel = "\x1b[2;3H\x1bPq\"1;1;16;12#1;2;100;0;0#1!16~-!16~\x1b\\";
+  const profilePath = join(directory, "sixel.json");
+  const redPixels = (buffer: Buffer): number => {
+    const png = PNG.sync.read(buffer);
+    let count = 0;
+    for (let index = 0; index < png.data.length; index += 4) {
+      if (png.data[index] === 255 && png.data[index + 1] === 0 && png.data[index + 2] === 0) count += 1;
+    }
+    return count;
+  };
+  try {
+    await writeFile(profilePath, JSON.stringify({
+      name: "sixel", capabilities: { graphics: { sixel: true }, scrollback: 321 },
+    }));
+    const session = await manager.launch({
+      command: process.execPath,
+      args: ["-e", `process.stdout.write(${JSON.stringify(redSixel)});setTimeout(()=>{},1000)`],
+      cols: 20, rows: 8, terminalProfile: profilePath, recording: {},
+    });
+    let sessionRed = 0;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const observation = await manager.observe(session.id);
+      sessionRed = redPixels(await readFile(observation.screenshot!.path));
+      if (sessionRed === 192) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.equal(sessionRed, 192);
+    await manager.close(session.id);
+    const header = JSON.parse((await readFile(session.recordingPath!, "utf8")).split("\n")[0]!) as {
+      images: string; profile: { name: string; env?: unknown; source?: unknown; capabilities: { scrollback: number } };
+    };
+    assert.equal(header.images, "off");
+    assert.equal(header.profile.name, "sixel");
+    assert.equal("env" in header.profile, false);
+    assert.equal("source" in header.profile, false);
+    assert.equal(header.profile.capabilities.scrollback, 321);
+    await rm(profilePath);
+    const replay = await manager.replay(session.recordingPath!);
+    assert.equal(redPixels(await readFile(replay.screenshot.path)), 192);
+  } finally {
+    await manager.closeAll();
+    await rm(directory, { recursive: true, force: true, maxRetries: 5 });
+  }
+});
+
+test("单个 profile 失败不会丢弃其他性能矩阵结果", { timeout: 60_000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tuilens-profile-matrix-errors-"));
+  const manager = new SessionManager({ artifactDir: directory });
+  try {
+    const result = await runPerf(manager, {
+      directory,
+      spec: {
+        version: 1,
+        launch: { command: process.execPath, args: [sample], cols: 40, rows: 8 },
+        profiles: ["missing-profile", "linux"],
+        ready: [{ kind: "text", text: "READY" }],
+        rounds: 1,
+        repeats: 1,
+        measure: { processTree: false },
+        phases: [{
+          name: "matrix",
+          samples: [{
+            name: "toggle", input: { type: "text", text: "g" },
+            observe: [{ kind: "text", text: "UPDATED" }], timeoutMs: 5000,
+          }],
+        }],
+      },
+    });
+    assert.ok("matrix" in result && result.matrix);
+    assert.equal(result.pass, false);
+    assert.equal(result.runs.length, 2);
+    const [failed, passed] = result.runs;
+    assert.ok(failed && "profile" in failed);
+    assert.equal(failed.profile, "missing-profile");
+    assert.equal(failed.reportPath, null);
+    assert.equal(failed.error.code, "PERF_NO_DATA");
+    assert.equal(failed.error.message, "性能运行没有产生任何有效轮次");
+    assert.ok(passed && "rounds" in passed);
+    assert.equal(passed.pass, true);
+    assert.equal(passed.environment.terminalProfile, "linux-console-6");
+    assert.equal(result.table.length, 1);
+    assert.equal((await readFile(result.reportPath, "utf8")).includes("missing-profile"), true);
   } finally {
     await manager.closeAll();
     await rm(directory, { recursive: true, force: true, maxRetries: 5 });

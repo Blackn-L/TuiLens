@@ -111,7 +111,21 @@ export interface PerfMatrixResult {
   reportPath: string;
   profiles: string[];
   table: PerfMatrixRow[];
-  runs: PerfResult[];
+  runs: PerfMatrixRun[];
+}
+
+export interface PerfMatrixFailure {
+  pass: false;
+  reportPath: null;
+  profile: string;
+  environment: Environment;
+  error: PerfError["error"];
+}
+
+export type PerfMatrixRun = PerfResult | PerfMatrixFailure;
+
+function isMatrixRunSuccess(run: PerfMatrixRun): run is PerfResult {
+  return run.reportPath !== null;
 }
 
 export type PerfRunResult = PerfResult | PerfMatrixResult;
@@ -195,17 +209,33 @@ async function runPerfMatrix(
     throw new TuiLensError("INVALID_ARGUMENT", "多 profile 矩阵不能共享单个性能基线；请按 profile 分别运行");
   }
   const { profiles: _profiles, ...base } = spec;
-  const runs: PerfResult[] = [];
+  const runs: PerfMatrixRun[] = [];
   for (const profile of profiles) {
     if (options.signal?.aborted) throw new TuiLensError("ABORTED", "性能运行已取消");
-    runs.push(await runPerfSingle(manager, {
-      ...base,
-      launch: { ...base.launch, terminalProfile: profile } as LaunchOptions,
-    }, options));
+    try {
+      runs.push(await runPerfSingle(manager, {
+        ...base,
+        launch: { ...base.launch, terminalProfile: profile } as LaunchOptions,
+      }, options));
+    } catch (error) {
+      if (options.signal?.aborted) throw error;
+      runs.push({
+        pass: false,
+        reportPath: null,
+        profile,
+        environment: {
+          platform: process.platform, node: process.version, arch: process.arch,
+          cols: base.launch.cols ?? 160, rows: base.launch.rows ?? 50,
+          terminalProfile: profile,
+        },
+        error: describeError(error),
+      });
+    }
   }
   const table: PerfMatrixRow[] = [];
   const rows = new Map<string, PerfMatrixRow>();
   for (const run of runs) {
+    if (!isMatrixRunSuccess(run)) continue;
     const profile = run.environment.terminalProfile ?? "unknown";
     for (const metric of run.metrics) {
       const key = `${metric.phase}\u0000${metric.name}`;

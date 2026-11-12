@@ -55,7 +55,7 @@ export interface RuntimeOptions {
   fontSize: number;
   scrollback: number;
   graphics: Required<TerminalGraphicsCapabilities>;
-  replies: TerminalReplies;
+  replies?: TerminalReplies;
   keyboard?: TerminalKeyboardCapabilities;
 }
 
@@ -335,24 +335,26 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
   const respond = (data: string | undefined): void => {
     if (data) void host.__tuilensData(data);
   };
-  listeners.push(terminal.parser.registerCsiHandler({ final: "c" }, (params) => {
-    if (firstParam(params) === 0) respond(options.replies.da1);
-    return true;
-  }));
-  listeners.push(terminal.parser.registerCsiHandler({ prefix: ">", final: "c" }, (params) => {
-    if (firstParam(params) === 0) respond(options.replies.da2);
-    return true;
-  }));
-  listeners.push(terminal.parser.registerCsiHandler({ prefix: ">", final: "q" }, (params) => {
-    if (firstParam(params) === 0) respond(options.replies.xtversion);
-    return true;
-  }));
-  listeners.push(terminal.parser.registerCsiHandler({ prefix: "?", final: "u" }, (params) => {
-    if (firstParam(params) === 0 && options.keyboard?.kitty !== undefined) {
-      respond(`\x1b[?${options.keyboard.kitty}u`);
-    }
-    return true;
-  }));
+  if (options.replies) {
+    listeners.push(terminal.parser.registerCsiHandler({ final: "c" }, (params) => {
+      if (firstParam(params) === 0) respond(options.replies?.da1);
+      return true;
+    }));
+    listeners.push(terminal.parser.registerCsiHandler({ prefix: ">", final: "c" }, (params) => {
+      if (firstParam(params) === 0) respond(options.replies?.da2);
+      return true;
+    }));
+    listeners.push(terminal.parser.registerCsiHandler({ prefix: ">", final: "q" }, (params) => {
+      if (firstParam(params) === 0) respond(options.replies?.xtversion);
+      return true;
+    }));
+  }
+  if (options.keyboard?.kitty !== undefined) {
+    listeners.push(terminal.parser.registerCsiHandler({ prefix: "?", final: "u" }, (params) => {
+      if (firstParam(params) === 0) respond(`\x1b[?${options.keyboard?.kitty}u`);
+      return true;
+    }));
+  }
   // 输入和性能采样只读取协议状态，不能隐式遍历整个屏幕或等待动画帧。
   const cursorState = (): CursorState => {
     const buffer = terminal.buffer.active;

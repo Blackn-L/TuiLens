@@ -2,6 +2,7 @@ import { mkdir, open, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import type { ImageProfile, InputAction } from "../core/types.js";
+import type { RecordingTerminalProfile } from "./replay.js";
 import { TuiLensError } from "../core/errors.js";
 
 export interface RecordingHeader {
@@ -10,6 +11,15 @@ export interface RecordingHeader {
   cols: number;
   rows: number;
   images: ImageProfile;
+  profile?: RecordingTerminalProfile;
+}
+
+function sanitizeRecordingHeader(header: RecordingHeader): RecordingHeader {
+  if (!header.profile) return header;
+  const { env: _env, source: _source, ...profile } = header.profile as RecordingTerminalProfile & {
+    env?: Record<string, string>; source?: unknown;
+  };
+  return { ...header, profile };
 }
 export type RecordedEvent =
   | { type: "output"; data: string }
@@ -41,7 +51,7 @@ export class RecordingWriter {
     const path = join(directory, `${id}.recording.jsonl`);
     const file = await open(path, "wx", 0o600);
     const writer = new RecordingWriter(path, file, maxBytes);
-    try { await writer.line(header); } catch (error) { await file.close(); throw error; }
+    try { await writer.line(sanitizeRecordingHeader(header)); } catch (error) { await file.close(); throw error; }
     return writer;
   }
 
