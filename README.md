@@ -2,7 +2,7 @@
 
 **Terminal automation for AI agents.**
 
-[English](README.md) · [简体中文](README.zh-CN.md)
+[English](README.md) · [简体中文](README.zh-CN.md) · [MIT License](LICENSE)
 
 TuiLens runs real terminal applications in a PTY and exposes screenshots, terminal state,
 keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
@@ -11,6 +11,8 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 
 > **Status:** experimental, version 0.4.0. Designed for functional and visual testing.
 > The browser renderer is not a low-overhead performance measurement environment.
+
+[Features](#features) · [Installation](#installation) · [Quick start](#quick-start) · [Interfaces](#interfaces) · [Development](#development) · [Documentation](#documentation) · [License](#license)
 
 ## Features
 
@@ -38,14 +40,15 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 - Windows or Linux; a local Chrome/Chromium installation or Playwright's Chromium.
 - Platform build tools if `node-pty` cannot use a prebuilt binary.
 
-## Quick start
+## Installation
+
+TuiLens is currently run from source. After meeting the requirements above:
 
 ```sh
 git clone https://github.com/Blackn-L/TuiLens.git
 cd TuiLens
 npm ci
 npm run build
-node dist/src/interfaces/cli.js --help
 ```
 
 TuiLens detects a system Chrome/Edge installation. Alternatively:
@@ -55,6 +58,15 @@ npx playwright install chromium
 ```
 
 Set `TUILENS_BROWSER_PATH` to select a specific browser executable.
+
+## Quick start
+
+Inspect the CLI:
+
+```sh
+node dist/src/interfaces/cli.js --help
+```
+
 Run the self-contained scenario from the repository root:
 
 ```sh
@@ -91,6 +103,16 @@ node dist/src/interfaces/cli.js shutdown
 Plain input confirms delivery only; use `input-wait` or an explicit wait for a rendered result. Input is never retried automatically.
 Automatic terminal replies default to `--protocol-replies auto`: only timely, query-matched known replies are forwarded.
 If an application probes while its TTY already echoes, use `--protocol-replies suppress` or the application's own probe switch.
+
+## Interfaces
+
+All interfaces share the same PTY engine and session state. Use the smallest surface that fits the caller.
+
+| Surface | Best for | Entry point | Details |
+| --- | --- | --- | --- |
+| CLI | Shell scripts, CI jobs, and manual probes | `node dist/src/interfaces/cli.js <command>` | [Quick start](#quick-start) · [Protocol examples](docs/PROTOCOL.md) |
+| MCP | Agents that need tool calls and image content | `node /absolute/path/to/TuiLens/dist/src/interfaces/cli.js mcp` over stdio | [MCP client setup](docs/MCP-SETUP.md) |
+| TypeScript SDK | Test suites and embedded automation | `import { SessionManager, terminal } from "./dist/src/index.js"` | [Testing API](#testing-api) · [SDK example](#typescript-sdk) |
 
 ## Language
 
@@ -224,7 +246,7 @@ boundaries are documented in [performance](docs/PERFORMANCE.md).
 The SDK exposes a playwright-style handle for test files:
 
 ```ts
-import { SessionManager, terminal } from "tuilens";
+import { SessionManager, terminal } from "./dist/src/index.js";
 
 const manager = new SessionManager({ artifactDir: "./artifacts" });
 const tui = await terminal(manager, { command: "my-tui", cols: 100, rows: 30 });
@@ -296,7 +318,20 @@ Tests use independent fixtures. Generated captures, recordings, reports, and bui
 The daemon uses a local named pipe on Windows and an abstract Unix socket on Linux, authenticated by a local token.
 Set `TUILENS_HOME` to isolate its state directory (default: `~/.tuilens`). No public HTTP control server is exposed.
 
-[Architecture](docs/ARCHITECTURE.md) · [MCP setup](docs/MCP-SETUP.md) · [Terminal profiles](docs/PROFILES.md) · [Validation](docs/VALIDATION.md) · [Performance](docs/PERFORMANCE.md) · [Roadmap](docs/ROADMAP.md)
+## Documentation
+
+| Topic | English | 简体中文 |
+| --- | --- | --- |
+| Architecture | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | [架构](docs/zh-CN/ARCHITECTURE.md) |
+| MCP setup | [MCP-SETUP.md](docs/MCP-SETUP.md) | [MCP 接入](docs/zh-CN/MCP-SETUP.md) |
+| Protocol | [PROTOCOL.md](docs/PROTOCOL.md) | [协议示例](docs/zh-CN/PROTOCOL.md) |
+| Terminal profiles | [PROFILES.md](docs/PROFILES.md) | [终端能力画像](docs/zh-CN/PROFILES.md) |
+| Recording and scenarios | [RECORDING.md](docs/RECORDING.md) | [录制与场景](docs/zh-CN/RECORDING.md) |
+| Images | [IMAGES.md](docs/IMAGES.md) | [图片支持](docs/zh-CN/IMAGES.md) |
+| Visual comparisons | [VISUAL.md](docs/VISUAL.md) | [视觉比较](docs/zh-CN/VISUAL.md) |
+| Validation | [VALIDATION.md](docs/VALIDATION.md) | [验证](docs/zh-CN/VALIDATION.md) |
+| Performance | [PERFORMANCE.md](docs/PERFORMANCE.md) | [性能](docs/zh-CN/PERFORMANCE.md) |
+| Roadmap | [ROADMAP.md](docs/ROADMAP.md) | [路线](docs/zh-CN/ROADMAP.md) |
 
 ## Limitations
 
@@ -307,8 +342,12 @@ Set `TUILENS_HOME` to isolate its state directory (default: `~/.tuilens`). No pu
 - Browser parsing, rendering, capture and recording have overhead. `metrics` is lightweight, but does not remove the renderer's cost.
 - Replay reproduces output, not application behavior. Stable regions do not prove an application has finished all work.
 - Windows `node-pty 1.1.0` may print `AttachConsole failed` during cleanup; verify process termination and retain diagnostics.
-- No project-wide open-source license has been selected yet. Public visibility does not grant an additional redistribution license.
-  Third-party components retain their own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md).
+
+## License
+
+TuiLens is released under the [MIT License](LICENSE). Copyright (c) 2026 Blackn-L.
+
+Third-party components retain their own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## Contributing
 
