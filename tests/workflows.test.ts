@@ -91,3 +91,38 @@ test("场景执行保留失败证据，成功和失败都关闭会话", { timeou
     assert.deepEqual(manager.list(), []);
   } finally { await manager.closeAll(); await rm(directory, { recursive: true, force: true, maxRetries: 5 }); }
 });
+
+test("观察可以读取视口上方的回滚行，用于断言已滚出屏幕的历史", { timeout: 60_000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tuilens-scrollback-"));
+  const manager = new SessionManager({ artifactDir: directory });
+  // 持续输出，把早期内容推出视口。
+  const script = ["-e", String.raw`
+let n = 0;
+const tick = () => {
+  n += 1;
+  process.stdout.write("HISTORY_" + n + "\r\n");
+  if (n < 60) setTimeout(tick, 5);
+  else process.stdout.write("SCROLL_DONE\r\n");
+};
+tick();
+`];
+  try {
+    const session = await manager.launch({ command: process.execPath, args: script, cols: 40, rows: 6 });
+    await manager.wait(session.id, { conditions: [{ kind: "text", text: "SCROLL_DONE" }], timeoutMs: 30000 });
+    const view = await manager.observe(session.id, { screenshot: false, cells: false });
+    // 早期内容已经离开视口。
+    assert.equal(view.snapshot.text.includes("HISTORY_1"), false);
+    const withHistory = await manager.observe(session.id, {
+      screenshot: false, cells: false, scrollback: 200,
+    });
+    assert.ok(withHistory.snapshot.scrollback);
+    assert.ok(withHistory.snapshot.scrollback!.some((line) => line.includes("HISTORY_1")));
+    // 回滚内容从旧到新排列，最后一行应早于视口。
+    const joined = withHistory.snapshot.scrollback!.join("\n");
+    assert.ok(joined.indexOf("HISTORY_1") < joined.indexOf("HISTORY_50"));
+    // 请求行数少于可用行数时不应被标记为截断。
+    const small = await manager.observe(session.id, { screenshot: false, cells: false, scrollback: 5 });
+    assert.equal(small.snapshot.scrollback!.length, 5);
+    assert.equal(small.snapshot.scrollbackTruncated, undefined);
+  } finally { await manager.closeAll(); await rm(directory, { recursive: true, force: true, maxRetries: 5 }); }
+});

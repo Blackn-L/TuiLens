@@ -18,6 +18,7 @@ export const MCP_TOOLS: Record<McpMethod, string> = {
   compare: "将实际 PNG 与只读基准图比较，输出差异图；遮罩坐标以截图像素计量。",
   replay: "离线重放录制的终端输出与 resize，不执行程序或输入，返回截图。",
   scenario: "运行声明式场景步骤，自动记录失败证据并回收本次会话。",
+  perf: "运行性能场景：按轮次重启被测程序、采样输入到可见结果的耗时与进程树内存，可与基线比较并在劣化时失败。",
 };
 
 export const MCP_TOOL_NAMES = Object.keys(MCP_TOOLS) as McpMethod[];

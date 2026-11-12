@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "launch": {
+    "command": "node",
+    "args": ["examples/perf-tui.mjs"],
+    "cols": 80,
+    "rows": 24
+  },
+  "ready": [{ "kind": "text", "text": "TURN_0" }],
+  "warmupRounds": 1,
+  "rounds": 3,
+  "repeats": 3,
+  "phases": [
+    {
+      "name": "short-history",
+      "samples": [
+        {
+          "name": "add-turn",
+          "input": { "type": "text", "text": "x" },
+          "observe": [{ "kind": "text", "text": "TURN_{{seq}}" }],
+          "timeoutMs": 10000
+        }
+      ]
+    },
+    {
+      "name": "long-history",
+      "setup": [
+        {
+          "type": "repeat",
+          "times": 40,
+          "input": { "type": "text", "text": "x" },
+          "observe": [{ "kind": "text", "text": "TURN_{{seq}}" }],
+          "timeoutMs": 10000
+        }
+      ],
+      "samples": [
+        {
+          "name": "add-turn",
+          "input": { "type": "text", "text": "x" },
+          "observe": [{ "kind": "text", "text": "TURN_{{seq}}" }],
+          "timeoutMs": 10000
+        }
+      ]
+    }
+  ]
+}

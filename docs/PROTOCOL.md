@@ -57,6 +57,36 @@ The target region is still fingerprint-checked immediately before clicking; fram
 The application must enable character-cell SGR mouse reporting; its scrollback size and per-event line consumption still apply.
 Use `drag` for scrollbar dragging or `key` for `Home`, `End`, `PageUp` and `PageDown` when the application handles those keys.
 
+`to:"top"`/`"bottom"` is written to the PTY in 20 batches of 100 events, yielding to the event loop between batches.
+The total event count is unchanged, but the input is no longer one 20 KB burst and the operation can be cancelled.
+A normal wheel scroll remains a single write.
+
+## Scrollback
+
+```json
+{ "id": "SESSION_UUID", "screenshot": false, "scrollback": 200 }
+```
+
+Returns lines above the viewport in `snapshot.scrollback`, oldest first, text only (no cells). The count is
+1–5000. When fewer lines are available than requested, `scrollbackTruncated` is `true`. Use it when the
+application hands history to the terminal scrollback rather than repainting it in an alternate screen.
+
+## Keyboard protocols
+
+`modes.keyboard` reports what the application negotiated:
+
+```json
+{ "kitty": 1, "modifyOtherKeys": 2 }
+```
+
+- `kitty` is the Kitty keyboard protocol flag set (`CSI > flags u` pushes, `CSI < n u` pops, `CSI = flags ; mode u` updates).
+  When non-zero, modified keys are encoded as `CSI code ; modifier u`, so `Shift+Enter` becomes `\x1b[13;2u`.
+- `modifyOtherKeys` is the xterm XTMODKEYS level. At level 2, combinations the traditional encoding cannot express
+  (`Shift+Enter`, `Ctrl+Space`) use `CSI 27 ; modifier ; code ~`.
+- Ctrl+letter keeps its traditional C0 byte (`Ctrl+a` → `\x01`) even under `modifyOtherKeys`, because applications
+  depend on those bytes.
+- Without a negotiated protocol, `Shift+Enter` and `Ctrl+Space` raise `UNSUPPORTED_KEY` instead of silently sending `\r`.
+
 ## Guarded input
 
 ```json

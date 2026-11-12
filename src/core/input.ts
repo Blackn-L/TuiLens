@@ -1,5 +1,5 @@
 import { TuiLensError } from "./errors.js";
-import type { InputAction, Modifiers, TerminalState } from "./types.js";
+import type { InputAction, KeyboardProtocol, Modifiers, TerminalState } from "./types.js";
 import { integer } from "./validation.js";
 
 const CSI = "\x1b[";
@@ -18,7 +18,48 @@ const arrows: Record<string, string> = {
   right: "C", arrowright: "C", left: "D", arrowleft: "D", home: "H", end: "F",
 };
 
-export function encodeKey(key: string, applicationCursorKeys: boolean): string {
+/**
+ * Kitty keyboard protocol 的 unicode-key-code。
+ * `CSI <code> ; <modifier> u` 使用这些值；可打印字符直接使用其码位。
+ */
+const kittyCodes: Record<string, number> = {
+  escape: 27, esc: 27, enter: 13, return: 13, tab: 9, backspace: 127, space: 32,
+  insert: 57348, delete: 57349,
+  left: 57350, arrowleft: 57350, right: 57351, arrowright: 57351,
+  up: 57352, arrowup: 57352, down: 57353, arrowdown: 57353,
+  pageup: 57354, pagedown: 57355, home: 57356, end: 57357,
+  capslock: 57358, scrolllock: 57359, numlock: 57360,
+  printscreen: 57361, pause: 57362, menu: 57363,
+};
+for (let index = 1; index <= 12; index += 1) kittyCodes[`f${index}`] = 57363 + index;
+for (let index = 13; index <= 35; index += 1) kittyCodes[`f${index}`] = 57363 + index;
+
+/** 1 + shift/alt/ctrl 位，与 CSI 1;<n>A 及 kitty/modifyOtherKeys 共用同一掩码。 */
+function modifierValue(modifiers: Set<string>): number {
+  return 1 + (modifiers.has("shift") ? 1 : 0) + (modifiers.has("alt") ? 2 : 0) + (modifiers.has("ctrl") ? 4 : 0);
+}
+
+function kittyEnabled(keyboard: KeyboardProtocol | undefined): boolean {
+  // flag 1 消歧义，flag 8 把所有键都报告为转义序列。
+  return keyboard?.kitty !== undefined && keyboard.kitty > 0;
+}
+
+/** Kitty 模式下的 CSI u；修饰键为 1 时省略参数。 */
+function kittySequence(code: number, modifier: number): string {
+  return modifier === 1 ? `${CSI}${code}u` : `${CSI}${code};${modifier}u`;
+}
+
+/** xterm modifyOtherKeys 的 CSI 27 ; <modifier> ; <code> ~ 形式。 */
+function modifyOtherKeysSequence(code: number, modifier: number): string {
+  return `${CSI}27;${modifier};${code}~`;
+}
+
+function codePointOf(name: string): number | undefined {
+  const characters = [...name];
+  return characters.length === 1 ? characters[0]!.codePointAt(0) : undefined;
+}
+
+export function encodeKey(key: string, applicationCursorKeys: boolean, keyboard?: KeyboardProtocol): string {
   if (typeof key !== "string" || key.length === 0) {
     throw new TuiLensError("INVALID_ARGUMENT", "key 必须非空");
   }
@@ -28,10 +69,35 @@ export function encodeKey(key: string, applicationCursorKeys: boolean): string {
   if (parts.some((part) => !["ctrl", "alt", "shift"].includes(part))) {
     throw new TuiLensError("UNSUPPORTED_KEY", `不支持的按键组合：${key}`);
   }
+  const modifier = modifierValue(modifiers);
+  const kitty = kittyEnabled(keyboard);
+  const otherKeys = keyboard?.modifyOtherKeys !== undefined && keyboard.modifyOtherKeys >= 2;
+  const kittyCode = kittyCodes[name];
+  const codePoint = codePointOf(name);
+
+  // 现代协议：带修饰的功能键、Enter/Tab/Escape/Backspace/Space 以及带 Ctrl/Alt 的字符
+  // 都需要与裸键区分的编码，否则应用无法区分 Shift+Enter 与 Enter。
+  const functional = kittyCode !== undefined;
+  const distinguished = modifiers.has("ctrl") || modifiers.has("alt");
+  if (kitty && (functional || distinguished) && (modifier > 1 || functional)) {
+    const code = kittyCode ?? codePoint;
+    if (code !== undefined) return kittySequence(code, modifier);
+  }
+  if (otherKeys && modifier > 1) {
+    const code = kittyCode ?? codePoint;
+    // modifyOtherKeys 只覆盖 ASCII；功能键仍使用各自的 CSI 形式。
+    // 已有传统控制字符编码的组合（Ctrl+字母 → C0）必须保持原样：
+    // 应用普遍依赖 \x01 之类的字节，改写会破坏既有行为。
+    const hasControlEncoding = modifiers.has("ctrl") && !modifiers.has("alt")
+      && /^[a-z@\[\]\\^_]$/u.test(name);
+    if (code !== undefined && code < 57344 && !hasControlEncoding) {
+      return modifyOtherKeysSequence(code, modifier);
+    }
+  }
+
   const arrow = arrows[name];
   if (arrow) {
     if (modifiers.size === 0) return applicationCursorKeys ? `\x1bO${arrow}` : `${CSI}${arrow}`;
-    const modifier = 1 + (modifiers.has("shift") ? 1 : 0) + (modifiers.has("alt") ? 2 : 0) + (modifiers.has("ctrl") ? 4 : 0);
     return `${CSI}1;${modifier}${arrow}`;
   }
   if (name === "tab" && modifiers.size === 1 && modifiers.has("shift")) return `${CSI}Z`;
@@ -42,7 +108,7 @@ export function encodeKey(key: string, applicationCursorKeys: boolean): string {
     throw new TuiLensError("UNSUPPORTED_KEY", `不支持的 Ctrl 组合：${key}`);
   } else {
     value = plainKeys[name];
-    if (value === undefined && [...name].length === 1) {
+    if (value === undefined && codePoint !== undefined) {
       value = modifiers.has("shift") ? name.toUpperCase() : name;
     } else if (modifiers.has("shift")) {
       throw new TuiLensError("UNSUPPORTED_KEY", `不支持的 Shift 组合：${key}`);
@@ -77,6 +143,33 @@ function position(x: number, y: number, state: TerminalState): string {
 
 function mouseEvent(code: number, coordinates: string, release = false): string {
   return `${CSI}<${code};${coordinates}${release ? "m" : "M"}`;
+}
+
+/** 到达首/尾最多发送的滚轮事件数；与应用无关的上界，避免无限滚动。 */
+const SCROLL_END_EVENTS = 2000;
+/** 每批写入的事件数：让长滚动可被取消并给应用留出消费时间。 */
+const SCROLL_END_BATCH = 100;
+
+/**
+ * 把 `scroll to:"top"|"bottom"` 拆成有界批次。
+ *
+ * 一次性向 PTY 写入 2000 个事件会对应用形成突发输入，
+ * 也让操作无法在中间取消。返回 `undefined` 表示这不是到达端点的滚动。
+ */
+export function encodeScrollBatches(
+  action: InputAction,
+  state: TerminalState,
+): string[] | undefined {
+  if (action.type !== "scroll" || !("to" in action)) return undefined;
+  const coordinates = position(action.x, action.y, state);
+  const modifiers = modifierCode(action.modifiers);
+  const code = (action.to === "top" ? 64 : 65) | modifiers;
+  const event = mouseEvent(code, coordinates);
+  const batches: string[] = [];
+  for (let sent = 0; sent < SCROLL_END_EVENTS; sent += SCROLL_END_BATCH) {
+    batches.push(event.repeat(Math.min(SCROLL_END_BATCH, SCROLL_END_EVENTS - sent)));
+  }
+  return batches;
 }
 
 function encodeDrag(action: Extract<InputAction, { type: "drag" }>, state: TerminalState): string {
@@ -128,7 +221,9 @@ export function encodeInput(action: InputAction, snapshot: TerminalState): strin
     }
     return value;
   }
-  if (action.type === "key") return encodeKey(action.key, snapshot.modes.applicationCursorKeys);
+  if (action.type === "key") {
+    return encodeKey(action.key, snapshot.modes.applicationCursorKeys, snapshot.modes.keyboard);
+  }
   if (!["click", "move", "scroll", "mouseDown", "mouseUp", "drag"].includes(action.type)) {
     throw new TuiLensError("INVALID_ARGUMENT", "不支持的输入操作");
   }
@@ -153,8 +248,8 @@ export function encodeInput(action: InputAction, snapshot: TerminalState): strin
       if (action.to !== "top" && action.to !== "bottom") {
         throw new TuiLensError("INVALID_ARGUMENT", "滚动终点必须为 top 或 bottom");
       }
-      if (action.to === "top") return mouseEvent(64 | modifiers, coordinates).repeat(2000);
-      return mouseEvent(65 | modifiers, coordinates).repeat(2000);
+      // 到达端点由 encodeScrollBatches 分批发送；这里的同步编码只用于单批场景。
+      return encodeScrollBatches(action, snapshot)!.join("");
     }
     if (action.unit !== undefined && action.unit !== "line" && action.unit !== "page") {
       throw new TuiLensError("INVALID_ARGUMENT", "滚动单位必须为 line 或 page");

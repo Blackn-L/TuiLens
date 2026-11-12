@@ -34,9 +34,12 @@ export async function dispatch(manager: SessionManager, method: string, params: 
     }
     case "observe": {
       const args = methodSchemas.observe.parse(result.data);
+      // 未请求字符格时在引擎侧就不构造网格，而不是传完整网格后再剥离。
       return presentObservation(await manager.observe(args.id, {
+        cells: args.includeCells === true,
         ...(args.screenshot === undefined ? {} : { screenshot: args.screenshot }),
         ...(args.region ? { region: args.region } : {}),
+        ...(args.scrollback === undefined ? {} : { scrollback: args.scrollback }),
         ...(args.cursor ? { cursor: args.cursor } : {}),
       }, { signal }), args.includeCells ?? false);
     }
@@ -80,6 +83,18 @@ export async function dispatch(manager: SessionManager, method: string, params: 
       return { ...replayed, snapshot };
     }
     case "scenario": return manager.scenario(methodSchemas.scenario.parse(result.data).specification, signal);
+    case "perf": {
+      const args = methodSchemas.perf.parse(result.data);
+      return manager.perf({
+        spec: args.specification,
+        signal,
+        ...(args.baseline ? { baseline: args.baseline } : {}),
+        ...(args.writeBaseline ? { writeBaseline: args.writeBaseline } : {}),
+        ...(args.maxRegression === undefined ? {} : { maxRegression: args.maxRegression }),
+        ...(args.allowEnvironmentMismatch === undefined
+          ? {} : { allowEnvironmentMismatch: args.allowEnvironmentMismatch }),
+      });
+    }
     case "close": {
       await manager.close(methodSchemas.close.parse(result.data).id);
       return { closed: true };

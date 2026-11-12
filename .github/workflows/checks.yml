@@ -12,7 +12,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,4 +22,60 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run check
-      - run: npm test
+      # 测试输出统一落到 TUILENS_HOME 与 artifacts/，失败时仍要归档截图与 diff。
+      - name: Run tests
+        id: tests
+        run: npm test
+        env:
+          TUILENS_HOME: ${{ runner.temp }}/tuilens
+        continue-on-error: true
+      - name: Upload failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tuilens-evidence-${{ matrix.os }}-${{ github.run_attempt }}
+          path: |
+            artifacts/
+            ${{ runner.temp }}/tuilens/
+          if-no-files-found: ignore
+          retention-days: 14
+      # 上一步保留证据后，这里重新以测试退出码结束任务，避免把失败当成通过。
+      - name: Enforce test result
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
+
+  perf:
+    # 性能冒烟只验证场景能跑通并归档报告；仓库不提交基线，也不拿不同 runner 的
+    # 绝对耗时做回归门禁。
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: Run performance scenario
+        id: perf
+        run: node dist/src/interfaces/cli.js perf --file examples/perf.json
+          --junit artifacts/junit-perf.xml
+        env:
+          TUILENS_HOME: ${{ runner.temp }}/tuilens
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tuilens-perf-${{ github.run_attempt }}
+          path: |
+            artifacts/
+            ${{ runner.temp }}/tuilens/
+          if-no-files-found: ignore
+          retention-days: 30
+      # 归档报告后重新抛出执行失败，避免 perf 场景悄然失效却被当成通过。
+      - name: Enforce performance result
+        if: steps.perf.outcome == 'failure'
+        run: exit 1

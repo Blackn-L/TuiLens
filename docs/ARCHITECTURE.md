@@ -6,17 +6,38 @@
 
 | Directory | Responsibility |
 | --- | --- |
-| `src/core` | Public types, protocol schemas, input encoding, locators, validation, bounded reads |
-| `src/engine` | xterm.js browser adapter, image decoding and rendering, viewport capture |
+| `src/core` | Public types, protocol schemas, input encoding, locators, validation, bounded reads, error catalog |
+| `src/engine` | xterm.js browser adapter, shared browser host, snapshot codec, image decoding and rendering, viewport capture |
 | `src/session` | PTY lifecycle, ordered output, observation barriers, waits and resource limits |
 | `src/recording` | Bounded versioned journals and offline replay |
 | `src/visual` | PNG validation, pixel comparison and diff artifacts |
 | `src/scenario` | Declarative execution and failure reports |
+| `src/perf` | Performance scenarios, process-tree sampling, statistics and baseline comparison |
+| `src/testing` | Playwright-style assertions and JUnit XML rendering |
 | `src/transport` | Authenticated local IPC daemon/client and shared dispatch |
 | `src/interfaces` | CLI and MCP stdio |
 
 Interfaces delegate to the same application service. Protocol schemas are in core;
 scenarios do not import CLI implementations. `TerminalEngine` is the replaceable engine contract.
+
+## Transport and sharing
+
+- A `SessionManager` owns one `BrowserHost`. Each session acquires a reference and gets its own browser
+  context and page; the browser process starts once and is shared. `shutdownEngine` runs after all sessions
+  close, never before.
+- `createBrowserEngine` still creates an isolated host for callers that want one browser per engine.
+- `maxSessions` (default 8, `TUILENS_MAX_SESSIONS`) caps sessions plus offline replays; matrix testing needs a
+  higher value.
+
+## Snapshot codec
+
+The character grid never crosses the Playwright boundary as an object graph. Inside the page it is packed into
+two strings — a token stream per row and a style run-length stream per row — and Node unpacks it into
+`TerminalCell[][]`. Unpacking validates row count, cell count and style coverage; a mismatch raises
+`INVALID_SNAPSHOT` rather than silently filling defaults.
+
+`cells:false` skips packing entirely. Callers that only need text, size, cursor or a screenshot use it;
+`observe` over CLI/MCP does so unless `includeCells` is requested.
 
 ## Contracts
 

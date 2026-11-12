@@ -1,0 +1,77 @@
+/**
+ * 错误码的英文说明。
+ *
+ * 诊断文本本身是中文（面向主要使用者的自然语言），但错误码是稳定契约，
+ * 面向国际用户与自动化工具时还需要一句可读的英文解释。这里为每个码
+ * 提供固定英文摘要；`errorRecord` 会把它作为 `messageEn` 一并返回，
+ * 因此不必改写上百处内联文案，也不会破坏既有错误信息。
+ */
+export const ERROR_MESSAGES_EN: Readonly<Record<string, string>> = {
+  ABORTED: "The operation was cancelled.",
+  AMBIGUOUS_MATCH: "The text matched more than one location; narrow the region or selection.",
+  BROWSER_NOT_FOUND: "The configured browser executable does not exist.",
+  BROWSER_START_FAILED: "The terminal browser could not be started.",
+  DAEMON_START_FAILED: "The local daemon could not be started.",
+  EMPTY_COMPARISON: "Masks cover every pixel, so nothing was compared.",
+  ENGINE_CLOSED: "The terminal engine is already closed.",
+  ENGINE_FAILED: "The terminal engine failed or the browser exited.",
+  EXECUTABLE_NOT_FOUND: "The executable could not be resolved on PATH.",
+  EXECUTABLE_REQUIRES_SHELL: "Batch scripts cannot be launched directly as a PTY executable.",
+  FILE_LIMIT: "The file exceeds the permitted read limit.",
+  FRAME_PENDING: "The application has not finished its synchronized output frame.",
+  IMAGE_DIMENSIONS_MISMATCH: "The compared images have different dimensions.",
+  IMAGE_LIMIT: "The image exceeds the size or pixel limits.",
+  INCOMPLETE_RECORDING: "The recording has no end marker and cannot be replayed as complete.",
+  INVALID_ARGUMENT: "The request arguments are invalid.",
+  INVALID_BASELINE: "The performance baseline file is invalid or unsupported.",
+  INVALID_CWD: "The working directory does not exist or is not a readable directory.",
+  INVALID_FILE: "The path is not a readable regular file.",
+  INVALID_FONT_SIZE: "The font size is outside the supported range.",
+  INVALID_HITBOX: "The click hit area or point lies outside the terminal grid.",
+  INVALID_IMAGE_PROFILE: "The requested image profile is not supported.",
+  INVALID_PERF_SPEC: "The performance scenario is invalid.",
+  INVALID_PNG: "The input is not a valid PNG screenshot.",
+  INVALID_RECORDING: "The recording format or version is not supported.",
+  INVALID_RECORDING_LIMIT: "The recording size limit is outside the supported range.",
+  INVALID_REGION: "The region lies outside the terminal grid.",
+  INVALID_SCENARIO: "The scenario specification is invalid.",
+  INVALID_SIZE: "The terminal grid size is outside the supported range.",
+  INVALID_SNAPSHOT: "The packed snapshot payload is inconsistent with the requested grid.",
+  IPC_CLOSED: "The local IPC connection closed before a reply arrived.",
+  IPC_TIMEOUT: "The local daemon did not respond in time.",
+  MANAGER_CLOSED: "The session manager is already closed.",
+  MOUSE_DRAG_NOT_ENABLED: "The application has not enabled drag or any-motion mouse reporting.",
+  MOUSE_NOT_ENABLED: "The application has not enabled mouse reporting.",
+  NO_MATCH: "No matching text was found.",
+  PASTE_NOT_ENABLED: "The application has not enabled bracketed paste.",
+  PERF_ENVIRONMENT_MISMATCH: "The baseline was recorded in a different environment and cannot be compared directly.",
+  PERF_NO_DATA: "The performance run produced no valid round.",
+  PROCESS_EXITED: "The terminal process has already exited.",
+  PROCESS_START_FAILED: "The terminal process could not be started.",
+  RECORDING_EVENT_LIMIT: "The recording contains more events than the replay limit allows.",
+  REPLAY_CLEANUP_TIMEOUT: "The replay engine did not close in time.",
+  REPLAY_DELAY_LIMIT: "A single replay delay exceeds the allowed maximum.",
+  REPLAY_FAILED: "The replay did not produce a result.",
+  REQUEST_LIMIT: "The request payload exceeds the permitted size.",
+  RESPONSE_LIMIT: "The response exceeds the permitted size.",
+  SESSION_CLOSED: "The session is already closed.",
+  SESSION_LIMIT: "The maximum number of concurrent sessions has been reached.",
+  SESSION_NOT_FOUND: "No session exists with the given ID.",
+  SHUTTING_DOWN: "The daemon is shutting down.",
+  STALE_FRAME: "The referenced frame is stale; observe the session again.",
+  STALE_REGION: "The target region changed; locate the target again.",
+  TRUNCATED_RECORDING: "The recording is truncated and requires explicit approval to replay.",
+  UNAUTHORIZED: "The local connection failed authentication.",
+  UNKNOWN_METHOD: "The requested method is unknown.",
+  UNSUPPORTED_IMAGE: "The image format or request is not supported.",
+  UNSUPPORTED_KEY: "The key or modifier combination cannot be encoded by the negotiated protocol.",
+  UNSUPPORTED_MOUSE_PROTOCOL: "Mouse input requires character-cell SGR encoding (1006).",
+  UNSUPPORTED_PNG: "The PNG uses an interlace, bit depth or color type that comparison does not accept.",
+  VISUAL_MISMATCH: "The visual comparison exceeded the permitted difference.",
+  WAIT_TIMEOUT: "The wait conditions were not satisfied within the timeout.",
+};
+
+/** 未知码回退到通用说明，避免调用方拿到空字符串。 */
+export function englishMessage(code: string): string {
+  return ERROR_MESSAGES_EN[code] ?? "The operation failed; see the code and details for more information.";
+}

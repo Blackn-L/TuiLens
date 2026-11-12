@@ -8,16 +8,17 @@ import { findText, regionFingerprint } from "../core/locator.js";
 import { clickTarget } from "../core/click-target.js";
 import { resolveExecutable } from "../core/executable.js";
 import type {
-  ClickTextOptions, InputAction, InputAndWaitResult, InputGuard, InputWaitOptions, LaunchOptions, ManagerOptions,
-  MatchOptions, Observation, ObserveOptions, Region, SessionInfo, TextMatch, WaitOptions, WaitResult,
+  ClickTextOptions, EngineFactory, InputAction, InputAndWaitResult, InputGuard, InputWaitOptions, LaunchOptions,
+  ManagerOptions, MatchOptions, Observation, ObserveOptions, Region, SessionInfo, TextMatch, WaitOptions, WaitResult,
 } from "../core/types.js";
 import { clickTextOptions, integer, launchOptions, waitOptions } from "../core/validation.js";
-import { createBrowserEngine } from "../engine/browser-engine.js";
+import { createBrowserEngine, createBrowserEngineFactory } from "../engine/browser-engine.js";
 import { ManagedSession, type OperationControl, type SessionMetrics } from "./session.js";
 import { RecordingWriter } from "../recording/writer.js";
 import { replayRecording, type ReplayOptions } from "../recording/replay.js";
 import { compareArtifact, type VisualOptions } from "../visual/artifacts.js";
 import { runScenario } from "../scenario/runner.js";
+import { runPerf, type PerfRunOptions } from "../perf/runner.js";
 
 const MIN_SCREENSHOT_TIMEOUT_MS = 5_000;
 
@@ -31,13 +32,32 @@ export class SessionManager {
   private disposed = false;
   private closing: Promise<void> | undefined;
 
-  constructor(private readonly options: ManagerOptions) {}
+  private readonly maxSessions: number;
+  private readonly engineFactory: EngineFactory;
+  private readonly shutdownEngine: (() => Promise<void>) | undefined;
+
+  constructor(private readonly options: ManagerOptions) {
+    this.maxSessions = options.maxSessions ?? 8;
+    if (!Number.isInteger(this.maxSessions) || this.maxSessions < 1 || this.maxSessions > 128) {
+      throw new TuiLensError("INVALID_ARGUMENT", "maxSessions 必须是 1～128 的整数");
+    }
+    // 默认在管理器内部共享一个浏览器进程；显式工厂仍由调用方决定生命周期。
+    if (options.engineFactory) {
+      this.engineFactory = options.engineFactory;
+    } else {
+      const factory = createBrowserEngineFactory(options.executablePath);
+      this.engineFactory = factory;
+      this.shutdownEngine = () => factory.shutdown();
+    }
+  }
 
   async launch(options: LaunchOptions): Promise<SessionInfo> {
     launchOptions(options);
     if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
-    if (this.sessions.size + this.pendingLaunches.size + this.offline.size >= 8) {
-      throw new TuiLensError("SESSION_LIMIT", "最多同时保留 8 个会话，请先关闭不再使用的会话");
+    if (this.sessions.size + this.pendingLaunches.size + this.offline.size >= this.maxSessions) {
+      throw new TuiLensError("SESSION_LIMIT", `最多同时保留 ${this.maxSessions} 个会话，请先关闭不再使用的会话`, {
+        maxSessions: this.maxSessions,
+      });
     }
     const pending = this.launchProcess(options);
     this.pendingLaunches.add(pending);
@@ -60,7 +80,7 @@ export class SessionManager {
     let pty: nodePty.IPty | undefined;
     let session: ManagedSession | undefined;
     let recorder: RecordingWriter | undefined;
-    const engine = await (this.options.engineFactory ?? createBrowserEngine)({
+    const engine = await this.engineFactory({
       cols, rows,
       images: options.images ?? "off",
       onData: (data) => { session?.protocolResponse(data); },
@@ -154,18 +174,26 @@ export class SessionManager {
 
   async replay(path: string, options: ReplayOptions = {}) {
     if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
-    if (this.sessions.size + this.pendingLaunches.size + this.offline.size >= 8) {
-      throw new TuiLensError("SESSION_LIMIT", "会话和回放任务总数不能超过 8");
+    if (this.sessions.size + this.pendingLaunches.size + this.offline.size >= this.maxSessions) {
+      throw new TuiLensError("SESSION_LIMIT", `会话和回放任务总数不能超过 ${this.maxSessions}`, {
+        maxSessions: this.maxSessions,
+      });
     }
     const controller = new AbortController();
     const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
-    const task = replayRecording(path, this.options, { ...options, signal });
+    // 回放与实时会话共享同一浏览器宿主，避免额外进程干扰性能测量。
+    const task = replayRecording(path, { ...this.options, engineFactory: this.engineFactory }, { ...options, signal });
     this.offline.set(task, controller);
     try { return await task; } finally { this.offline.delete(task); }
   }
   scenario(specification: unknown, signal?: AbortSignal) { return runScenario(this, specification, this.options.artifactDir, signal); }
+  perf(options: Omit<PerfRunOptions, "directory"> & { directory?: string }) {
+    return runPerf(this, { ...options, directory: options.directory ?? this.options.artifactDir });
+  }
   async compare(id: string, options: VisualOptions, control?: OperationControl) {
+    // 视觉比较只需要 PNG；不为一次图像比对传输整屏字符格。
     const observation = await this.observe(id, {
+      cells: false,
       ...(options.region ? { region: options.region } : {}),
       ...(options.cursor ? { cursor: options.cursor } : {}),
     }, control);
@@ -208,7 +236,7 @@ export class SessionManager {
         ...(control?.signal ? { signal: control.signal } : {}),
       }, true);
       const observation = screenshot
-        ? await session.observe({ screenshot: true }, {
+        ? await session.observe({ screenshot: true, cells: false }, {
           timeoutMs: Math.max(MIN_SCREENSHOT_TIMEOUT_MS, remaining()),
           ...(control?.signal ? { signal: control.signal } : {}),
         })
@@ -237,7 +265,7 @@ export class SessionManager {
   }
 
   async find(id: string, text: string, region?: Region, control?: OperationControl, options?: MatchOptions): Promise<TextMatch[]> {
-    const observation = await this.observe(id, { screenshot: false }, control);
+    const observation = await this.observe(id, { screenshot: false, cells: true }, control);
     return findText(observation.snapshot, text, region, options).map((match) => ({
       ...match, frameId: observation.snapshot.frameId,
       fingerprint: regionFingerprint(observation.snapshot, match.region),
@@ -269,6 +297,9 @@ export class SessionManager {
     const started = performance.now();
     const timeout = options.timeoutMs ?? 10_000;
     const stable = new Map<number, { fingerprint: string; since: number }>();
+    // 文本与稳定条件需要字符网格；尺寸、光标和退出条件只看轻量状态。
+    const needsCells = options.conditions.some(
+      (condition) => condition.kind === "text" || condition.kind === "stable");
     const remainingControl = () => ({
       timeoutMs: Math.max(1, timeout - (performance.now() - started)),
       ...(options.signal ? { signal: options.signal } : {}),
@@ -277,7 +308,7 @@ export class SessionManager {
     if (options.conditions.length > 0 && options.conditions.every((condition) => condition.kind === "exited")) {
       try {
         await session.waitForExit(remainingControl());
-        const observation = await session.observe({ screenshot: false }, remainingControl());
+        const observation = await session.observe({ screenshot: false, cells: false }, remainingControl());
         if (options.afterFrameId !== undefined && observation.snapshot.frameId <= options.afterFrameId) {
           return this.timeoutEvidence(session, timeout, options.signal);
         }
@@ -287,14 +318,29 @@ export class SessionManager {
         return this.timeoutEvidence(session, timeout, options.signal);
       }
     }
+    // 首次轮询不回退：单次观察在紧凑快照下只需数毫秒，
+    // 固定 50 ms 间隔会成为等待精度和性能测量的主要误差来源。
+    // 条件迟迟不成立时逐步放宽，避免长时间未命中时反复整屏读取。
+    let pollDelay = 0;
     while (performance.now() - started < timeout) {
       if (options.signal?.aborted) throw new TuiLensError("ABORTED", "等待已取消");
+      if (pollDelay > 0) {
+        try {
+          await sleep(pollDelay, undefined, options.signal ? { signal: options.signal } : {});
+        } catch {
+          throw new TuiLensError("ABORTED", "等待已取消");
+        }
+        pollDelay = Math.min(50, Math.max(pollDelay * 2, 2));
+      }
       const only = options.conditions.length === 1 ? options.conditions[0] : undefined;
       if (only?.kind === "text" && !only.region && !only.style && only.count === undefined) {
         try {
           const found = await session.hasText(only.text, remainingControl());
           if (found !== undefined && (only.absent ? found : !found)) {
-            await sleep(25, undefined, options.signal ? { signal: options.signal } : {});
+            // 文本尚未出现：与通用路径共用退避节奏，
+            // 避免固定 25 ms 等待把毫秒级响应量化成数十毫秒。
+            pollDelay = Math.min(50, Math.max(2, pollDelay * 2));
+            if (performance.now() - started + pollDelay >= timeout) break;
             continue;
           }
         } catch (error) {
@@ -309,7 +355,8 @@ export class SessionManager {
       }
       let observation: Observation;
       try {
-        observation = await session.observe({ screenshot: false }, remainingControl());
+        // 只等待尺寸、光标或退出时不需要整屏字符网格。
+        observation = await session.observe({ screenshot: false, cells: needsCells }, remainingControl());
       } catch (error) {
         if (error instanceof TuiLensError && ["OPERATION_TIMEOUT", "FRAME_PENDING"].includes(error.code)) break;
         throw error;
@@ -349,12 +396,10 @@ export class SessionManager {
       if (matches.every(Boolean) && (options.afterFrameId === undefined || observation.snapshot.frameId > options.afterFrameId)) {
         return { observation, elapsedMs: now - started };
       }
-      try {
-        await sleep(Math.min(50, Math.max(1, timeout - (performance.now() - started))), undefined,
-          options.signal ? { signal: options.signal } : {});
-      } catch {
-        throw new TuiLensError("ABORTED", "等待已取消");
-      }
+      // 未命中时从 2 ms 起步指数退避到 50 ms：短等待保持毫秒级精度，
+      // 长等待也不会退化成高频整屏读取。
+      pollDelay = Math.min(50, Math.max(2, pollDelay * 2));
+      if (performance.now() - started + pollDelay >= timeout) break;
     }
     return this.timeoutEvidence(session, timeout, options.signal);
   }
@@ -365,7 +410,7 @@ export class SessionManager {
     let artifact: string | undefined;
     let artifactError: string | undefined;
     try {
-      artifact = (await session.observe({}, {
+      artifact = (await session.observe({ cells: false }, {
         timeoutMs: 1000, ...(signal ? { signal } : {}),
       })).screenshot?.path;
     } catch (error) {
@@ -404,6 +449,10 @@ export class SessionManager {
       await session.close();
       this.sessions.delete(id);
     }));
+    // 会话全部关闭后再释放共享浏览器；顺序反过来会让仍在关闭的页面失去宿主。
+    try { await this.shutdownEngine?.(); } catch (error) {
+      this.launchCleanupErrors.push(error);
+    }
     const failed = results.find((result) => result.status === "rejected");
     if (failed?.status === "rejected") throw failed.reason;
     if (this.launchCleanupErrors.length) {

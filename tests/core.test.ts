@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { encodeInput, encodeKey } from "../src/core/input.js";
+import { encodeInput, encodeKey, encodeScrollBatches } from "../src/core/input.js";
 import { findText, regionFingerprint } from "../src/core/locator.js";
 import { methodSchemas } from "../src/core/protocol.js";
 import { TuiLensError } from "../src/core/errors.js";
@@ -76,6 +76,36 @@ test("按键编码跟随应用光标模式与明确组合", () => {
   assert.throws(() => encodeKey("Meta+Foo", false), /不支持/u);
 });
 
+test("Kitty 键盘协议编码带修饰键的功能键与字符", () => {
+  // 未协商时，传统终端无法表达 Shift+Enter 或 Ctrl+Space，必须显式失败。
+  assert.throws(() => encodeKey("Shift+Enter", false), { code: "UNSUPPORTED_KEY" });
+  assert.throws(() => encodeKey("Ctrl+Space", false), { code: "UNSUPPORTED_KEY" });
+  const kitty = { kitty: 1 };
+  assert.equal(encodeKey("Shift+Enter", false, kitty), "\x1b[13;2u");
+  assert.equal(encodeKey("Ctrl+Enter", false, kitty), "\x1b[13;5u");
+  assert.equal(encodeKey("Ctrl+Space", false, kitty), "\x1b[32;5u");
+  assert.equal(encodeKey("Enter", false, kitty), "\x1b[13u");
+  assert.equal(encodeKey("ArrowUp", false, kitty), "\x1b[57352u");
+  assert.equal(encodeKey("Ctrl+Left", false, kitty), "\x1b[57350;5u");
+  assert.equal(encodeKey("F5", false, kitty), "\x1b[57368u");
+  // Ctrl+字母在 Kitty 下也必须带修饰键信息，否则与裸字符无法区分。
+  assert.equal(encodeKey("Ctrl+a", false, kitty), "\x1b[97;5u");
+  // flag 0 表示未启用，退回传统编码。
+  assert.equal(encodeKey("Ctrl+a", false, { kitty: 0 }), "\x01");
+});
+
+test("modifyOtherKeys 只改写传统无法表达的组合，保留既有控制字节", () => {
+  const other = { modifyOtherKeys: 2 };
+  assert.equal(encodeKey("Shift+Enter", false, other), "\x1b[27;2;13~");
+  assert.equal(encodeKey("Ctrl+Space", false, other), "\x1b[27;5;32~");
+  // 传统控制字符与 CSI 功能键保持原样，避免破坏依赖 \x01 或 \x1b[1;5D 的应用。
+  assert.equal(encodeKey("Ctrl+a", false, other), "\x01");
+  assert.equal(encodeKey("Ctrl+Left", false, other), "\x1b[1;5D");
+  assert.equal(encodeKey("Enter", false, other), "\r");
+  // 级别 1 仍无法区分 Shift+Enter；与其静默发一个裸 Enter，不如明确失败。
+  assert.throws(() => encodeKey("Shift+Enter", false, { modifyOtherKeys: 1 }), { code: "UNSUPPORTED_KEY" });
+});
+
 test("0.4 新契约严格校验启动应答、点击命中区和光标等待", () => {
   for (const colorMode of ["truecolor", "ansi256", "none"] as const) {
     assert.equal(methodSchemas.launch.safeParse({ command: "node", colorMode }).success, true);
@@ -104,6 +134,18 @@ test("0.4 新契约严格校验启动应答、点击命中区和光标等待", (
     id: "00000000-0000-4000-8000-000000000000",
     conditions: [{ kind: "cursor" }],
   }).success, false);
+});
+
+test("到达首尾的滚动拆成有界批次，普通滚动保持单次写入", () => {
+  const batches = encodeScrollBatches({ type: "scroll", x: 7, y: 1, to: "bottom" }, snapshot);
+  assert.ok(batches);
+  // 分批让长滚动可取消，同时保持总事件数不变。
+  assert.equal(batches.length, 20);
+  assert.ok(batches.every((batch) => (batch.match(/M/gu) ?? []).length === 100));
+  assert.equal(batches.join("").match(/M/gu)?.length, 2000);
+  // 普通滚动没有批处理语义。
+  assert.equal(encodeScrollBatches({ type: "scroll", x: 7, y: 1, direction: "down", amount: 2 }, snapshot),
+    undefined);
 });
 
 test("翻页和首尾导航使用独立滚轮契约，不突破单次事件上限", () => {

@@ -1,14 +1,29 @@
 {
   "name": "tuilens",
   "version": "0.4.0",
-  "private": true,
-  "description": "Terminal automation for AI agents with PTY sessions, image-aware capture, visual testing and MCP.",
+  "description": "Terminal automation for AI agents with PTY sessions, image-aware capture, visual testing, performance regression baselines and MCP.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Blackn-L/TuiLens.git"
+  },
   "type": "module",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "exports": {
     ".": "./dist/src/index.js"
   },
+  "files": [
+    "dist/src/",
+    "README.md",
+    "README.zh-CN.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "THIRD_PARTY.md",
+    "docs/*.md",
+    "docs/zh-CN/*.md",
+    "docs/assets/"
+  ],
   "bin": {
     "tuilens": "dist/src/interfaces/cli.js"
   },
@@ -19,6 +34,7 @@
     "build": "tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "npm run build && node --test --test-concurrency=1 dist/tests/*.test.js",
+    "prepublishOnly": "npm run build",
     "benchmark:overhead": "npm run build && node dist/scripts/benchmark-overhead.js"
   },
   "dependencies": {
