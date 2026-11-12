@@ -8,9 +8,12 @@ Always identify the workload, terminal engine, platform and collection method.
 ## Application performance (`perf`)
 
 `perf` answers "did my TUI get slower over long sessions", not "how fast is TuiLens".
+A baseline is optional: omit `--baseline` for a report-only run, or use `--write-baseline` to create
+one for your own application and environment.
 
 ```sh
-node dist/src/interfaces/cli.js perf --file examples/perf.json --baseline perf/baseline.json
+node dist/src/interfaces/cli.js perf --file examples/perf.json --write-baseline artifacts/perf-baseline.json
+node dist/src/interfaces/cli.js perf --file examples/perf.json --baseline artifacts/perf-baseline.json
 ```
 
 | Field | Meaning |
@@ -20,7 +23,7 @@ node dist/src/interfaces/cli.js perf --file examples/perf.json --baseline perf/b
 | `processTree.peakRssBytes` | Peak RSS of the **application's** process tree, sampled once per second |
 | `startupMs` | Launch through the declared `ready` condition |
 | `session` | Received/applied bytes and write batches per round |
-| `comparisons` | Change against the baseline, per metric |
+| `comparisons` | Change against the baseline, per metric; empty without a baseline |
 
 Measurement discipline enforced by the runner:
 
@@ -36,9 +39,11 @@ Measurement discipline enforced by the runner:
 `processTree.peakRssBytes` is a **lower bound**: sampling costs roughly hundreds of milliseconds on Windows,
 so the default interval is one second and `approximate:true` is always reported.
 
-Baselines store `platform`, `node`, `arch`, `cols` and `rows`. A mismatched environment is refused unless
+Baselines are optional measurement snapshots tied to a workload and environment. They store `platform`, `node`,
+`arch`, `cols` and `rows`. A mismatched environment is refused unless
 `allowEnvironmentMismatch`/`--allow-env-mismatch` is set, because absolute latencies are not comparable across
-different runners.
+different runners. The TuiLens repository does not ship a baseline; CI runs the example as a report-only smoke
+test instead of requiring a repository baseline.
 
 ## Tool overhead (`benchmark:overhead`)
 

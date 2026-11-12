@@ -27,7 +27,7 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 - **Scrollback assertions:** `observe.scrollback` returns history lines above the viewport, so content that scrolled away can still be asserted.
 - **Terminal reply guard:** late or unmatched DA1/DA2, CPR/DSR and related automatic replies are dropped by default; `suppress` preserves ordinary input.
 - **Scenario runner:** declarative steps with failure screenshots, reports, and automatic session cleanup.
-- **Performance testing:** declarative multi-round scenarios with setup history growth, process-tree RSS sampling, baseline files and regression gating.
+- **Performance testing:** declarative multi-round scenarios with setup history growth, process-tree RSS sampling, optional baseline files and regression gating.
 - **Test assertions:** a playwright-style `Terminal` handle with expected/actual/screenshot on failure, plus JUnit XML output for CI.
 - **Agent interfaces:** shared CLI/MCP operations and a directly importable SDK.
 
@@ -154,13 +154,21 @@ commands, or recorded input. `speed=0` applies events immediately. Truncated rep
 ## Performance testing
 
 TUI agents accumulate conversation history, so response time tends to degrade over long sessions.
-`perf` runs a fixed workload across restart-isolated rounds and compares the result with a committed baseline.
+`perf` runs a fixed workload across restart-isolated rounds and can compare the result with a baseline you
+generate for your application. The TuiLens repository does not ship a baseline: measurements depend on the
+application, platform, grid and runner.
 
 ```sh
+# Generate a baseline for your workload. The path is yours to choose.
+node dist/src/interfaces/cli.js perf --file examples/perf.json --write-baseline artifacts/perf-baseline.json
+
+# Later runs can compare against it.
 node dist/src/interfaces/cli.js perf --file examples/perf.json \
-  --baseline perf/baseline.json --max-regression 0.15 --junit artifacts/junit-perf.xml
-node dist/src/interfaces/cli.js perf --file examples/perf.json --write-baseline perf/baseline.json
+  --baseline artifacts/perf-baseline.json --max-regression 0.15 --junit artifacts/junit-perf.xml
 ```
+
+Use a tracked path in your own repository if you want the baseline to gate CI; `artifacts/` is for local
+or demonstration runs and is ignored by Git.
 
 Each round restarts the application, so in-process state cannot leak between rounds. Every measurement is
 "input sent → evidence visible", which is the latency a user actually feels. `setup` steps rebuild state (for
@@ -182,11 +190,12 @@ every sample waits for *its own* new evidence instead of matching text that alre
 ```
 
 Results include per-phase p50/p95/p99, a stability verdict (max ÷ p50), the application's **process-tree** peak RSS
-(not just the tool's), and per-metric comparison against the baseline. A p50 increase beyond `--max-regression`
-fails the run with a nonzero exit status.
+(not just the tool's), and per-metric comparison when a baseline is supplied. When a baseline is supplied,
+a p50 increase beyond `--max-regression` fails the run with a nonzero exit status.
 
-Baselines record the platform and grid; comparing across a different environment is refused unless you pass
-`--allow-env-mismatch`. Measurement boundaries are documented in [performance](docs/PERFORMANCE.md).
+Baselines are optional measurement snapshots, not required configuration. They record the platform and grid;
+comparing across a different environment is refused unless you pass `--allow-env-mismatch`. Measurement
+boundaries are documented in [performance](docs/PERFORMANCE.md).
 
 ## Testing API
 

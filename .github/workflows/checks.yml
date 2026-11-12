@@ -45,7 +45,8 @@ jobs:
         run: exit 1
 
   perf:
-    # 性能基线比较只在固定环境中运行：不同 runner 的 CPU 会让绝对耗时不具可比性。
+    # 性能冒烟只验证场景能跑通并归档报告；仓库不提交基线，也不拿不同 runner 的
+    # 绝对耗时做回归门禁。
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -59,8 +60,9 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run build
       - name: Run performance scenario
+        id: perf
         run: node dist/src/interfaces/cli.js perf --file examples/perf.json
-          --baseline perf/baseline.json --junit artifacts/junit-perf.xml
+          --junit artifacts/junit-perf.xml
         env:
           TUILENS_HOME: ${{ runner.temp }}/tuilens
         continue-on-error: true
@@ -73,3 +75,7 @@ jobs:
             ${{ runner.temp }}/tuilens/
           if-no-files-found: ignore
           retention-days: 30
+      # 归档报告后重新抛出执行失败，避免 perf 场景悄然失效却被当成通过。
+      - name: Enforce performance result
+        if: steps.perf.outcome == 'failure'
+        run: exit 1

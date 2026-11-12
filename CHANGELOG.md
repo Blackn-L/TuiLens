@@ -10,7 +10,7 @@
 ### Added
 - `perf` command/MCP tool/SDK API: declarative performance scenarios with warmup rounds, per-round process restarts, `{{seq}}` evidence templates, setup history growth, process-tree RSS sampling, baseline files and threshold-based regression gating.
 - Testing assertion layer (`terminal()`, `Terminal#expectText/expectNoText/expectCursor/expectSize`) with expected/actual/screenshot on failure.
-- JUnit XML output (`--junit`) for scenarios and performance runs; CI uploads evidence artifacts and runs a perf gate on pull requests.
+- JUnit XML output (`--junit`) for scenarios and performance runs; CI uploads evidence artifacts and runs a report-only perf smoke on pull requests.
 - `observe.scrollback` reads viewport-above history lines (text only) so scrolled-away content can be asserted.
 - Kitty keyboard protocol (`CSI u`) and xterm `modifyOtherKeys` detection and encoding: `Shift+Enter`, `Ctrl+Enter`, `Ctrl+Space`, `Shift+Tab` and modified function keys are now expressible. Ctrl+letter keeps its traditional C0 byte under `modifyOtherKeys`.
 - `TerminalModes.keyboard` exposes negotiated keyboard protocol state.

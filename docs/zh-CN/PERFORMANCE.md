@@ -8,9 +8,11 @@
 ## 应用性能（`perf`）
 
 `perf` 回答的是「我的 TUI 在长会话后是否变慢」，不是「TuiLens 本身有多快」。
+基线是可选的：省略 `--baseline` 只产出报告；需要时用 `--write-baseline` 为自己的应用和环境生成。
 
 ```sh
-node dist/src/interfaces/cli.js perf --file examples/perf.json --baseline perf/baseline.json
+node dist/src/interfaces/cli.js perf --file examples/perf.json --write-baseline artifacts/perf-baseline.json
+node dist/src/interfaces/cli.js perf --file examples/perf.json --baseline artifacts/perf-baseline.json
 ```
 
 | 字段 | 含义 |
@@ -20,7 +22,7 @@ node dist/src/interfaces/cli.js perf --file examples/perf.json --baseline perf/b
 | `processTree.peakRssBytes` | **被测程序**进程树的 RSS 峰值，每秒采样一次 |
 | `startupMs` | 启动到声明的 `ready` 条件成立 |
 | `session` | 每轮的接收/应用字节与写入批次 |
-| `comparisons` | 每个指标相对基线的变化 |
+| `comparisons` | 每个指标相对基线的变化；没有基线时为空 |
 
 运行器强制执行的测量纪律：
 
@@ -35,9 +37,10 @@ node dist/src/interfaces/cli.js perf --file examples/perf.json --baseline perf/b
 `processTree.peakRssBytes` 是**下界**：Windows 上单次采样约需数百毫秒，
 因此默认间隔为 1 秒，报告始终标注 `approximate:true`。
 
-基线记录 `platform`、`node`、`arch`、`cols` 与 `rows`。环境不一致时默认拒绝比较，
-因为绝对耗时在不同 runner 之间没有可比性；确需比较时显式使用
-`allowEnvironmentMismatch` / `--allow-env-mismatch`。
+基线是绑定工作负载与环境的可选测量快照。它记录 `platform`、`node`、`arch`、`cols` 与 `rows`。
+环境不一致时默认拒绝比较，因为绝对耗时在不同 runner 之间没有可比性；确需比较时显式使用
+`allowEnvironmentMismatch` / `--allow-env-mismatch`。TuiLens 仓库不提交基线；CI 只把示例作为
+冒烟运行并上传报告，不做基线比较。
 
 ## 工具开销对照
 
