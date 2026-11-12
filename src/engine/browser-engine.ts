@@ -12,6 +12,7 @@ import { unpackGrid } from "./snapshot-codec.js";
 import { Osc1337Normalizer } from "./osc1337.js";
 import { installKittyRuntime } from "./kitty-runtime.js";
 import { KITTY_DIACRITICS } from "./kitty-diacritics.js";
+import { applyTerminalProfileOverrides, defaultTerminalProfile } from "../profiles/index.js";
 
 const require = createRequire(import.meta.url);
 const DEFAULT_FONT = "'Cascadia Mono','DejaVu Sans Mono','Noto Sans Mono CJK SC','Noto Sans CJK SC','Microsoft YaHei','Segoe UI Emoji','Noto Color Emoji',monospace";
@@ -65,9 +66,21 @@ export function createBrowserEngineFactory(executablePath?: string) {
 async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost): Promise<TerminalEngine> {
   assertDimensions(options.cols, options.rows);
   const fontSize = options.fontSize ?? 16;
-  const images = options.images ?? "off";
-  const iip = images === "iterm" || images === "all" ? new Osc1337Normalizer() : undefined;
-  if (!["off", "sixel", "iterm", "all"].includes(images)) throw new TuiLensError("INVALID_IMAGE_PROFILE", "不支持的图片配置");
+  const profile = applyTerminalProfileOverrides(options.profile ?? defaultTerminalProfile(), {
+    ...(options.images === undefined ? {} : { images: options.images }),
+    ...(options.graphics === undefined ? {} : { graphics: options.graphics }),
+    ...(options.scrollback === undefined ? {} : { scrollback: options.scrollback }),
+  });
+  const graphics = {
+    sixel: profile.capabilities.graphics?.sixel === true,
+    kitty: profile.capabilities.graphics?.kitty === true,
+    iterm: profile.capabilities.graphics?.iterm === true,
+  };
+  const scrollback = profile.capabilities.scrollback ?? 2000;
+  if (!Number.isInteger(scrollback) || scrollback < 0 || scrollback > 5000) {
+    throw new TuiLensError("INVALID_PROFILE", "profile scrollback 必须是 0～5000 的整数");
+  }
+  const iip = graphics.iterm ? new Osc1337Normalizer() : undefined;
   if (!Number.isFinite(fontSize) || fontSize < 8 || fontSize > 48) {
     throw new TuiLensError("INVALID_FONT_SIZE", "字体大小必须在 8–48 像素范围内");
   }
@@ -101,14 +114,20 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
     });
     await page.addScriptTag({ path: terminalModule });
     await page.addScriptTag({ path: addonModule });
-    if (images !== "off") await page.addScriptTag({ path: require.resolve("@xterm/addon-image") });
-    if (images === "all") await page.evaluate(installKittyRuntime, KITTY_DIACRITICS);
+    if (graphics.sixel || graphics.iterm) {
+      await page.addScriptTag({ path: require.resolve("@xterm/addon-image") });
+    }
+    if (graphics.kitty) await page.evaluate(installKittyRuntime, KITTY_DIACRITICS);
     await page.evaluate(initializeBrowserRuntime, {
       cols: options.cols,
       rows: options.rows,
       fontFamily: options.fontFamily ?? DEFAULT_FONT,
       fontSize,
-      images,
+      scrollback,
+      graphics,
+      ...(options.profile ? { replies: profile.replies } : {}),
+      ...(options.profile && profile.capabilities.keyboard?.kitty !== undefined
+        ? { keyboard: profile.capabilities.keyboard } : {}),
     });
     await resizeViewport();
   } catch (error) {

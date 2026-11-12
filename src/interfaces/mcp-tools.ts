@@ -4,7 +4,7 @@ export type McpMethod = Exclude<Method, "ping" | "shutdown">;
 
 /** MCP 暴露的是 CLI/SDK 共用方法；ping 与 shutdown 仅保留本机协议入口。 */
 export const MCP_TOOLS: Record<McpMethod, string> = {
-  launch: "在真实 PTY 中启动程序。返回会话 ID；Windows 裸命令会按 PATH/PATHEXT 解析。",
+  launch: "在真实 PTY 中启动程序。返回会话 ID；可用 terminalProfile 选择内置预设或 JSON profile，graphics 覆盖图片协议；Windows 裸命令会按 PATH/PATHEXT 解析。",
   list: "列出 TuiLens 会话。",
   observe: "冻结输出消费，获取同一 frameId 的字符格和实际终端 PNG；默认隐藏截图光标。",
   input: "发送文字、括号粘贴、按键、点击、滚轮或原始字节；滚轮支持 page 单位及 top/bottom 终点。只代表输入已送达。",
@@ -17,8 +17,8 @@ export const MCP_TOOLS: Record<McpMethod, string> = {
   close: "关闭会话并释放进程和浏览器资源。",
   compare: "将实际 PNG 与只读基准图比较，输出差异图；遮罩坐标以截图像素计量。",
   replay: "离线重放录制的终端输出与 resize，不执行程序或输入，返回截图。",
-  scenario: "运行声明式场景步骤，自动记录失败证据并回收本次会话。",
-  perf: "运行性能场景：按轮次重启被测程序、采样输入到可见结果的耗时与进程树内存，可与基线比较并在劣化时失败。",
+  scenario: "运行声明式场景步骤，自动记录失败证据并回收本次会话；可选 profiles 列表运行同一场景的终端矩阵。",
+  perf: "运行性能场景：按轮次重启被测程序、采样输入到可见结果的耗时与进程树内存，可与基线比较并在劣化时失败；可选 profiles 列表输出终端对比表。",
 };
 
 export const MCP_TOOL_NAMES = Object.keys(MCP_TOOLS) as McpMethod[];

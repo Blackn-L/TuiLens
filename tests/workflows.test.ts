@@ -79,12 +79,14 @@ test("场景执行保留失败证据，成功和失败都关闭会话", { timeou
       { type: "wait", conditions: [{ kind: "text", text: "UPDATED" }] },
       { type: "observe", region: { x: 0, y: 0, width: 15, height: 4 } },
     ] });
+    assert.ok(!("matrix" in passed));
     assert.equal(passed.pass, true);
     assert.deepEqual(manager.list(), []);
     const failed = await manager.scenario({ version: 1, launch, steps: [
       { type: "wait", conditions: [{ kind: "text", text: "READY" }] },
       { type: "wait", conditions: [{ kind: "text", text: "NEVER_THERE" }], timeoutMs: 200 },
     ] });
+    assert.ok(!("matrix" in failed));
     assert.equal(failed.pass, false);
     assert.ok(failed.failureScreenshot);
     assert.ok((await stat(failed.reportPath)).size > 0);

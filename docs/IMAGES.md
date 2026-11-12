@@ -2,6 +2,10 @@
 
 [English](IMAGES.md) · [简体中文](zh-CN/IMAGES.md)
 
+> **Deprecated:** prefer `graphics` or a `terminalProfile` capability. The legacy `launch.images`
+> values remain as compatibility shorthands and map to `capabilities.graphics`.
+> See [terminal profiles](PROFILES.md).
+
 `launch.images` is `off` (default), `sixel`, `iterm`, or `all`.
 `all` enables SIXEL, iTerm2 IIP, and the Kitty subset below, not every extension of these protocols.
 Only enabled capabilities are advertised. Character pixel dimensions come from the actual terminal canvas.
@@ -44,7 +48,7 @@ clipboard actions and feature-reporting extensions are not implemented.
 The usual wire form is the 7-bit `ESC ]` sequence. GIF animation is not played.
 Images follow the addon's cell-based scrolling/erase policy; after resize, fractional cell widths
 may cause a one-pixel outward rounding when stored images rescale.
-Enabling the protocol is explicit; TuiLens does not set `TERM_PROGRAM=iTerm.app`.
+Enabling the protocol is explicit; `images` alone does not set `TERM_PROGRAM=iTerm.app`.
 
 ## Kitty subset
 

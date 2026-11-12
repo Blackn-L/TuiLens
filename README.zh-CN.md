@@ -25,6 +25,8 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 - **滚动导航：** 滚轮支持按页单位和应用回滚区的首尾定位。
 - **键盘协议：** 除传统 xterm 编码外支持 Kitty keyboard protocol（`CSI u`）与 `modifyOtherKeys`，
   使 `Shift+Enter`、`Ctrl+Enter`、`Ctrl+Space` 能送达已协商这些协议的应用。
+- **终端能力画像：** 内置 preset 或派生 JSON profile 统一驱动 `TERM`、DA1/DA2/XTVERSION/Kitty 查询应答、
+  图片协议、键盘能力元数据和回滚缓冲；场景/性能测试可运行 profile 矩阵。
 - **回滚区断言：** `observe.scrollback` 返回视口上方的历史行，滚出屏幕的内容仍可断言。
 - **终端应答护栏：** 默认丢弃超时或无查询匹配的 DA1/DA2、CPR/DSR 等自动应答；`suppress` 保留普通输入。
 - **场景执行：** 声明式步骤、失败截图、报告和自动清理。
@@ -67,6 +69,9 @@ JSON 结果包含报告路径和步骤证据。场景或视觉比较失败时退
 ```sh
 node dist/src/interfaces/cli.js launch --record --cols 80 --rows 16 -- node examples/echo-tui.mjs
 ```
+
+用 `--terminal-profile kitty`、`wezterm`、`iterm2` 或 JSON profile 路径选择终端身份。
+全部 preset、继承方式和矩阵示例见[终端能力画像](docs/zh-CN/PROFILES.md)。
 
 将返回的 `data.id` 替换到下面的 `SESSION_ID`：
 
@@ -266,7 +271,7 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 后台服务使用本机命名管道或 Linux abstract Unix socket，并使用本地令牌认证。
 `TUILENS_HOME` 可隔离状态目录，默认 `~/.tuilens`；没有公开 HTTP 控制端口。
 
-[架构](docs/zh-CN/ARCHITECTURE.md) · [验证](docs/zh-CN/VALIDATION.md) · [性能](docs/zh-CN/PERFORMANCE.md) · [路线](docs/zh-CN/ROADMAP.md)
+[架构](docs/zh-CN/ARCHITECTURE.md) · [终端能力画像](docs/zh-CN/PROFILES.md) · [验证](docs/zh-CN/VALIDATION.md) · [性能](docs/zh-CN/PERFORMANCE.md) · [路线](docs/zh-CN/ROADMAP.md)
 
 ## 限制
 

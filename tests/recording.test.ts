@@ -7,6 +7,7 @@ import test from "node:test";
 import { replayRecording } from "../src/recording/replay.js";
 import { RecordingWriter } from "../src/recording/writer.js";
 import type { EngineFactory, TerminalEngine, TerminalSnapshot } from "../src/core/types.js";
+import { resolveTerminalProfile } from "../src/profiles/index.js";
 
 const header = { type: "header", version: 1, cols: 10, rows: 2, images: "off" } as const;
 function snapshot(frameId: number): TerminalSnapshot {
@@ -106,6 +107,36 @@ test("回放应用输出和 resize，但不会执行录制输入", async () => {
     assert.equal(result.snapshot.frameId, 3);
     assert.equal(result.truncated, true);
     assert.equal(memory.calls.close, 1);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("新录制内嵌最终渲染 profile，旧 images 录制保持兼容", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tuilens-replay-profile-"));
+  const profile = await resolveTerminalProfile("kitty");
+  const { env: _env, source: _source, ...renderProfile } = profile;
+  const memory = fake();
+  let received: unknown;
+  const engineFactory: EngineFactory = async (options) => { received = options; return memory.engine; };
+  try {
+    const writer = await RecordingWriter.create(directory, "profile", { ...header, profile: renderProfile });
+    await writer.append({ type: "output", data: "profile" });
+    await writer.close();
+    const persisted = JSON.parse((await readFile(writer.path, "utf8")).split("\n")[0]!) as {
+      profile: { env?: unknown; source?: unknown; capabilities: { graphics: { kitty: boolean } } };
+    };
+    assert.equal("env" in persisted.profile, false);
+    assert.equal("source" in persisted.profile, false);
+    assert.equal(persisted.profile.capabilities.graphics.kitty, true);
+    await replayRecording(writer.path, { artifactDir: directory, engineFactory });
+    const options = received as { profile: { env: object; source: object; capabilities: object } };
+    assert.deepEqual(options.profile.env, {});
+    assert.deepEqual(options.profile.source, { kind: "preset", reference: "kitty-0.40" });
+    assert.deepEqual(options.profile.capabilities, profile.capabilities);
+    received = undefined;
+    await replayRecording(await recording(directory, [{ type: "end", truncated: false, atMs: 0 }]),
+      { artifactDir: directory, engineFactory });
+    assert.equal((received as { images: string }).images, "off");
+    assert.equal("profile" in (received as object), false);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 

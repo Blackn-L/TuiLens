@@ -8,6 +8,7 @@
 | --- | --- |
 | `src/core` | Public types, protocol schemas, input encoding, locators, validation, bounded reads, error catalog |
 | `src/engine` | xterm.js browser adapter, shared browser host, snapshot codec, image decoding and rendering, viewport capture |
+| `src/profiles` | Built-in terminal presets, JSON profile inheritance, capability/reply resolution |
 | `src/session` | PTY lifecycle, ordered output, observation barriers, waits and resource limits |
 | `src/recording` | Bounded versioned journals and offline replay |
 | `src/visual` | PNG validation, pixel comparison and diff artifacts |
@@ -49,6 +50,8 @@ two strings — a token stream per row and a style run-length stream per row —
 - Explicit `clickText.allowPendingFrame` permits pending character-buffer targeting while retaining the region guard; screenshots remain strict.
 - Wheel input supports page expansion and bounded top/bottom navigation; it does not invent application-independent absolute scroll offsets.
 - Image decode is part of ordered processing. Only enabled protocols are advertised.
+- Terminal identity is a resolved profile. It drives environment, image protocols, scrollback and
+  DA1/DA2/XTVERSION/Kitty replies; Windows uses the bundled ConPTY DLL plus a final pre-PTY reply rewrite.
 - Resize delivery and application layout completion are separate. Callers wait for visible layout conditions.
 - Input reads lightweight dimensions/modes. Guards are checked immediately before input, and cancelled queued actions are dropped.
 - Simple text waits probe the engine without transferring the full grid until a match; captures still wait for rendering.

@@ -2,6 +2,9 @@
 
 [English](../IMAGES.md) · [简体中文](IMAGES.md)
 
+> **已弃用：** 新代码请使用 `graphics` 或 `terminalProfile` 能力。旧 `launch.images`
+> 枚举作为兼容简写保留，并映射到 `capabilities.graphics`。详见[终端能力画像](PROFILES.md)。
+
 启动参数 `images` 可设为 `off`、`sixel`、`iterm` 或 `all`，默认 `off`。
 
 | 配置 | 启用能力 |
@@ -56,7 +59,7 @@ PNG 在解码前校验容器；JPEG/GIF 先做有界浏览器预检，再交给�
 shell 集成、剪贴板动作和 Feature Reporting 扩展。
 通常使用 7 位 `ESC ]` 形式；GIF 不播放动画。
 图片随插件字符格机制滚动和擦除，resize 后分数格宽可能使缓存缩放向外取整一像素。
-协议显式启用，不设置 `TERM_PROGRAM=iTerm.app`。
+协议显式启用；仅设置 `images` 不会设置 `TERM_PROGRAM=iTerm.app`。
 
 ## Kitty 子集
 

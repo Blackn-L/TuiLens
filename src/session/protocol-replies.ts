@@ -1,8 +1,11 @@
-import type { LaunchOptions } from "../core/types.js";
+import type {
+  LaunchOptions, ResolvedTerminalProfile, TerminalKeyboardCapabilities, TerminalReplies,
+} from "../core/types.js";
 
 export type ProtocolRepliesOptions = NonNullable<LaunchOptions["protocolReplies"]>;
 
-type ReplyKind = "primary" | "secondary" | "cursor" | "status" | "cellSize" | "windowSize" | "decrqm" | "xtversion";
+type ReplyKind = "primary" | "secondary" | "cursor" | "status" | "cellSize" | "windowSize"
+  | "decrqm" | "xtversion" | "keyboard";
 
 const QUERY_PATTERNS: readonly [ReplyKind, RegExp][] = [
   ["primary", /\x1b\[(?:0)?c/gu],
@@ -12,7 +15,8 @@ const QUERY_PATTERNS: readonly [ReplyKind, RegExp][] = [
   ["cellSize", /\x1b\[16t/gu],
   ["windowSize", /\x1b\[(?:14|18|19)t/gu],
   ["decrqm", /\x1b\[\?\d+\$p/gu],
-  ["xtversion", /\x1b\[>0q/gu],
+  ["xtversion", /\x1b\[>(?:0)?q/gu],
+  ["keyboard", /\x1b\[\?u/gu],
 ];
 
 const REPLY_PATTERNS: readonly [ReplyKind, RegExp][] = [
@@ -24,6 +28,7 @@ const REPLY_PATTERNS: readonly [ReplyKind, RegExp][] = [
   ["windowSize", /^\x1b\[[489];[0-9]+;[0-9]+t$/u],
   ["decrqm", /^\x1b\[\?[0-9]+;[0-9]+\$y$/u],
   ["xtversion", /^\x1bP>\|[^\x1b]*\x1b\\$/u],
+  ["keyboard", /^\x1b\[\?[0-9;]*u$/u],
 ];
 
 export interface ProtocolReplyMetrics {
@@ -31,6 +36,31 @@ export interface ProtocolReplyMetrics {
   protocolRepliesForwarded: number;
   protocolRepliesDropped: number;
   lastProtocolReplyLatencyMs: number;
+}
+
+const DA1_REPLY = /\x1b\[\?[0-9;]*c/gu;
+const DA2_REPLY = /\x1b\[>[0-9;]*c/gu;
+const XTVERSION_REPLY = /\x1bP>\|[^\x1b]*\x1b\\/gu;
+const KEYBOARD_REPLY = /\x1b\[\?[0-9;]*u/gu;
+
+/**
+ * ConPTY 等 PTY 实现可能先于浏览器模拟器回答 DA1/DA2。
+ * 进入 PTY 前的最后一层按 profile 改写，确保应用收到声明的终端身份。
+ */
+export function rewriteProfileReplies(
+  data: string,
+  replies: TerminalReplies,
+  keyboard?: TerminalKeyboardCapabilities,
+): string {
+  return data
+    .replace(DA1_REPLY, () => replies.da1 ?? "")
+    .replace(DA2_REPLY, () => replies.da2 ?? "")
+    .replace(XTVERSION_REPLY, () => replies.xtversion ?? "")
+    .replace(KEYBOARD_REPLY, () => keyboard?.kitty === undefined ? "" : `\x1b[?${keyboard.kitty}u`);
+}
+
+export function rewriteTerminalProfileReplies(data: string, profile: ResolvedTerminalProfile): string {
+  return rewriteProfileReplies(data, profile.replies, profile.capabilities.keyboard);
 }
 
 /**

@@ -16,6 +16,17 @@ test("快速文本条件读取当前解析状态，支持中文且不等待截�
   } finally { await engine.close(); }
 });
 
+test("默认引擎保留 xterm 原生 DA 应答", async () => {
+  const responses: string[] = [];
+  const engine = await createBrowserEngine({ cols: 20, rows: 4, onData: (data) => responses.push(data) });
+  try {
+    await engine.write("\x1b[c\x1b[>c");
+    await engine.snapshot(1);
+    assert.ok(responses.includes("\x1b[?1;2c"));
+    assert.ok(responses.includes("\x1b[>0;276;0c"));
+  } finally { await engine.close(); }
+});
+
 test("鼠标编码与跟踪范围独立，模式镜像符合 xterm 查询响应", { timeout: 30_000 }, async () => {
   const responses: string[] = [];
   const engine = await createBrowserEngine({ cols: 20, rows: 4, onData: (data) => responses.push(data) });

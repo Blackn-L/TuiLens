@@ -1,0 +1,16 @@
+{
+  "name": "kitty-sixel",
+  "extends": "kitty",
+  "env": {
+    "TERM_PROGRAM_VERSION": "0.40.1-custom"
+  },
+  "capabilities": {
+    "graphics": {
+      "sixel": true
+    },
+    "keyboard": {
+      "kitty": 3
+    },
+    "scrollback": 4000
+  }
+}

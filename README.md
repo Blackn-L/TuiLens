@@ -24,6 +24,7 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 - **Pending-frame clicks:** opt in to `allowPendingFrame` when a synchronized frame prevents otherwise safe text targeting.
 - **Scroll navigation:** wheel input supports page units and bounded top/bottom navigation in application scrollback.
 - **Keyboard protocols:** traditional xterm encoding plus Kitty keyboard protocol (`CSI u`) and `modifyOtherKeys`, so `Shift+Enter`, `Ctrl+Enter` and `Ctrl+Space` reach applications that negotiate them.
+- **Terminal profiles:** declarative presets or JSON-derived profiles control `TERM`, DA1/DA2/XTVERSION and Kitty query replies, image protocols, keyboard capability metadata and scrollback. Scenario/perf runs can compare a matrix of profiles.
 - **Scrollback assertions:** `observe.scrollback` returns history lines above the viewport, so content that scrolled away can still be asserted.
 - **Terminal reply guard:** late or unmatched DA1/DA2, CPR/DSR and related automatic replies are dropped by default; `suppress` preserves ordinary input.
 - **Scenario runner:** declarative steps with failure screenshots, reports, and automatic session cleanup.
@@ -67,6 +68,9 @@ For an interactive session:
 ```sh
 node dist/src/interfaces/cli.js launch --record --cols 80 --rows 16 -- node examples/echo-tui.mjs
 ```
+
+Select a terminal identity with `--terminal-profile kitty`, `wezterm`, `iterm2`, or a JSON profile path.
+See [terminal profiles](docs/PROFILES.md) for all presets, inheritance and matrix examples.
 
 Copy the returned `data.id` into the commands below:
 
@@ -270,7 +274,7 @@ Tests use independent fixtures. Generated captures, recordings, reports, and bui
 The daemon uses a local named pipe on Windows and an abstract Unix socket on Linux, authenticated by a local token.
 Set `TUILENS_HOME` to isolate its state directory (default: `~/.tuilens`). No public HTTP control server is exposed.
 
-[Architecture](docs/ARCHITECTURE.md) · [Validation](docs/VALIDATION.md) · [Performance](docs/PERFORMANCE.md) · [Roadmap](docs/ROADMAP.md)
+[Architecture](docs/ARCHITECTURE.md) · [Terminal profiles](docs/PROFILES.md) · [Validation](docs/VALIDATION.md) · [Performance](docs/PERFORMANCE.md) · [Roadmap](docs/ROADMAP.md)
 
 ## Limitations
 

@@ -9,6 +9,7 @@ TuiLens 提供面向 Agent 的终端运行环境。首版复用 PTY 与 xterm.js
 
 - `src/core/`：公开类型、协议、校验、定位、输入编码和有界文件读取。
 - `src/engine/`：浏览器版 xterm.js 适配器；同一实例维护字符格与可见画面。
+- `src/profiles/`：内置终端 preset、JSON profile 继承、能力与应答解析。
 - `src/session/`：PTY、输出顺序、观察屏障、等待、进程退出和证据。
 - `src/recording/`、`src/visual/`、`src/scenario/`：有界录制回放、视觉比较和声明式场景。
 - `src/transport/`：本机 IPC 与守护进程；CLI 多次调用共享会话。
@@ -24,6 +25,8 @@ TuiLens 提供面向 Agent 的终端运行环境。首版复用 PTY 与 xterm.js
 4. resize 只表示尺寸已送达；调用方用文本区域、底栏位置或局部稳定条件等待应用完成重排。
 5. 输入按实际终端模式编码，滚轮必须携带位置；未启用鼠标时明确报错。
 6. 图片默认关闭，按需启用 SIXEL 与文档列出的 Kitty 子集，仅声明已启用能力。
+   终端身份由 profile 统一驱动环境、图片、回滚缓冲和 DA1/DA2/XTVERSION/Kitty 应答；
+   Windows 使用随包 ConPTY DLL，并在应答进入 PTY 前按 profile 做最终改写。
 7. 等待支持组合条件、超时和取消；稳定等待可限定区域，避开持续动画。
 8. 默认保存当前观察和操作元数据；原始正文可能包含用户内容，不自动上传或将启动环境写入日志。
 9. 会话关闭释放 PTY、监听器、页面与浏览器。退出的会话仍允许观察最后画面，显式 close 后释放。

@@ -4,9 +4,14 @@ import {
 } from "../core/protocol.js";
 
 const name = z.string().min(1).max(120);
+const profiles = z.array(z.string().min(1).max(8192)).min(1).max(32)
+  .refine((values) => new Set(values).size === values.length, "profiles 不能重复");
+
 export const scenarioSchema = z.object({
   version: z.literal(1),
   launch: launchSchema,
+  /** 同一场景依次在各 terminal profile 下执行；与 launch.terminalProfile 互斥由执行器覆盖。 */
+  profiles: profiles.optional(),
   steps: z.array(z.discriminatedUnion("type", [
     z.object({ type: z.literal("input"), name: name.optional(), action: inputSchema }).strict(),
     z.object({ type: z.literal("resize"), name: name.optional(), cols: z.number().int().min(2).max(500), rows: z.number().int().min(2).max(250) }).strict(),

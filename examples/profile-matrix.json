@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "launch": {
+    "command": "node",
+    "args": ["./examples/profile-probe.mjs"],
+    "cols": 120,
+    "rows": 20
+  },
+  "profiles": [
+    "kitty",
+    "wezterm",
+    "iterm2",
+    "windows-terminal",
+    "alacritty",
+    "vscode",
+    "tmux",
+    "xterm-256color",
+    "linux"
+  ],
+  "steps": [
+    {
+      "type": "wait",
+      "conditions": [{ "kind": "text", "text": "PROFILE_DONE" }],
+      "timeoutMs": 15000
+    }
+  ]
+}

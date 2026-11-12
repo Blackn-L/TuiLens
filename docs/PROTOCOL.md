@@ -71,6 +71,21 @@ Returns lines above the viewport in `snapshot.scrollback`, oldest first, text on
 1–5000. When fewer lines are available than requested, `scrollbackTruncated` is `true`. Use it when the
 application hands history to the terminal scrollback rather than repainting it in an alternate screen.
 
+## Terminal profile
+
+```json
+{
+  "command": "node",
+  "args": ["app.mjs"],
+  "terminalProfile": "kitty",
+  "graphics": { "sixel": false, "kitty": true, "iterm": false }
+}
+```
+
+`terminalProfile` accepts a built-in preset key/name or a JSON profile path. The returned session includes
+the resolved name in `terminalProfile`. `graphics` overrides individual image protocols; legacy `images`
+still works but maps to the same capabilities. See [terminal profiles](PROFILES.md).
+
 ## Keyboard protocols
 
 `modes.keyboard` reports what the application negotiated:
