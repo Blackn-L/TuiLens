@@ -9,6 +9,7 @@ import type {
 } from "../core/types.js";
 import { findTerminalPreset, listTerminalProfiles } from "./registry.js";
 import type { TerminalPresetDefinition } from "./presets/types.js";
+import { pick } from "../core/i18n.js";
 
 const MAX_PROFILE_BYTES = 256 * 1024;
 const MAX_EXTENDS_DEPTH = 16;
@@ -16,12 +17,18 @@ const MAX_EXTENDS_DEPTH = 16;
 const profileReference = z.string().trim().min(1).max(8192);
 const profileName = z.string().trim().min(1).max(160);
 const environmentKey = z.string().min(1).max(256)
-  .refine((value) => !value.includes("=") && !value.includes("\0"), "环境变量名不能包含 = 或 NUL");
+  .refine((value) => !value.includes("=") && !value.includes("\0"),
+    pick("Environment variable names cannot contain = or NUL.",
+      "环境变量名不能包含 = 或 NUL"));
 const environmentValue = z.string().max(32 * 1024)
-  .refine((value) => !value.includes("\0"), "环境变量值不能包含 NUL");
+  .refine((value) => !value.includes("\0"),
+    pick("Environment variable values cannot contain NUL.",
+      "环境变量值不能包含 NUL"));
 const terminalReply = z.string().max(4096)
   .refine((value) => !value.includes("\0") && !/[\r\n]/u.test(value)
-    && (value === "" || value.startsWith("\x1b")), "终端应答必须是空串或单个 ESC 序列");
+    && (value === "" || value.startsWith("\x1b")),
+  pick("Terminal replies must be empty or a single ESC sequence.",
+    "终端应答必须是空串或单个 ESC 序列"));
 
 export const profileFileSchema = z.object({
   name: profileName.optional(),

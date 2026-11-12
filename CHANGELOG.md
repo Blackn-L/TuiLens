@@ -8,6 +8,8 @@
 - Wait polling uses adaptive backoff (2 ms → 50 ms) instead of a fixed 50 ms tick, so `wait` and `perf` measurements are no longer quantized by the poll interval. Timeouts are now honored (~1.1 s for a 1 s timeout, previously ~2 s).
 
 ### Added
+- English-default localization for CLI help, MCP tool descriptions, errors and assertion messages;
+  set `TUILENS_LANG=zh-CN` for Simplified Chinese. Structured errors retain both `messageEn` and `messageZh`.
 - Terminal capability profiles: built-in `kitty`, `wezterm`, `iterm2`, `windows-terminal`, `alacritty`, `vscode`, `tmux`, `xterm-256color` and `linux` presets; JSON `extends` derivatives; `--terminal-profile`; orthogonal `graphics`; profile-driven environment, replies, image protocols, keyboard capability query and scrollback.
 - Scenario and performance `profiles: [...]` matrices, with per-profile reports and a perf comparison table. The default remains `xterm-256color`.
 - `perf` command/MCP tool/SDK API: declarative performance scenarios with warmup rounds, per-round process restarts, `{{seq}}` evidence templates, setup history growth, process-tree RSS sampling, baseline files and threshold-based regression gating.

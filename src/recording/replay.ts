@@ -8,6 +8,7 @@ import { readBoundedFile } from "../core/bounded-file.js";
 import type { ManagerOptions, ResolvedTerminalProfile, TerminalEngine, TerminalSnapshot } from "../core/types.js";
 import { createBrowserEngine } from "../engine/browser-engine.js";
 import { profileFileSchema } from "../profiles/resolver.js";
+import { pick } from "../core/i18n.js";
 
 const columns = z.number().int().min(2).max(500);
 const rows = z.number().int().min(2).max(250);
@@ -24,7 +25,10 @@ const header = z.object({ type: z.literal("header"), version: z.literal(1), cols
   images: z.enum(["off", "sixel", "iterm", "all"]), profile: recordingProfile.optional() }).strict()
   .superRefine((value, context) => {
     if (value.profile && value.images !== "off") {
-      context.addIssue({ code: "custom", message: "新录制应使用 profile 表示最终 graphics，而不是同时保留 images 覆盖" });
+      context.addIssue({ code: "custom", message: pick(
+        "New recordings should use profile for final graphics instead of retaining an images override.",
+        "新录制应使用 profile 表示最终 graphics，而不是同时保留 images 覆盖",
+      ) });
     }
   });
 const event = z.discriminatedUnion("type", [

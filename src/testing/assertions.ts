@@ -1,4 +1,5 @@
 import { TuiLensError } from "../core/errors.js";
+import { pick } from "../core/i18n.js";
 import type {
   CursorState, InputAction, MatchStyle, Observation, Region, SessionInfo, WaitCondition,
 } from "../core/types.js";
@@ -50,7 +51,7 @@ function excerpt(observation: Observation): string {
 
 /** 把毫秒渲染成人类可读的等待说明。 */
 function waitedText(timeoutMs: number): string {
-  return `${timeoutMs} ms 内未满足`;
+  return pick(`not satisfied within ${timeoutMs} ms`, `${timeoutMs} ms 内未满足`);
 }
 
 /**
@@ -87,9 +88,11 @@ export class Terminal {
         timeoutMs,
       });
     } catch (error) {
+      const wanted = JSON.stringify(text);
       throw await this.fail("EXPECT_TEXT_FAILED",
-        `期望画面包含 ${JSON.stringify(text)}，${waitedText(timeoutMs)}`,
-        `包含 ${JSON.stringify(text)}`, "未找到", error);
+        pick(`Expected screen to contain ${wanted}; ${waitedText(timeoutMs)}`,
+          `期望画面包含 ${wanted}，${waitedText(timeoutMs)}`),
+        pick(`contain ${wanted}`, `包含 ${wanted}`), pick("not found", "未找到"), error);
     }
   }
 
@@ -112,9 +115,12 @@ export class Terminal {
           .some((line) => line.includes(text))
         : observed.includes(text);
       if (present) {
+        const wanted = JSON.stringify(text);
         throw await this.fail("EXPECT_NO_TEXT_FAILED",
-          `期望画面不包含 ${JSON.stringify(text)}，但已出现`,
-          `不包含 ${JSON.stringify(text)}`, `包含 ${JSON.stringify(text)}`);
+          pick(`Expected screen not to contain ${wanted}, but it appeared`,
+            `期望画面不包含 ${wanted}，但已出现`),
+          pick(`not contain ${wanted}`, `不包含 ${wanted}`),
+          pick(`contains ${wanted}`, `包含 ${wanted}`));
       }
       // 仅在剩余时间内继续观察；不为了凑满窗口而空转。
       const remaining = deadline - performance.now();
@@ -144,9 +150,10 @@ export class Terminal {
       const observation = await this.manager.observe(this.id, { screenshot: false, cells: false })
         .catch(() => undefined);
       throw await this.fail("EXPECT_CURSOR_FAILED",
-        `期望光标满足 ${JSON.stringify(expected)}，${waitedText(timeoutMs)}`,
+        pick(`Expected cursor to satisfy ${JSON.stringify(expected)}; ${waitedText(timeoutMs)}`,
+          `期望光标满足 ${JSON.stringify(expected)}，${waitedText(timeoutMs)}`),
         JSON.stringify(expected),
-        observation ? JSON.stringify(observation.snapshot.cursor) : "不可用", error);
+        observation ? JSON.stringify(observation.snapshot.cursor) : pick("unavailable", "不可用"), error);
     }
   }
 
@@ -162,9 +169,12 @@ export class Terminal {
       const observation = await this.manager.observe(this.id, { screenshot: false, cells: false })
         .catch(() => undefined);
       throw await this.fail("EXPECT_SIZE_FAILED",
-        `期望终端尺寸为 ${cols}×${rows}，${waitedText(timeoutMs)}`,
+        pick(`Expected terminal size ${cols}×${rows}; ${waitedText(timeoutMs)}`,
+          `期望终端尺寸为 ${cols}×${rows}，${waitedText(timeoutMs)}`),
         `${cols}×${rows}`,
-        observation ? `${observation.snapshot.cols}×${observation.snapshot.rows}` : "不可用", error);
+        observation
+          ? `${observation.snapshot.cols}×${observation.snapshot.rows}`
+          : pick("unavailable", "不可用"), error);
     }
   }
 

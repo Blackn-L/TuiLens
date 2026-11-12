@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pick } from "./i18n.js";
 
 const dimension = z.number().int().min(2).max(500);
 const coordinate = z.number().int().min(0).max(499);
@@ -13,7 +14,10 @@ const scrollSchema = z.object({
   const conflicts = action.to !== undefined
     && (action.direction !== undefined || action.unit !== undefined || action.amount !== undefined);
   if (action.to === undefined && action.direction === undefined || conflicts) {
-    context.addIssue({ code: "custom", message: "滚动需要 direction，或仅使用 to:top/bottom" });
+    context.addIssue({ code: "custom", message: pick(
+      "Scroll requires direction, or only the to:top/bottom endpoint.",
+      "滚动需要 direction，或仅使用 to:top/bottom",
+    ) });
   }
 });
 const cursorCondition = z.object({
@@ -107,7 +111,7 @@ export const conditionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("exited") }).strict(),
   cursorCondition.extend({ kind: z.literal("cursor") }).strict().refine(
     (value) => Object.entries(value).some(([key, field]) => key !== "kind" && field !== undefined),
-    { message: "cursor 条件至少需要一个字段" },
+    { message: pick("A cursor condition requires at least one field.", "cursor 条件至少需要一个字段") },
   ),
 ]);
 const inputWaitSchema = z.object({

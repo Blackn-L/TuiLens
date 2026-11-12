@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { readBoundedFile } from "../core/bounded-file.js";
-import { TuiLensError } from "../core/errors.js";
+import { errorRecord, TuiLensError, type ErrorRecord } from "../core/errors.js";
+import { pick } from "../core/i18n.js";
 import type { InputAction, LaunchOptions, WaitCondition } from "../core/types.js";
 import type { SessionManager } from "../session/manager.js";
 import { ProcessTreeSampler } from "./resource.js";
@@ -65,7 +66,7 @@ export interface PerfError {
   round: number;
   phase?: string;
   sample?: string;
-  error: { code?: string; message: string };
+  error: ErrorRecord;
 }
 
 export interface PerfResult {
@@ -164,14 +165,7 @@ function stabilityOf(summary: SampleSummary): Stability {
 }
 
 function describeError(error: unknown): PerfError["error"] {
-  if (error && typeof error === "object" && "message" in error) {
-    const value = error as { code?: unknown; message?: unknown };
-    return {
-      ...(typeof value.code === "string" ? { code: value.code } : {}),
-      message: typeof value.message === "string" ? value.message : String(error),
-    };
-  }
-  return { message: String(error) };
+  return errorRecord(error);
 }
 
 function describeSample(sample: PerfSample): string {
@@ -388,7 +382,10 @@ async function runPerfSingle(
     if (!matches && options.allowEnvironmentMismatch !== true) {
       throw new TuiLensError("PERF_ENVIRONMENT_MISMATCH", "基线环境与当前运行不一致，不能直接比较", {
         baseline: baseline.environment, current: environment,
-        hint: "确认平台与网格一致，或在选项中显式允许跨环境比较",
+        hint: pick(
+          "Use the same platform and grid, or explicitly allow cross-environment comparison.",
+          "确认平台与网格一致，或在选项中显式允许跨环境比较",
+        ),
       });
     }
     for (const metric of merged) {
@@ -404,7 +401,10 @@ async function runPerfSingle(
       });
       if (regression) {
         regressions.push(`${metric.phase}/${metric.name}: p50 ${previous.p50} → ${metric.elapsedMs.p50} ms`
-          + ` (+${Math.round(change * 100)}%，阈值 ${Math.round(maxRegression * 100)}%)`);
+          + pick(
+            ` (+${Math.round(change * 100)}%, threshold ${Math.round(maxRegression * 100)}%)`,
+            ` (+${Math.round(change * 100)}%，阈值 ${Math.round(maxRegression * 100)}%)`,
+          ));
       }
     }
   }

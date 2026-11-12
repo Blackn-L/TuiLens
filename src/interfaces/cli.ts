@@ -5,8 +5,56 @@ import { request } from "../transport/client.js";
 import { methodSchemas, type Method } from "./schemas.js";
 import { readBoundedFile } from "../core/bounded-file.js";
 import { VERSION } from "../version.js";
+import { pick, resolveLocale } from "../core/i18n.js";
 
-const HELP = `TuiLens ${VERSION} — 面向 Agent 的终端观察与操作
+const HELP_EN = `TuiLens ${VERSION} - terminal observation and control for agents
+
+Usage: tuilens <command> [session-id] [options]
+All results are JSON; coordinates are zero-based character cells.
+
+launch --cwd <path> [--terminal-profile kitty|wezterm|...|<JSON>] [--images off|sixel|iterm|all] [--record]
+       [--protocol-replies auto|forward|suppress] [--protocol-reply-latency 250] -- <program> [args...]
+                                     --images is deprecated; use profile or graphics for image capabilities
+launch --json <JSON>                 also accepts --file <path> or --stdin
+list                                 list sessions
+observe <id> [--no-screenshot] [--cells] [--show-cursor]  same-frame text and PNG; cursor hidden by default
+type <id> <text>                     send text without submitting
+paste <id> <text>                    use negotiated bracketed paste
+key <id> Enter                       send a key or chord such as Ctrl+a
+click <id> <x> <y>                   click a character cell
+click-text <id> <text> [--nth 0]     require a unique match by default; JSON supports hitbox/point/offset
+drag <id> <x1> <y1> <x2> <y2>        drag between cells; supports --shift/--ctrl/--alt
+mouse-down / mouse-up <id> <x> <y>   press or release a mouse button
+scroll <id> <x> <y> <up|down> [count] [--page]  scroll by line or page at a cell
+scroll <id> <x> <y> --top / --bottom            jump to the start/end of scrollback
+resize <id> <cols> <rows>            resize; wait separately for application layout
+find <id> <text> [--region x,y,w,h]  locate wide-character text
+wait <id> --text <text> [--region x,y,w,h] [--timeout 10000]
+wait <id> --stable 250               wait for text and style stability
+wait --json '{"id":"…","conditions":[…]}'  combine conditions with AND
+input --json '{"id":"…","action":{…}}'    full low-level input interface
+input-wait <id> <text> [--text expected] [--timeout 10000] [--screenshot]
+                                        send one input and wait for a visible result; no automatic retry
+metrics <id>                         counters without screenshots or full-screen reads
+compare <id> --baseline <PNG> [--region x,y,w,h] [--show-cursor]  generate a visual diff and report
+replay <recording> [--speed 0]       replay output offline; does not execute input or programs
+scenario --file <JSON>               run a declarative scenario, retain failure evidence and release the session
+                                     the spec may include profiles:[...] to run a terminal matrix
+perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>]
+       [--max-regression 0.15] [--allow-env-mismatch]
+                                     performance scenario: multi-round sampling, process-tree memory,
+                                     baseline comparison and regression gating
+                                     the spec may include profiles:[...] for a comparison table
+close <id>                           release one session
+shutdown                             release all sessions and stop the local service
+mcp                                  start the MCP stdio interface
+
+Environment: TUILENS_HOME sets runtime data; TUILENS_BROWSER_PATH selects Chrome/Chromium;
+TUILENS_LANG selects en or zh-CN (default: en).
+The local IPC service starts automatically on first use. Observation has overhead and is not a zero-cost performance probe.
+`;
+
+const HELP_ZH = `TuiLens ${VERSION} — 面向 Agent 的终端观察与操作
 
 用法：tuilens <命令> [会话 ID] [参数]
 所有结果为 JSON；坐标从 0 起算、以字符格计量。
@@ -47,13 +95,18 @@ close <id>                          释放一个会话
 shutdown                            释放所有会话并关闭本机服务
 mcp                                 启动 MCP stdio 接口
 
-环境：TUILENS_HOME 指定运行数据；TUILENS_BROWSER_PATH 指定 Chrome/Chromium。
+环境：TUILENS_HOME 指定运行数据；TUILENS_BROWSER_PATH 指定 Chrome/Chromium；
+TUILENS_LANG 选择 en 或 zh-CN（默认 en）。
 首次使用自动启动本机 IPC 服务。功能观察有开销，不能当作零开销性能探针。
 `;
 
+function helpText(): string {
+  return resolveLocale() === "zh-CN" ? HELP_ZH : HELP_EN;
+}
+
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (!command || command === "--help" || command === "help") { process.stdout.write(HELP); return; }
+  if (!command || command === "--help" || command === "help") { process.stdout.write(helpText()); return; }
   if (command === "--version") { process.stdout.write(`${VERSION}\n`); return; }
   if (command === "_serve") { await (await import("../transport/server.js")).serve(); return; }
   if (command === "mcp") { await (await import("./mcp.js")).startMcp(); return; }
@@ -85,7 +138,10 @@ async function main(): Promise<void> {
   let method = command;
   let params: unknown;
   const payloadSources = [values.json !== undefined, values.file !== undefined, values.stdin === true].filter(Boolean).length;
-  if (payloadSources > 1) throw new TuiLensError("INVALID_ARGUMENT", "--json、--file 和 --stdin 只能选择一个");
+  if (payloadSources > 1) {
+    throw new TuiLensError("INVALID_ARGUMENT", "--json、--file 和 --stdin 只能选择一个",
+      undefined, "Use only one of --json, --file, or --stdin.");
+  }
   if (payloadSources) {
     method = normalizeMethod(command);
     let content = values.json;
@@ -96,7 +152,9 @@ async function main(): Promise<void> {
       for await (const chunk of process.stdin) {
         const data = Buffer.from(chunk);
         bytes += data.length;
-        if (bytes > 1024 * 1024) throw new TuiLensError("REQUEST_LIMIT", "输入超过 1 MiB");
+        if (bytes > 1024 * 1024) {
+          throw new TuiLensError("REQUEST_LIMIT", "输入超过 1 MiB", undefined, "Input exceeds 1 MiB.");
+        }
         chunks.push(data);
       }
       content = Buffer.concat(chunks).toString("utf8");
@@ -120,11 +178,17 @@ async function main(): Promise<void> {
       ...(values.nth === undefined ? {} : { nth: Number(values.nth) }) };
     switch (command) {
       case "launch": {
-        if (!program[0]) throw new TuiLensError("INVALID_ARGUMENT", "请在 -- 后指定程序，或使用 --json");
+        if (!program[0]) {
+          throw new TuiLensError("INVALID_ARGUMENT", "请在 -- 后指定程序，或使用 --json",
+            undefined, "Specify a program after --, or use --json.");
+        }
         const env: Record<string, string> = {};
         for (const pair of values.env ?? []) {
           const index = pair.indexOf("=");
-          if (index <= 0) throw new TuiLensError("INVALID_ARGUMENT", "--env 格式为 NAME=VALUE");
+          if (index <= 0) {
+            throw new TuiLensError("INVALID_ARGUMENT", "--env 格式为 NAME=VALUE",
+              undefined, "--env values must use NAME=VALUE.");
+          }
           env[pair.slice(0, index)] = pair.slice(index + 1);
         }
         const protocolReplies: { mode?: string; maxLatencyMs?: number } = {};
@@ -157,10 +221,17 @@ async function main(): Promise<void> {
       case "drag": method = "input"; params = { id, action: { type: "drag", from: { x: Number(first), y: Number(second) },
         to: { x: Number(third), y: Number(fourth) }, modifiers } }; break;
       case "scroll": {
-        if (values.top && values.bottom) throw new TuiLensError("INVALID_ARGUMENT", "--top 与 --bottom 不能同时使用");
-        if ((values.top || values.bottom) && values.page) throw new TuiLensError("INVALID_ARGUMENT", "--page 不能与滚动终点同时使用");
+        if (values.top && values.bottom) {
+          throw new TuiLensError("INVALID_ARGUMENT", "--top 与 --bottom 不能同时使用",
+            undefined, "--top and --bottom cannot be used together.");
+        }
+        if ((values.top || values.bottom) && values.page) {
+          throw new TuiLensError("INVALID_ARGUMENT", "--page 不能与滚动终点同时使用",
+            undefined, "--page cannot be combined with a scroll endpoint.");
+        }
         if ((values.top || values.bottom) && (third !== undefined || fourth !== undefined)) {
-          throw new TuiLensError("INVALID_ARGUMENT", "--top/--bottom 不能与方向或数量同时使用");
+          throw new TuiLensError("INVALID_ARGUMENT", "--top/--bottom 不能与方向或数量同时使用",
+            undefined, "--top/--bottom cannot be combined with a direction or count.");
         }
         method = "input";
         params = { id, action: values.top || values.bottom
@@ -203,18 +274,24 @@ async function main(): Promise<void> {
         break;
       }
       case "perf": {
-        throw new TuiLensError("INVALID_ARGUMENT", "perf 需要 --file 或 --json 提供性能场景");
+        throw new TuiLensError("INVALID_ARGUMENT", "perf 需要 --file 或 --json 提供性能场景",
+          undefined, "perf requires a performance scenario via --file or --json.");
       }
       case "list": case "ping": case "shutdown": params = {}; break;
-      default: throw new TuiLensError("UNKNOWN_METHOD", "未知命令；使用 --help 查看帮助");
+      default: throw new TuiLensError("UNKNOWN_METHOD", "未知命令；使用 --help 查看帮助",
+        undefined, "Unknown command; use --help for usage.");
     }
   }
   if ((method === "input" || method === "inputAndWait") && values.frame !== undefined) {
     params = { ...(params as object), guard: { frameId: Number(values.frame) } };
   }
-  if (!Object.hasOwn(methodSchemas, method)) throw new TuiLensError("UNKNOWN_METHOD", "未知命令");
+  if (!Object.hasOwn(methodSchemas, method)) {
+    throw new TuiLensError("UNKNOWN_METHOD", "未知命令", undefined, "Unknown command.");
+  }
   const validated = methodSchemas[method as Method].safeParse(params);
-  if (!validated.success) throw new TuiLensError("INVALID_ARGUMENT", "参数不合法", validated.error.issues);
+  if (!validated.success) {
+    throw new TuiLensError("INVALID_ARGUMENT", "参数不合法", validated.error.issues, "Invalid arguments.");
+  }
   const abort = new AbortController();
   process.once("SIGINT", () => abort.abort());
   const data = await request(method as Method, validated.data, { signal: abort.signal, autoStart: method !== "shutdown" });
@@ -300,12 +377,15 @@ async function writeJunit(path: string, method: string, data: unknown): Promise<
   const target = resolve(path);
   await mkdir(dirname(target), { recursive: true, mode: 0o700 });
   await writeFile(target, renderJunit(suites), { mode: 0o644 });
-  process.stderr.write(`JUnit 报告已写入 ${target}\n`);
+  process.stderr.write(`${pick("JUnit report written to", "JUnit 报告已写入")} ${target}\n`);
 }
 
 function parseRegion(value: string) {
   const parts = value.split(",").map(Number);
-  if (parts.length !== 4) throw new TuiLensError("INVALID_ARGUMENT", "区域格式为 x,y,width,height");
+  if (parts.length !== 4) {
+    throw new TuiLensError("INVALID_ARGUMENT", "区域格式为 x,y,width,height",
+      undefined, "Region format is x,y,width,height.");
+  }
   return { x: parts[0], y: parts[1], width: parts[2], height: parts[3] };
 }
 

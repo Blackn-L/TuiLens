@@ -7,17 +7,19 @@ import type { Observation, SessionInfo } from "../core/types.js";
 import { errorRecord } from "../core/errors.js";
 import { request } from "../transport/client.js";
 import { methodSchemas } from "./schemas.js";
-import { MCP_TOOLS, type McpMethod } from "./mcp-tools.js";
+import { mcpTools, type McpMethod } from "./mcp-tools.js";
 import { VERSION } from "../version.js";
+import { pick } from "../core/i18n.js";
 
 /** MCP 与 CLI 共用同一应用协议；断开时只释放此连接创建的会话。 */
 export async function startMcp(): Promise<void> {
   const server = new McpServer({ name: "tuilens", version: VERSION });
+  const tools = mcpTools();
   const owned = new Set<string>();
   const disconnect = new AbortController();
   const pending = new Set<Promise<unknown>>();
-  for (const method of Object.keys(MCP_TOOLS) as McpMethod[]) {
-    const description = MCP_TOOLS[method];
+  for (const method of Object.keys(tools) as McpMethod[]) {
+    const description = tools[method];
     server.registerTool(`terminal_${method}`, {
       description,
       inputSchema: methodSchemas[method].shape,
@@ -30,7 +32,10 @@ export async function startMcp(): Promise<void> {
         // 连接断开与启动返回竞争时，不能把迟到会话加到已经清空的 owned 中。
         if (method === "launch" && disconnect.signal.aborted) {
           await request("close", { id: (data as SessionInfo).id }, { autoStart: false });
-          return { isError: true, content: [{ type: "text", text: "MCP 连接已关闭，迟到会话已释放" }] };
+          return { isError: true, content: [{ type: "text", text: pick(
+            "MCP connection closed; the late session was released.",
+            "MCP 连接已关闭，迟到会话已释放",
+          ) }] };
         }
         if (method === "launch") owned.add((data as SessionInfo).id);
         if (method === "close") owned.delete((args as { id: string }).id);
@@ -55,7 +60,9 @@ export async function startMcp(): Promise<void> {
     await Promise.allSettled([...pending]);
     const results = await Promise.allSettled([...owned].map((id) => request("close", { id }, { autoStart: false, timeoutMs: 20000 })));
     for (const result of results) {
-      if (result.status === "rejected") process.stderr.write(`会话清理失败：${errorRecord(result.reason).message}\n`);
+      if (result.status === "rejected") {
+        process.stderr.write(`${pick("Session cleanup failed: ", "会话清理失败：")}${errorRecord(result.reason).message}\n`);
+      }
     }
     owned.clear();
   })();
