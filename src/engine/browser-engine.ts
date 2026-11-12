@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import type { Browser, Page } from "playwright";
 import { TuiLensError } from "../core/errors.js";
 import type {
-  BrowserEngineOptions, EngineFactory, Region, TerminalEngine, TerminalSnapshot, TerminalState,
+  BrowserEngineOptions, EngineFactory, Region, RendererKind, TerminalEngine, TerminalSnapshot, TerminalState,
 } from "../core/types.js";
 import { BrowserHost } from "./browser-host.js";
 import { initializeBrowserRuntime } from "./browser-runtime.js";
@@ -66,6 +66,10 @@ export function createBrowserEngineFactory(executablePath?: string) {
 async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost): Promise<TerminalEngine> {
   assertDimensions(options.cols, options.rows);
   const fontSize = options.fontSize ?? 16;
+  const renderer = options.renderer ?? "dom";
+  if (renderer !== "dom" && renderer !== "webgl") {
+    throw new TuiLensError("INVALID_ARGUMENT", "renderer 必须是 dom 或 webgl");
+  }
   const profile = applyTerminalProfileOverrides(options.profile ?? defaultTerminalProfile(), {
     ...(options.images === undefined ? {} : { images: options.images }),
     ...(options.graphics === undefined ? {} : { graphics: options.graphics }),
@@ -90,6 +94,7 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
   let page: Page;
   let closed = false;
   let crashed = false;
+  let actualRenderer: RendererKind = "dom";
   try {
     browser = await host.acquire();
     const context = await browser.newContext({
@@ -117,12 +122,20 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
     if (graphics.sixel || graphics.iterm) {
       await page.addScriptTag({ path: require.resolve("@xterm/addon-image") });
     }
+    if (renderer === "webgl") {
+      try {
+        await page.addScriptTag({ path: require.resolve("@xterm/addon-webgl") });
+      } catch {
+        // 依赖缺失或脚本加载失败时由页面运行时回退 DOM，并回传实际 renderer。
+      }
+    }
     if (graphics.kitty) await page.evaluate(installKittyRuntime, KITTY_DIACRITICS);
-    await page.evaluate(initializeBrowserRuntime, {
+    actualRenderer = await page.evaluate(initializeBrowserRuntime, {
       cols: options.cols,
       rows: options.rows,
       fontFamily: options.fontFamily ?? DEFAULT_FONT,
       fontSize,
+      renderer,
       scrollback,
       graphics,
       ...(options.profile ? { replies: profile.replies } : {}),
@@ -288,6 +301,7 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
       };
     },
     screenshot,
+    renderer: actualRenderer,
     async close(): Promise<void> {
       if (closed) return;
       closed = true;

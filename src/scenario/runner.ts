@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { errorRecord, TuiLensError } from "../core/errors.js";
-import type { ClickTextOptions, InputAction, LaunchOptions, WaitCondition } from "../core/types.js";
+import type {
+  ClickTextOptions, InputAction, LaunchOptions, RendererKind, WaitCondition,
+} from "../core/types.js";
 import type { SessionManager } from "../session/manager.js";
 import { scenarioSchema, type ScenarioSpec } from "./schema.js";
 import type { VisualOptions } from "../visual/artifacts.js";
@@ -11,6 +13,7 @@ export interface ScenarioResult {
   pass: boolean;
   reportPath: string;
   terminalProfile?: string;
+  renderer?: RendererKind;
   steps: { index: number; type: string; name?: string; elapsedMs: number; result?: unknown; error?: unknown }[];
   failureScreenshot?: string;
   cleanupError?: unknown;
@@ -82,6 +85,7 @@ async function runScenarioSingle(
     const launched = await manager.launch(spec.launch as LaunchOptions);
     id = launched.id;
     if (launched.terminalProfile) result.terminalProfile = launched.terminalProfile;
+    if (launched.renderer) result.renderer = launched.renderer;
     for (const [index, step] of spec.steps.entries()) {
       const started = performance.now();
       const record: ScenarioResult["steps"][number] = {

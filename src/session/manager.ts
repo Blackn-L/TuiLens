@@ -121,6 +121,7 @@ export class SessionManager {
       onData: (data) => { session?.protocolResponse(data); },
       ...(this.options.executablePath ? { executablePath: this.options.executablePath } : {}),
       ...(this.options.fontFamily ? { fontFamily: this.options.fontFamily } : {}),
+      ...(options.renderer === undefined ? {} : { renderer: options.renderer }),
     });
     try {
       if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "管理器在启动期间已关闭");
@@ -128,7 +129,8 @@ export class SessionManager {
       if (options.recording) {
         const { env: _env, source: _source, ...renderProfile } = profile;
         recorder = await RecordingWriter.create(resolve(this.options.artifactDir), sessionId,
-          { type: "header", version: 1, cols, rows, images: "off", profile: renderProfile },
+          { type: "header", version: 1, cols, rows, images: "off",
+            ...(engine.renderer ? { renderer: engine.renderer } : {}), profile: renderProfile },
           options.recording.maxBytes);
       }
       if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "管理器在启动期间已关闭");
@@ -171,6 +173,7 @@ export class SessionManager {
         id: sessionId, pid: pty.pid, cols, rows, status: "running",
         exitCode: null, createdAt: new Date().toISOString(),
         terminalProfile: profile.name,
+        ...(engine.renderer ? { renderer: engine.renderer } : {}),
         ...(recorder ? { recordingPath: recorder.path } : {}),
         ...(resolved.resolved ? { resolvedCommand: resolved.resolved } : {}),
       };
@@ -236,7 +239,8 @@ export class SessionManager {
       ...(options.region ? { region: options.region } : {}),
       ...(options.cursor ? { cursor: options.cursor } : {}),
     }, control);
-    return compareArtifact(observation.screenshot!.path, options, this.options.artifactDir);
+    return compareArtifact(observation.screenshot!.path, options, this.options.artifactDir,
+      observation.session.renderer);
   }
 
   observe(id: string, options?: ObserveOptions, control?: OperationControl): Promise<Observation> {

@@ -17,6 +17,7 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 ## Features
 
 - **Native images:** opt-in SIXEL, iTerm2 OSC 1337 inline images, and a bounded Kitty subset with Unicode virtual placements.
+- **Renderer selection:** DOM remains the default; opt-in WebGL is available for continuous block glyphs and high-fidelity screenshots. The resolved renderer is returned and recorded with visual artifacts.
 - **Visual testing:** character-region screenshots, PNG comparisons, pixel masks, and inspectable diff artifacts.
 - **Interaction:** keys, bracketed paste, clicks, button down/up, drag, wheel coordinates, and modifiers.
 - **Recording and replay:** bounded output/input/resize recordings; offline replay never executes recorded input.
@@ -137,6 +138,13 @@ both `messageEn` and `messageZh`; `message` follows the active locale.
 Use `launch --images sixel`, `launch --images iterm`, or `launch --images all`. Images are **off by default**.
 `iterm` enables OSC 1337 inline images, including multipart transport. `all` enables all three implemented
 image families; it does not mean full Kitty or OSC 1337 extension conformance.
+
+`launch --renderer webgl` enables xterm.js's WebGL renderer; the default is `--renderer dom`. WebGL is
+recommended when block/box-drawing glyphs must be continuous in captured PNGs. It may round the cell width
+(for example, 160 columns can change from 1500px to 1440px), so re-record visual baselines when switching.
+`session.renderer`, recording headers, scenario/perf environments, observation JSON and comparison JSON
+contain the actual renderer. If WebGL cannot start, TuiLens falls back to DOM and reports `dom` rather than
+silently claiming WebGL.
 
 ```sh
 node dist/src/interfaces/cli.js observe SESSION_ID --region 0,0,40,10

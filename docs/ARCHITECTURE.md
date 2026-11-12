@@ -21,6 +21,10 @@
 Interfaces delegate to the same application service. Protocol schemas are in core;
 scenarios do not import CLI implementations. `TerminalEngine` is the replaceable engine contract.
 
+The browser engine uses xterm.js's DOM renderer by default. Opt-in WebGL is loaded from
+`@xterm/addon-webgl`; if activation fails, the page falls back to DOM. The engine returns the actual
+renderer, which is propagated to sessions, recording headers, scenario/perf environments and visual metadata.
+
 ## Transport and sharing
 
 - A `SessionManager` owns one `BrowserHost`. Each session acquires a reference and gets its own browser

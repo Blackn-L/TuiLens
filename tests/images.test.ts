@@ -55,6 +55,16 @@ test("SIXEL 只在启用时声明能力，首图与擦除均进入截图", { tim
   } finally { await engine.close(); }
 });
 
+test("WebGL renderer 与 SIXEL 图片层共存", { timeout: 30000 }, async () => {
+  const engine = await createBrowserEngine({ cols: 20, rows: 8, renderer: "webgl", images: "sixel", onData() {} });
+  try {
+    await engine.write(`${ESC}[?25l${ESC}[2;3H` + redSixel);
+    const image = await engine.screenshot();
+    assert.equal(engine.renderer, "webgl");
+    assert.equal(count(image.png, [255, 0, 0]), 192);
+  } finally { await engine.close(); }
+});
+
 test("Kitty PNG 内联分块传输、替换和删除不依赖额外观察轮次", { timeout: 30000 }, async () => {
   const responses: string[] = [];
   const engine = await createBrowserEngine({ cols: 20, rows: 8, images: "all", onData: (data) => responses.push(data) });

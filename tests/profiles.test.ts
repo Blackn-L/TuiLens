@@ -249,15 +249,18 @@ test("profile 录制在源文件删除后仍保留图片能力", { timeout: 30_0
     assert.equal(sessionRed, 192);
     await manager.close(session.id);
     const header = JSON.parse((await readFile(session.recordingPath!, "utf8")).split("\n")[0]!) as {
-      images: string; profile: { name: string; env?: unknown; source?: unknown; capabilities: { scrollback: number } };
+      images: string; renderer?: string;
+      profile: { name: string; env?: unknown; source?: unknown; capabilities: { scrollback: number } };
     };
     assert.equal(header.images, "off");
+    assert.equal(header.renderer, "dom");
     assert.equal(header.profile.name, "sixel");
     assert.equal("env" in header.profile, false);
     assert.equal("source" in header.profile, false);
     assert.equal(header.profile.capabilities.scrollback, 321);
     await rm(profilePath);
     const replay = await manager.replay(session.recordingPath!);
+    assert.equal(replay.renderer, "dom");
     assert.equal(redPixels(await readFile(replay.screenshot.path)), 192);
   } finally {
     await manager.closeAll();

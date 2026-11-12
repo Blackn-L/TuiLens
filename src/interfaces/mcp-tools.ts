@@ -10,7 +10,7 @@ type McpToolDescriptions = Record<McpMethod, string>;
  * English; `TUILENS_LANG=zh-CN` selects the Chinese copy.
  */
 const MCP_TOOLS_EN: McpToolDescriptions = {
-  launch: "Launch a program in a real PTY. Returns a session ID. terminalProfile selects a built-in preset or JSON profile; graphics overrides image protocols. Windows bare commands resolve through PATH/PATHEXT.",
+  launch: "Launch a program in a real PTY. Returns a session ID. terminalProfile selects a built-in preset or JSON profile; graphics overrides image protocols; renderer selects dom (default) or webgl. Windows bare commands resolve through PATH/PATHEXT.",
   list: "List TuiLens sessions.",
   observe: "Freeze output consumption and capture the same frame's character grid and terminal PNG; the screenshot cursor is hidden by default.",
   input: "Send text, bracketed paste, keys, clicks, wheel events or raw bytes. Wheel input supports page units and top/bottom endpoints. A successful call only means the input was delivered.",
@@ -28,7 +28,7 @@ const MCP_TOOLS_EN: McpToolDescriptions = {
 };
 
 const MCP_TOOLS_ZH: McpToolDescriptions = {
-  launch: "在真实 PTY 中启动程序。返回会话 ID；可用 terminalProfile 选择内置预设或 JSON profile，graphics 覆盖图片协议；Windows 裸命令会按 PATH/PATHEXT 解析。",
+  launch: "在真实 PTY 中启动程序。返回会话 ID；可用 terminalProfile 选择内置预设或 JSON profile，graphics 覆盖图片协议，renderer 选择 dom（默认）或 webgl；Windows 裸命令会按 PATH/PATHEXT 解析。",
   list: "列出 TuiLens 会话。",
   observe: "冻结输出消费，获取同一 frameId 的字符格和实际终端 PNG；默认隐藏截图光标。",
   input: "发送文字、括号粘贴、按键、点击、滚轮或原始字节；滚轮支持 page 单位及 top/bottom 终点。只代表输入已送达。",

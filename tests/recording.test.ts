@@ -118,17 +118,22 @@ test("新录制内嵌最终渲染 profile，旧 images 录制保持兼容", asyn
   let received: unknown;
   const engineFactory: EngineFactory = async (options) => { received = options; return memory.engine; };
   try {
-    const writer = await RecordingWriter.create(directory, "profile", { ...header, profile: renderProfile });
+    const writer = await RecordingWriter.create(directory, "profile", {
+      ...header, renderer: "webgl", profile: renderProfile,
+    });
     await writer.append({ type: "output", data: "profile" });
     await writer.close();
     const persisted = JSON.parse((await readFile(writer.path, "utf8")).split("\n")[0]!) as {
+      renderer?: string;
       profile: { env?: unknown; source?: unknown; capabilities: { graphics: { kitty: boolean } } };
     };
+    assert.equal(persisted.renderer, "webgl");
     assert.equal("env" in persisted.profile, false);
     assert.equal("source" in persisted.profile, false);
     assert.equal(persisted.profile.capabilities.graphics.kitty, true);
     await replayRecording(writer.path, { artifactDir: directory, engineFactory });
-    const options = received as { profile: { env: object; source: object; capabilities: object } };
+    const options = received as { renderer?: string; profile: { env: object; source: object; capabilities: object } };
+    assert.equal(options.renderer, "webgl");
     assert.deepEqual(options.profile.env, {});
     assert.deepEqual(options.profile.source, { kind: "preset", reference: "kitty-0.40" });
     assert.deepEqual(options.profile.capabilities, profile.capabilities);

@@ -5,7 +5,9 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 import { TuiLensError } from "../core/errors.js";
 import { readBoundedFile } from "../core/bounded-file.js";
-import type { ManagerOptions, ResolvedTerminalProfile, TerminalEngine, TerminalSnapshot } from "../core/types.js";
+import type {
+  ManagerOptions, RendererKind, ResolvedTerminalProfile, TerminalEngine, TerminalSnapshot,
+} from "../core/types.js";
 import { createBrowserEngine } from "../engine/browser-engine.js";
 import { profileFileSchema } from "../profiles/resolver.js";
 import { pick } from "../core/i18n.js";
@@ -22,7 +24,8 @@ const recordingProfile = profileFileSchema.omit({ extends: true }).extend({
   env: z.record(z.string(), z.never()).optional(),
 }).strict();
 const header = z.object({ type: z.literal("header"), version: z.literal(1), cols: columns, rows,
-  images: z.enum(["off", "sixel", "iterm", "all"]), profile: recordingProfile.optional() }).strict()
+  images: z.enum(["off", "sixel", "iterm", "all"]), renderer: z.enum(["dom", "webgl"]).optional(),
+  profile: recordingProfile.optional() }).strict()
   .superRefine((value, context) => {
     if (value.profile && value.images !== "off") {
       context.addIssue({ code: "custom", message: pick(
@@ -41,6 +44,7 @@ const event = z.discriminatedUnion("type", [
 export interface ReplayResult {
   snapshot: TerminalSnapshot;
   screenshot: { path: string; width: number; height: number; frameId: number };
+  renderer?: RendererKind;
   events: number;
   truncated: boolean;
 }
@@ -153,6 +157,7 @@ export async function replayRecording(path: string, manager: ManagerOptions, opt
   checkAbort(options.signal);
   const engine = await (manager.engineFactory ?? createBrowserEngine)({
     cols: start.cols, rows: start.rows,
+    renderer: start.renderer ?? "dom",
     ...(start.profile ? {} : { images: start.images }),
     ...(start.profile ? { profile: replayProfile(start.profile) } : {}), onData: () => {},
     ...(manager.executablePath ? { executablePath: manager.executablePath } : {}),
@@ -193,7 +198,7 @@ export async function replayRecording(path: string, manager: ManagerOptions, opt
     await writeFile(target, capture.png, { mode: 0o600 });
     checkAbort(options.signal);
     result = { snapshot, screenshot: { path: target, width: capture.width, height: capture.height, frameId },
-      events: events.length, truncated };
+      ...(engine.renderer ? { renderer: engine.renderer } : {}), events: events.length, truncated };
     const metadata = target.replace(/\.png$/, ".json");
     artifacts.push(metadata);
     await writeFile(metadata, JSON.stringify(result, null, 2), { mode: 0o600 });

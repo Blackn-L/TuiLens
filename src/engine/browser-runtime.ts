@@ -1,7 +1,7 @@
 import type { Terminal } from "@xterm/xterm";
 import type { ImageAddon, IImageAddonOptions } from "@xterm/addon-image";
 import type {
-  CursorState, TerminalGraphicsCapabilities, TerminalKeyboardCapabilities, TerminalModes,
+  CursorState, RendererKind, TerminalGraphicsCapabilities, TerminalKeyboardCapabilities, TerminalModes,
   TerminalReplies, TerminalState,
 } from "../core/types.js";
 import type { KittyRuntime } from "./kitty-runtime.js";
@@ -33,8 +33,15 @@ export interface BrowserRuntime {
   state(): TerminalState;
   hasText(text: string): boolean;
   size(): { width: number; height: number };
+  renderer(): RendererKind;
   snapshot(frameId: number, includeGrid: boolean, scrollbackLines: number): PackedSnapshot;
   dispose(): void;
+}
+
+interface WebglAddonRuntime {
+  activate(terminal: Terminal): void;
+  dispose(): void;
+  onContextLoss(listener: () => void): unknown;
 }
 
 interface RuntimeWindow extends Window {
@@ -43,6 +50,7 @@ interface RuntimeWindow extends Window {
     UnicodeGraphemesAddon: new () => { activate(terminal: Terminal): void; dispose(): void };
   };
   ImageAddon: { ImageAddon: new (options: IImageAddonOptions) => ImageAddon };
+  WebglAddon?: { WebglAddon: new () => WebglAddonRuntime };
   __tuilensCreateKitty: Window["__tuilensCreateKitty"];
   __tuilens: BrowserRuntime;
   __tuilensData(data: string): Promise<void>;
@@ -53,6 +61,7 @@ export interface RuntimeOptions {
   rows: number;
   fontFamily: string;
   fontSize: number;
+  renderer: RendererKind;
   scrollback: number;
   graphics: Required<TerminalGraphicsCapabilities>;
   replies?: TerminalReplies;
@@ -60,7 +69,7 @@ export interface RuntimeOptions {
 }
 
 /** 此函数整体传入浏览器执行，不能引用外部运行时变量或 Node.js API。 */
-export async function initializeBrowserRuntime(options: RuntimeOptions): Promise<void> {
+export async function initializeBrowserRuntime(options: RuntimeOptions): Promise<RendererKind> {
   const host = window as unknown as RuntimeWindow;
   const basePalette = [
     "#000000", "#cd0000", "#00cd00", "#cdcd00",
@@ -92,6 +101,7 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
     fontSize: options.fontSize,
     lineHeight: 1,
     letterSpacing: 0,
+    customGlyphs: true,
     cursorBlink: false,
     allowProposedApi: true,
     scrollback: options.scrollback,
@@ -116,6 +126,22 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
   const container = document.querySelector<HTMLElement>("#terminal");
   if (!container) throw new Error("Terminal container is missing");
   terminal.open(container);
+  let rendererKind: RendererKind = "dom";
+  if (options.renderer === "webgl" && host.WebglAddon) {
+    let addon: WebglAddonRuntime | undefined;
+    try {
+      addon = new host.WebglAddon.WebglAddon();
+      addon.onContextLoss(() => {
+        rendererKind = "dom";
+        addon?.dispose();
+      });
+      terminal.loadAddon(addon);
+      rendererKind = "webgl";
+    } catch {
+      try { addon?.dispose(); } catch { /* WebGL 上下文创建失败，保留 DOM renderer。 */ }
+      rendererKind = "dom";
+    }
+  }
   const listeners = [
     terminal.onData((data) => { void host.__tuilensData(data); }),
   ];
@@ -403,6 +429,7 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
       const rectangle = element.getBoundingClientRect();
       return { width: Math.ceil(rectangle.width), height: Math.ceil(rectangle.height) };
     },
+    renderer: () => rendererKind,
     snapshot: (frameId, includeGrid, scrollbackLines) => {
       const buffer = terminal.buffer.active;
       const reusableCell = buffer.getNullCell();
@@ -510,6 +537,7 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
   };
   terminal.focus();
   await settle();
+  return rendererKind;
 }
 
 declare global {

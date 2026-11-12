@@ -221,7 +221,9 @@ test("IIP 损坏数据、下载和其他扩展不阻塞后续合法图片", { ti
 
 test("IIP 经真实 PTY、启动协议与录制回放保持图片像素", { timeout: 30000 }, async () => {
   launchOptions({ command: process.execPath, images: "iterm" });
+  launchOptions({ command: process.execPath, renderer: "webgl" });
   assert.equal(launchSchema.parse({ command: process.execPath, images: "iterm" }).images, "iterm");
+  assert.equal(launchSchema.parse({ command: process.execPath, renderer: "webgl" }).renderer, "webgl");
   const directory = await mkdtemp(join(tmpdir(), "tuilens-iip-"));
   const manager = new SessionManager({ artifactDir: directory });
   try {

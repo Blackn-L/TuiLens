@@ -8,6 +8,10 @@
 - Wait polling uses adaptive backoff (2 ms → 50 ms) instead of a fixed 50 ms tick, so `wait` and `perf` measurements are no longer quantized by the poll interval. Timeouts are now honored (~1.1 s for a 1 s timeout, previously ~2 s).
 
 ### Added
+- Optional WebGL renderer (`launch --renderer webgl`) on top of xterm.js, with DOM as the default.
+  The actual renderer is returned in sessions and recorded in recording headers, scenario/perf environments,
+  observation metadata and visual comparison JSON. WebGL failure falls back to DOM and reports the actual value.
+- Regression coverage for 120 block glyphs: WebGL must not reintroduce periodic 9/10px dark columns.
 - English-default localization for CLI help, MCP tool descriptions, errors and assertion messages;
   set `TUILENS_LANG=zh-CN` for Simplified Chinese. Structured errors retain both `messageEn` and `messageZh`.
 - Terminal capability profiles: built-in `kitty`, `wezterm`, `iterm2`, `windows-terminal`, `alacritty`, `vscode`, `tmux`, `xterm-256color` and `linux` presets; JSON `extends` derivatives; `--terminal-profile`; orthogonal `graphics`; profile-driven environment, replies, image protocols, keyboard capability query and scrollback.
@@ -66,7 +70,9 @@
 
 ## 简体中文
 
-未发布：新增终端能力画像与 9 个内置 preset，支持 JSON `extends` 派生、`--terminal-profile`、
+未发布：新增可选 WebGL renderer（默认 DOM），session、录制、scenario/perf、观察和视觉比较元数据
+记录实际 renderer；WebGL 不可用时回退并回传 DOM。增加 120 个块字符的周期暗列回归测试。
+新增终端能力画像与 9 个内置 preset，支持 JSON `extends` 派生、`--terminal-profile`、
 正交 `graphics` 和 profile 驱动的环境/应答/图片/键盘查询/回滚缓冲；场景与性能测试支持
 `profiles: [...]` 矩阵并输出 profile 维度对比表。`images` 标记为弃用并映射到 `capabilities.graphics`。
 Windows 显式选择 profile 时使用随包 ConPTY DLL，并在应答进入 PTY 前按 profile 做最终改写；

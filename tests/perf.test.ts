@@ -56,6 +56,7 @@ test("性能场景按模板等待每次新证据，并能写出可比较的基�
     const first = await runPerf(manager, { spec, directory, writeBaseline: baselinePath });
     assert.ok(!("matrix" in first));
     assert.equal(first.pass, true);
+    assert.equal(first.environment.renderer, "dom");
     // 2 轮 × 2 次重复 = 4 个样本。
     assert.equal(first.metrics.length, 1);
     assert.equal(first.metrics[0]!.samples, 4);
@@ -63,9 +64,11 @@ test("性能场景按模板等待每次新证据，并能写出可比较的基�
     assert.equal(first.rounds.length, 2);
     assert.deepEqual(first.errors, []);
     const baseline = JSON.parse(await readFile(baselinePath, "utf8")) as {
-      version: number; metrics: { phase: string; name: string; p50: number }[];
+      version: number; environment: { renderer?: string };
+      metrics: { phase: string; name: string; p50: number }[];
     };
     assert.equal(baseline.version, 1);
+    assert.equal(baseline.environment.renderer, "dom");
     assert.equal(baseline.metrics[0]?.phase, "add");
     assert.equal(baseline.metrics[0]?.name, "add-turn");
 
