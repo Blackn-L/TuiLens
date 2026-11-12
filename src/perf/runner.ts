@@ -57,6 +57,8 @@ export interface Environment {
   arch: string;
   cols: number;
   rows: number;
+  /** 新报告记录实际 profile；旧基线缺省时仍允许比较。 */
+  terminalProfile?: string;
 }
 
 export interface PerfError {
@@ -89,6 +91,30 @@ export interface PerfResult {
   baselinePath?: string;
   errors: PerfError[];
 }
+
+export interface PerfMatrixValue {
+  profile: string;
+  p50: number;
+  p95: number;
+  stability: Stability["verdict"];
+}
+
+export interface PerfMatrixRow {
+  phase: string;
+  name: string;
+  values: PerfMatrixValue[];
+}
+
+export interface PerfMatrixResult {
+  pass: boolean;
+  matrix: true;
+  reportPath: string;
+  profiles: string[];
+  table: PerfMatrixRow[];
+  runs: PerfResult[];
+}
+
+export type PerfRunResult = PerfResult | PerfMatrixResult;
 
 export interface PerfRunOptions {
   spec: unknown;
@@ -149,12 +175,72 @@ function describeSample(sample: PerfSample): string {
  * 阶段内的 `setup` 用来按需重建历史，让「长对话后变慢」是真实增长而非噪声。
  * 测量期间不做截图，也不读取整屏字符格，避免工具自身开销主导结果。
  */
-export async function runPerf(manager: SessionManager, options: PerfRunOptions): Promise<PerfResult> {
+export async function runPerf(manager: SessionManager, options: PerfRunOptions): Promise<PerfRunResult> {
   const parsed = perfSpecSchema.safeParse(options.spec);
   if (!parsed.success) {
     throw new TuiLensError("INVALID_PERF_SPEC", "性能场景格式不合法", parsed.error.issues);
   }
   const spec = parsed.data;
+  if (spec.profiles) return runPerfMatrix(manager, spec, options);
+  return runPerfSingle(manager, spec, options);
+}
+
+async function runPerfMatrix(
+  manager: SessionManager,
+  spec: PerfSpec,
+  options: PerfRunOptions,
+): Promise<PerfMatrixResult> {
+  const profiles = spec.profiles!;
+  if (profiles.length > 1 && (options.baseline !== undefined || options.writeBaseline !== undefined)) {
+    throw new TuiLensError("INVALID_ARGUMENT", "多 profile 矩阵不能共享单个性能基线；请按 profile 分别运行");
+  }
+  const { profiles: _profiles, ...base } = spec;
+  const runs: PerfResult[] = [];
+  for (const profile of profiles) {
+    if (options.signal?.aborted) throw new TuiLensError("ABORTED", "性能运行已取消");
+    runs.push(await runPerfSingle(manager, {
+      ...base,
+      launch: { ...base.launch, terminalProfile: profile } as LaunchOptions,
+    }, options));
+  }
+  const table: PerfMatrixRow[] = [];
+  const rows = new Map<string, PerfMatrixRow>();
+  for (const run of runs) {
+    const profile = run.environment.terminalProfile ?? "unknown";
+    for (const metric of run.metrics) {
+      const key = `${metric.phase}\u0000${metric.name}`;
+      let row = rows.get(key);
+      if (!row) {
+        row = { phase: metric.phase, name: metric.name, values: [] };
+        rows.set(key, row);
+        table.push(row);
+      }
+      row.values.push({
+        profile,
+        p50: metric.elapsedMs.p50,
+        p95: metric.elapsedMs.p95,
+        stability: metric.stability.verdict,
+      });
+    }
+  }
+  await mkdir(options.directory, { recursive: true, mode: 0o700 });
+  const result: PerfMatrixResult = {
+    pass: runs.length === profiles.length && runs.every((run) => run.pass),
+    matrix: true,
+    reportPath: join(options.directory, `perf-matrix-${randomUUID()}.json`),
+    profiles: [...profiles],
+    table,
+    runs,
+  };
+  await writeFile(result.reportPath, JSON.stringify(result, null, 2), { mode: 0o600 });
+  return result;
+}
+
+async function runPerfSingle(
+  manager: SessionManager,
+  spec: PerfSpec,
+  options: PerfRunOptions,
+): Promise<PerfResult> {
   // zod 的可选字段会带显式 undefined，而 LaunchOptions 在
   // exactOptionalPropertyTypes 下只接受缺省字段；这里统一剥离。
   const launch = withoutUndefined(spec.launch) as LaunchOptions;
@@ -174,6 +260,7 @@ export async function runPerf(manager: SessionManager, options: PerfRunOptions):
   let rssSamples = 0;
   let rssIntervalMs = 0;
   let warmupStartupMs: number | null = null;
+  let terminalProfile = spec.launch.terminalProfile ?? "xterm-256color";
 
   for (let round = 1; round <= rounds + warmupRounds; round += 1) {
     if (options.signal?.aborted) throw new TuiLensError("ABORTED", "性能运行已取消");
@@ -185,6 +272,7 @@ export async function runPerf(manager: SessionManager, options: PerfRunOptions):
     try {
       const session = await manager.launch(launch);
       sessionId = session.id;
+      terminalProfile = session.terminalProfile ?? terminalProfile;
       // 就绪条件必须在测量开始前成立：程序进入 raw mode 之前的输入会被吞掉，
       // 否则首个采样会以一个假超时结束整轮。
       if (spec.ready?.length) {
@@ -256,6 +344,7 @@ export async function runPerf(manager: SessionManager, options: PerfRunOptions):
   const environment: Environment = {
     platform: process.platform, node: process.version, arch: process.arch,
     cols: spec.launch.cols ?? 160, rows: spec.launch.rows ?? 50,
+    terminalProfile,
   };
   const baseline = options.baseline ? await readBaseline(options.baseline) : undefined;
   const comparisons: MetricComparison[] = [];
@@ -263,7 +352,9 @@ export async function runPerf(manager: SessionManager, options: PerfRunOptions):
   if (baseline) {
     const matches = baseline.environment.platform === environment.platform
       && baseline.environment.cols === environment.cols
-      && baseline.environment.rows === environment.rows;
+      && baseline.environment.rows === environment.rows
+      && (baseline.environment.terminalProfile === undefined
+        || baseline.environment.terminalProfile === environment.terminalProfile);
     if (!matches && options.allowEnvironmentMismatch !== true) {
       throw new TuiLensError("PERF_ENVIRONMENT_MISMATCH", "基线环境与当前运行不一致，不能直接比较", {
         baseline: baseline.environment, current: environment,

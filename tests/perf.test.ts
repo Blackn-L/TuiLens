@@ -54,6 +54,7 @@ test("性能场景按模板等待每次新证据，并能写出可比较的基�
     };
     const baselinePath = join(directory, "baseline.json");
     const first = await runPerf(manager, { spec, directory, writeBaseline: baselinePath });
+    assert.ok(!("matrix" in first));
     assert.equal(first.pass, true);
     // 2 轮 × 2 次重复 = 4 个样本。
     assert.equal(first.metrics.length, 1);
@@ -70,6 +71,7 @@ test("性能场景按模板等待每次新证据，并能写出可比较的基�
 
     // 与同一环境基线比较时，不应把正常波动当作回归。
     const second = await runPerf(manager, { spec, directory, baseline: baselinePath, maxRegression: 10 });
+    assert.ok(!("matrix" in second));
     assert.equal(second.comparisons.length, 1);
     assert.equal(second.comparisons[0]!.baselineP50, baseline.metrics[0]!.p50);
     assert.equal(second.regressions.length, 0);

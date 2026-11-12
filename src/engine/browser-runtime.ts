@@ -1,6 +1,9 @@
 import type { Terminal } from "@xterm/xterm";
 import type { ImageAddon, IImageAddonOptions } from "@xterm/addon-image";
-import type { CursorState, ImageProfile, TerminalModes, TerminalState } from "../core/types.js";
+import type {
+  CursorState, TerminalGraphicsCapabilities, TerminalKeyboardCapabilities, TerminalModes,
+  TerminalReplies, TerminalState,
+} from "../core/types.js";
 import type { KittyRuntime } from "./kitty-runtime.js";
 import type { PackedGrid } from "./snapshot-codec.js";
 
@@ -50,7 +53,10 @@ export interface RuntimeOptions {
   rows: number;
   fontFamily: string;
   fontSize: number;
-  images: ImageProfile;
+  scrollback: number;
+  graphics: Required<TerminalGraphicsCapabilities>;
+  replies: TerminalReplies;
+  keyboard?: TerminalKeyboardCapabilities;
 }
 
 /** 此函数整体传入浏览器执行，不能引用外部运行时变量或 Node.js API。 */
@@ -88,7 +94,7 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
     letterSpacing: 0,
     cursorBlink: false,
     allowProposedApi: true,
-    scrollback: 2000,
+    scrollback: options.scrollback,
     convertEol: false,
     drawBoldTextInBrightColors: false,
     minimumContrastRatio: 1,
@@ -261,14 +267,13 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
     // write 回调只保证解析完成；两次动画帧让 xterm 绘制及浏览器合成完成。
     await nextFrame();
     await nextFrame();
-    kitty?.render();
+    kittyRuntime?.render();
   };
   let imageAddon: ImageAddon | undefined;
-  let kitty: KittyRuntime | undefined;
+  let kittyRuntime: KittyRuntime | undefined;
   const nativeWrite = (data: string): Promise<void> => new Promise((resolve) => terminal.write(data, resolve));
-  if (options.images !== "off") {
-    const sixel = options.images === "sixel" || options.images === "all";
-    const iterm = options.images === "iterm" || options.images === "all";
+  const { sixel, iterm, kitty: kittyGraphics } = options.graphics;
+  if (sixel || iterm) {
     imageAddon = new host.ImageAddon.ImageAddon({
       enableSizeReports: true, sixelSupport: sixel, iipSupport: iterm, iipSizeLimit: 8 * 1024 * 1024,
       sixelPaletteLimit: 4096, sixelSizeLimit: 8 * 1024 * 1024,
@@ -314,14 +319,40 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
         } catch { return true; }
       }));
     }
-    if (options.images === "all") {
-      kitty = host.__tuilensCreateKitty(terminal, (data) => { void host.__tuilensData(data); }, (cell) => {
-        if (cell.isBgRGB()) return `#${cell.getBgColor().toString(16).padStart(6, "0")}`;
-        if (cell.isBgPalette()) return palette[cell.getBgColor()] ?? background;
-        return background;
-      });
-    }
   }
+  if (kittyGraphics) {
+    kittyRuntime = host.__tuilensCreateKitty(terminal, (data) => { void host.__tuilensData(data); }, (cell) => {
+      if (cell.isBgRGB()) return `#${cell.getBgColor().toString(16).padStart(6, "0")}`;
+      if (cell.isBgPalette()) return palette[cell.getBgColor()] ?? background;
+      return background;
+    });
+  }
+  // profile 应答必须最后注册，才能压过 xterm 内置 DA 与 image addon 的 DA1 处理器。
+  const firstParam = (params: (number | number[])[]): number => {
+    const value = params[0];
+    return Array.isArray(value) ? (value[0] ?? 0) : (value ?? 0);
+  };
+  const respond = (data: string | undefined): void => {
+    if (data) void host.__tuilensData(data);
+  };
+  listeners.push(terminal.parser.registerCsiHandler({ final: "c" }, (params) => {
+    if (firstParam(params) === 0) respond(options.replies.da1);
+    return true;
+  }));
+  listeners.push(terminal.parser.registerCsiHandler({ prefix: ">", final: "c" }, (params) => {
+    if (firstParam(params) === 0) respond(options.replies.da2);
+    return true;
+  }));
+  listeners.push(terminal.parser.registerCsiHandler({ prefix: ">", final: "q" }, (params) => {
+    if (firstParam(params) === 0) respond(options.replies.xtversion);
+    return true;
+  }));
+  listeners.push(terminal.parser.registerCsiHandler({ prefix: "?", final: "u" }, (params) => {
+    if (firstParam(params) === 0 && options.keyboard?.kitty !== undefined) {
+      respond(`\x1b[?${options.keyboard.kitty}u`);
+    }
+    return true;
+  }));
   // 输入和性能采样只读取协议状态，不能隐式遍历整个屏幕或等待动画帧。
   const cursorState = (): CursorState => {
     const buffer = terminal.buffer.active;
@@ -353,7 +384,7 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
     cursor: cursorState(),
   });
   host.__tuilens = {
-    write: (data) => kitty ? kitty.write(data) : nativeWrite(data),
+    write: (data) => kittyRuntime ? kittyRuntime.write(data) : nativeWrite(data),
     resize: (cols, rows) => { terminal.resize(cols, rows); },
     settle,
     state,
@@ -470,7 +501,7 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
     },
     dispose: () => {
       for (const listener of listeners) listener.dispose();
-      kitty?.dispose();
+      kittyRuntime?.dispose();
       imageAddon?.dispose();
       terminal.dispose();
     },

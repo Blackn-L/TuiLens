@@ -11,8 +11,9 @@ const HELP = `TuiLens ${VERSION} — 面向 Agent 的终端观察与操作
 用法：tuilens <命令> [会话 ID] [参数]
 所有结果为 JSON；坐标从 0 起算、以字符格计量。
 
-launch --cwd <路径> --images off|sixel|iterm|all [--record]
+launch --cwd <路径> [--terminal-profile kitty|wezterm|...|<JSON>] [--images off|sixel|iterm|all] [--record]
        [--protocol-replies auto|forward|suppress] [--protocol-reply-latency 250] -- <程序> [参数...]
+                                     --images 已弃用；profile 或 graphics 提供正交的图片能力
 launch --json <JSON>                 也可使用 --file <文件> 或 --stdin
 list                                列出会话
 observe <id> [--no-screenshot] [--cells] [--show-cursor]  同帧文字与 PNG；默认隐藏截图光标
@@ -37,9 +38,11 @@ metrics <id>                        无截图、无全屏读取的计数
 compare <id> --baseline <PNG> [--region x,y,w,h] [--show-cursor]  生成视觉差异和报告
 replay <录制文件> [--speed 0]        离线回放输出，不执行输入或程序
 scenario --file <JSON>              执行声明式场景，失败留证并释放会话
+                                    规格可含 profiles:[...]，按终端 profile 运行矩阵
 perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>]
        [--max-regression 0.15] [--allow-env-mismatch]
                                      性能场景：多轮采样、进程树内存、基线比较与劣化判定
+                                    规格可含 profiles:[...]，输出按 profile 的对比表
 close <id>                          释放一个会话
 shutdown                            释放所有会话并关闭本机服务
 mcp                                 启动 MCP stdio 接口
@@ -62,6 +65,7 @@ async function main(): Promise<void> {
       json: { type: "string" }, file: { type: "string" }, stdin: { type: "boolean" },
       cwd: { type: "string" }, cols: { type: "string" }, rows: { type: "string" },
       env: { type: "string", multiple: true }, "color-mode": { type: "string" },
+      "terminal-profile": { type: "string" },
       "no-screenshot": { type: "boolean" }, cells: { type: "boolean" }, text: { type: "string" },
       region: { type: "string" }, stable: { type: "string" }, timeout: { type: "string" },
       absent: { type: "boolean" }, exited: { type: "boolean" },
@@ -133,6 +137,7 @@ async function main(): Promise<void> {
           cols: Number(values.cols ?? 160), rows: Number(values.rows ?? 50),
           ...(values["color-mode"] ? { colorMode: values["color-mode"] } : {}),
           ...(values.images ? { images: values.images } : {}),
+          ...(values["terminal-profile"] ? { terminalProfile: values["terminal-profile"] } : {}),
           ...(values.record ? { recording: {} } : {}),
           ...(Object.keys(protocolReplies).length ? { protocolReplies } : {}),
         };
@@ -229,47 +234,63 @@ async function writeJunit(path: string, method: string, data: unknown): Promise<
   const suites: Parameters<typeof renderJunit>[0] = [];
   if (method === "scenario") {
     const result = data as {
-      pass: boolean; steps: { index: number; type: string; name?: string; elapsedMs: number;
-        error?: unknown }[];
+      pass: boolean; matrix?: boolean; runs?: unknown[]; terminalProfile?: string;
+      steps: { index: number; type: string; name?: string; elapsedMs: number; error?: unknown }[];
     };
-    suites.push({
-      name: "tuilens-scenario",
-      cases: result.steps.map((step) => ({
-        name: `${step.index + 1}. ${step.type}${step.name ? ` (${step.name})` : ""}`,
-        className: "scenario",
-        timeMs: step.elapsedMs,
-        ...(step.error ? { failure: failureOf(step.error) } : {}),
-      })),
-    });
+    const appendScenario = (run: typeof result, suffix = ""): void => {
+      suites.push({
+        name: `tuilens-scenario${suffix}`,
+        cases: run.steps.map((step) => ({
+          name: `${step.index + 1}. ${step.type}${step.name ? ` (${step.name})` : ""}`,
+          className: "scenario",
+          timeMs: step.elapsedMs,
+          ...(step.error ? { failure: failureOf(step.error) } : {}),
+        })),
+      });
+    };
+    if (result.matrix === true && Array.isArray(result.runs)) {
+      for (const [index, item] of result.runs.entries()) {
+        const run = item as typeof result;
+        appendScenario(run, `:${run.terminalProfile ?? index + 1}`);
+      }
+    } else appendScenario(result);
   } else if (method === "perf") {
     const result = data as {
-      pass: boolean; metrics: { phase: string; name: string;
+      pass: boolean; matrix?: boolean; runs?: unknown[]; metrics: { phase: string; name: string;
         elapsedMs: { p50: number; p95: number; count: number } }[];
       regressions: string[]; errors: { round: number; error: unknown }[];
     };
-    suites.push({
-      name: "tuilens-perf",
-      cases: [
-        ...result.metrics.map((metric) => ({
-          name: `${metric.phase}/${metric.name} p50=${metric.elapsedMs.p50}ms`,
-          className: "perf",
-          timeMs: metric.elapsedMs.p50,
-          output: `samples=${metric.elapsedMs.count} p50=${metric.elapsedMs.p50}ms p95=${metric.elapsedMs.p95}ms`,
-        })),
-        ...result.errors.map((item) => ({
-          name: `round ${item.round}`,
-          className: "perf",
-          timeMs: 0,
-          failure: failureOf(item.error),
-        })),
-        ...result.regressions.map((text) => ({
-          name: `regression: ${text}`,
-          className: "perf",
-          timeMs: 0,
-          failure: { message: text, type: "PerfRegression" },
-        })),
-      ],
-    });
+    const appendPerf = (run: typeof result, suffix = ""): void => {
+      suites.push({
+        name: `tuilens-perf${suffix}`,
+        cases: [
+          ...run.metrics.map((metric) => ({
+            name: `${metric.phase}/${metric.name} p50=${metric.elapsedMs.p50}ms`,
+            className: "perf",
+            timeMs: metric.elapsedMs.p50,
+            output: `samples=${metric.elapsedMs.count} p50=${metric.elapsedMs.p50}ms p95=${metric.elapsedMs.p95}ms`,
+          })),
+          ...run.errors.map((item) => ({
+            name: `round ${item.round}`,
+            className: "perf",
+            timeMs: 0,
+            failure: failureOf(item.error),
+          })),
+          ...run.regressions.map((text) => ({
+            name: `regression: ${text}`,
+            className: "perf",
+            timeMs: 0,
+            failure: { message: text, type: "PerfRegression" },
+          })),
+        ],
+      });
+    };
+    if (result.matrix === true && Array.isArray(result.runs)) {
+      for (const [index, item] of result.runs.entries()) {
+        const run = item as typeof result & { environment?: { terminalProfile?: string } };
+        appendPerf(run, `:${run.environment?.terminalProfile ?? index + 1}`);
+      }
+    } else appendPerf(result);
   } else {
     return;
   }

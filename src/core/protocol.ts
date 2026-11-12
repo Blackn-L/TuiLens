@@ -26,6 +26,11 @@ const cursorCondition = z.object({
 export const regionSchema = z.object({
   x: coordinate, y: coordinate, width: z.number().int().min(1).max(500), height: z.number().int().min(1).max(250),
 }).strict();
+export const graphicsSchema = z.object({
+  sixel: z.boolean().optional(),
+  kitty: z.boolean().optional(),
+  iterm: z.boolean().optional(),
+}).strict();
 export const launchSchema = z.object({
   command: z.string().min(1).max(8192),
   args: z.array(z.string().max(65536)).max(256).optional(),
@@ -35,6 +40,8 @@ export const launchSchema = z.object({
   rows: z.number().int().min(2).max(250).optional(),
   colorMode: z.enum(["truecolor", "ansi256", "none"]).optional(),
   images: z.enum(["off", "sixel", "iterm", "all"]).optional(),
+  graphics: graphicsSchema.optional(),
+  terminalProfile: z.string().min(1).max(8192).optional(),
   recording: z.object({ maxBytes: z.number().int().min(4096).max(64 * 1024 * 1024).optional() }).strict().optional(),
   protocolReplies: z.object({
     mode: z.enum(["auto", "forward", "suppress"]).optional(),

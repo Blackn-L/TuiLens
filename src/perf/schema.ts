@@ -2,6 +2,8 @@ import { z } from "zod";
 import { conditionSchema, inputSchema, launchSchema, regionSchema } from "../core/protocol.js";
 
 const name = z.string().min(1).max(120);
+const profiles = z.array(z.string().min(1).max(8192)).min(1).max(32)
+  .refine((values) => new Set(values).size === values.length, "profiles 不能重复");
 
 /**
  * 一次「输入 → 可见结果」的测量单元。
@@ -44,6 +46,8 @@ export const phaseSchema = z.object({
 export const perfSpecSchema = z.object({
   version: z.literal(1),
   launch: launchSchema,
+  /** 同一工作负载依次在各 terminal profile 下运行并汇总为矩阵。 */
+  profiles: profiles.optional(),
   /**
    * 启动后、开始准备前必须成立的条件。
    * 被测程序在进入 raw mode 前的输入会被吞掉，缺少就绪条件会让首轮采样假超时。

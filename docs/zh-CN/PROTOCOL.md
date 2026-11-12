@@ -70,6 +70,21 @@ hitbox 以文字区域为基准向四周扩展；point 支持 center、left、ri
 行数范围 1～5000；实际可用行数少于请求时 `scrollbackTruncated` 为 `true`。
 适用于把历史交给终端回滚区、而不是在备用屏幕中重绘的应用。
 
+## 终端能力画像
+
+```json
+{
+  "command": "node",
+  "args": ["app.mjs"],
+  "terminalProfile": "kitty",
+  "graphics": { "sixel": false, "kitty": true, "iterm": false }
+}
+```
+
+`terminalProfile` 接受内置 preset 键/名称或 JSON profile 路径。返回的会话通过 `terminalProfile`
+给出解析后的名称。`graphics` 按单项覆盖图片协议；旧 `images` 仍兼容，但映射到相同能力。
+详见[终端能力画像](PROFILES.md)。
+
 ## 键盘协议
 
 `modes.keyboard` 反映应用协商到的键盘协议：

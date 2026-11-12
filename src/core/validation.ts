@@ -53,6 +53,22 @@ export function launchOptions(options: LaunchOptions): void {
   if (options.images !== undefined && !["off", "sixel", "iterm", "all"].includes(options.images)) {
     throw new TuiLensError("INVALID_ARGUMENT", "不支持的 images");
   }
+  if (options.graphics !== undefined) {
+    object(options.graphics, "graphics");
+    if (Object.keys(options.graphics).some((key) => !["sixel", "kitty", "iterm"].includes(key))) {
+      throw new TuiLensError("INVALID_ARGUMENT", "graphics 含未知字段");
+    }
+    for (const [key, value] of Object.entries(options.graphics)) {
+      if (typeof value !== "boolean") {
+        throw new TuiLensError("INVALID_ARGUMENT", `graphics.${key} 必须是布尔值`);
+      }
+    }
+  }
+  if (options.terminalProfile !== undefined
+    && (typeof options.terminalProfile !== "string" || !options.terminalProfile.trim()
+      || options.terminalProfile.includes("\0"))) {
+    throw new TuiLensError("INVALID_ARGUMENT", "terminalProfile 必须是非空 preset 名称或文件路径");
+  }
   if (options.recording !== undefined) {
     object(options.recording, "recording");
     if (Object.keys(options.recording).some((key) => key !== "maxBytes")) {

@@ -121,7 +121,58 @@ export interface InputGuard {
   region?: { bounds: Region; fingerprint: string };
 }
 
+/** @deprecated 使用 capabilities.graphics 或 LaunchOptions.graphics。 */
 export type ImageProfile = "off" | "sixel" | "iterm" | "all";
+
+export interface TerminalGraphicsCapabilities {
+  sixel?: boolean;
+  kitty?: boolean;
+  iterm?: boolean;
+}
+
+export interface TerminalKeyboardCapabilities {
+  /** Kitty keyboard protocol 的支持标志位；缺省表示不支持查询。 */
+  kitty?: number;
+  /** xterm modifyOtherKeys 级别；当前仅作能力声明。 */
+  modifyOtherKeys?: number;
+}
+
+export interface TerminalCapabilities {
+  color?: "none" | "ansi16" | "ansi256" | "truecolor";
+  keyboard?: TerminalKeyboardCapabilities;
+  mouse?: string[];
+  graphics?: TerminalGraphicsCapabilities;
+  underlineStyles?: ("single" | "double" | "curly" | "dotted" | "dashed")[];
+  synchronizedOutput?: boolean;
+  focusEvents?: boolean;
+  hyperlink?: boolean;
+  unicodeVersion?: string;
+  /** 模拟终端保留的回滚行数，同时决定观察时可读取的上限。 */
+  scrollback?: number;
+}
+
+export interface TerminalReplies {
+  da1?: string;
+  da2?: string;
+  xtversion?: string;
+}
+
+export interface TerminalProfileSource {
+  kind: "preset" | "file";
+  reference: string;
+  path?: string;
+}
+
+/** 完全解析后的终端画像；矩阵、引擎和会话信息共享同一份数据。 */
+export interface ResolvedTerminalProfile {
+  name: string;
+  versionRange?: string;
+  env: Record<string, string>;
+  replies: TerminalReplies;
+  capabilities: TerminalCapabilities;
+  source: TerminalProfileSource;
+}
+
 export interface Modifiers { shift?: boolean; ctrl?: boolean; alt?: boolean }
 
 export interface LaunchOptions {
@@ -132,7 +183,12 @@ export interface LaunchOptions {
   cols?: number;
   rows?: number;
   colorMode?: "truecolor" | "ansi256" | "none";
+  /** @deprecated 使用 terminalProfile 的 capabilities.graphics，或显式 graphics。 */
   images?: ImageProfile;
+  /** 正交的图片协议覆盖；比 images 更细粒度。 */
+  graphics?: TerminalGraphicsCapabilities;
+  /** 内置 preset 键/名称，或 JSON profile 路径。 */
+  terminalProfile?: string;
   recording?: { maxBytes?: number };
   protocolReplies?: {
     mode?: "auto" | "forward" | "suppress";
@@ -150,6 +206,7 @@ export interface SessionInfo {
   createdAt: string;
   recordingPath?: string;
   resolvedCommand?: string;
+  terminalProfile?: string;
 }
 
 export interface Observation {
@@ -230,7 +287,11 @@ export interface BrowserEngineOptions {
   executablePath?: string;
   fontFamily?: string;
   fontSize?: number;
+  /** @deprecated 使用 profile.capabilities.graphics，或显式 graphics。 */
   images?: ImageProfile;
+  graphics?: TerminalGraphicsCapabilities;
+  profile?: ResolvedTerminalProfile;
+  scrollback?: number;
 }
 
 /** 终端适配器不持有进程；替换引擎无需修改 CLI/MCP 或等待规则。 */

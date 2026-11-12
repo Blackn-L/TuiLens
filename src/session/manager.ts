@@ -13,14 +13,41 @@ import type {
 } from "../core/types.js";
 import { clickTextOptions, integer, launchOptions, waitOptions } from "../core/validation.js";
 import { createBrowserEngine, createBrowserEngineFactory } from "../engine/browser-engine.js";
-import { ManagedSession, type OperationControl, type SessionMetrics } from "./session.js";
+import {
+  installWindowsConptyCleanup, ManagedSession, releaseWindowsConptyWorker,
+  type OperationControl, type SessionMetrics,
+} from "./session.js";
 import { RecordingWriter } from "../recording/writer.js";
 import { replayRecording, type ReplayOptions } from "../recording/replay.js";
 import { compareArtifact, type VisualOptions } from "../visual/artifacts.js";
 import { runScenario } from "../scenario/runner.js";
 import { runPerf, type PerfRunOptions } from "../perf/runner.js";
+import { applyTerminalProfileOverrides, resolveTerminalProfile } from "../profiles/index.js";
 
 const MIN_SCREENSHOT_TIMEOUT_MS = 5_000;
+const HOST_TERMINAL_ENV = new Set([
+  "TERM", "COLORTERM", "FORCE_COLOR", "NO_COLOR", "TERM_PROGRAM", "TERM_PROGRAM_VERSION",
+  "TERM_SESSION_ID", "KITTY_WINDOW_ID", "KITTY_PID", "KITTY_LISTEN_ON",
+  "WEZTERM_PANE", "WEZTERM_EXECUTABLE", "ITERM_SESSION_ID", "LC_TERMINAL", "LC_TERMINAL_VERSION",
+  "WT_SESSION", "WT_PROFILE_ID", "ALACRITTY_WINDOW_ID", "ALACRITTY_SOCKET",
+  "VSCODE_IPC_HOOK_CLI", "TMUX", "TMUX_PANE", "VTE_VERSION",
+]);
+
+function removeEnv(env: Record<string, string>, key: string): void {
+  for (const existing of Object.keys(env)) {
+    if (existing.toLowerCase() === key.toLowerCase()) delete env[existing];
+  }
+}
+
+function setEnv(env: Record<string, string>, key: string, value: string): void {
+  removeEnv(env, key);
+  env[key] = value;
+}
+
+function getEnv(env: Record<string, string>, key: string): string | undefined {
+  const existing = Object.keys(env).find((candidate) => candidate.toLowerCase() === key.toLowerCase());
+  return existing === undefined ? undefined : env[existing];
+}
 
 /** 应用服务同时供 CLI 与 MCP 使用，不依赖具体传输协议。 */
 export class SessionManager {
@@ -77,12 +104,20 @@ export class SessionManager {
     }
     const cols = options.cols ?? 160;
     const rows = options.rows ?? 50;
+    const profile = applyTerminalProfileOverrides(
+      await resolveTerminalProfile(options.terminalProfile, { cwd }),
+      {
+        ...(options.images === undefined ? {} : { images: options.images }),
+        ...(options.graphics === undefined ? {} : { graphics: options.graphics }),
+        ...(options.colorMode === undefined ? {} : { colorMode: options.colorMode }),
+      },
+    );
     let pty: nodePty.IPty | undefined;
     let session: ManagedSession | undefined;
     let recorder: RecordingWriter | undefined;
     const engine = await this.engineFactory({
       cols, rows,
-      images: options.images ?? "off",
+      profile,
       onData: (data) => { session?.protocolResponse(data); },
       ...(this.options.executablePath ? { executablePath: this.options.executablePath } : {}),
       ...(this.options.fontFamily ? { fontFamily: this.options.fontFamily } : {}),
@@ -96,54 +131,54 @@ export class SessionManager {
       const env = Object.fromEntries(Object.entries(process.env).filter(
         (entry): entry is [string, string] => entry[1] !== undefined,
       ));
-      // 环境声明与实际颜色能力保持一致；不继承宿主误报的图片协议。
-      delete env.COLORTERM;
-      delete env.FORCE_COLOR;
-      delete env.NO_COLOR;
-      delete env.TERM_PROGRAM;
-      delete env.KITTY_WINDOW_ID;
-      delete env.WEZTERM_PANE;
-      Object.assign(env, {
-        TERM: "xterm-256color",
-        COLORTERM: "truecolor",
-        ...options.env,
-      });
-      const pathOverride = Object.keys(options.env ?? {}).find((key) => key.toLowerCase() === "path");
-      if (pathOverride) {
-        for (const key of Object.keys(env)) {
-          if (key.toLowerCase() === "path") delete env[key];
-        }
-        env[pathOverride] = options.env![pathOverride]!;
+      // 模拟终端不能继承宿主终端身份，否则应用会看到两套互相矛盾的 TERM 声明。
+      for (const key of Object.keys(env)) {
+        if (HOST_TERMINAL_ENV.has(key.toUpperCase())) delete env[key];
       }
+      for (const [key, value] of Object.entries(profile.env)) setEnv(env, key, value);
+      for (const [key, value] of Object.entries(options.env ?? {})) setEnv(env, key, value);
       if (options.colorMode === "ansi256") {
-        delete env.COLORTERM;
-        delete env.NO_COLOR;
-        env.FORCE_COLOR = "2";
+        removeEnv(env, "COLORTERM");
+        removeEnv(env, "NO_COLOR");
+        setEnv(env, "FORCE_COLOR", "2");
       } else if (options.colorMode === "none") {
-        delete env.COLORTERM;
-        env.NO_COLOR = "1";
-        env.FORCE_COLOR = "0";
+        removeEnv(env, "COLORTERM");
+        setEnv(env, "NO_COLOR", "1");
+        setEnv(env, "FORCE_COLOR", "0");
       } else if (options.colorMode === "truecolor") {
-        delete env.NO_COLOR;
-        env.COLORTERM = "truecolor";
-        env.FORCE_COLOR = "3";
+        removeEnv(env, "NO_COLOR");
+        setEnv(env, "COLORTERM", "truecolor");
+        setEnv(env, "FORCE_COLOR", "3");
       }
       const requested = process.platform === "win32" && ["node", "nodejs", "node.exe"].includes(options.command.toLowerCase())
         ? process.execPath : options.command;
       const resolved = await resolveExecutable(requested, { cwd, env });
-      pty = nodePty.spawn(resolved.file, options.args ?? [], { name: "xterm-256color", cols, rows, cwd, env });
+      pty = nodePty.spawn(resolved.file, options.args ?? [], {
+        name: getEnv(env, "TERM") ?? "xterm-256color", cols, rows, cwd, env,
+        // 系统 ConPTY 会抢答 DA1/DA2。只有显式要求终端画像时才承担随包 ConPTY 的启动成本。
+        ...(process.platform === "win32"
+          && (options.terminalProfile !== undefined || options.graphics !== undefined
+            || (options.images !== undefined && options.images !== "off"))
+          ? { useConptyDll: true }
+          : {}),
+      });
+      installWindowsConptyCleanup(pty);
       const info: SessionInfo = {
         id: sessionId, pid: pty.pid, cols, rows, status: "running",
         exitCode: null, createdAt: new Date().toISOString(),
+        terminalProfile: profile.name,
         ...(recorder ? { recordingPath: recorder.path } : {}),
         ...(resolved.resolved ? { resolvedCommand: resolved.resolved } : {}),
       };
-      session = new ManagedSession(info, engine, pty, resolve(this.options.artifactDir), recorder, options.protocolReplies);
+      session = new ManagedSession(
+        info, engine, pty, resolve(this.options.artifactDir), recorder, options.protocolReplies, profile,
+      );
       this.sessions.set(info.id, session);
       return session.info();
     } catch (error) {
       const cleanupErrors: unknown[] = [];
       try { pty?.kill(); } catch (cleanupError) { cleanupErrors.push(cleanupError); }
+      if (pty) releaseWindowsConptyWorker(pty);
       try { await engine.close(); } catch (cleanupError) { cleanupErrors.push(cleanupError); }
       try { await recorder?.close(); } catch (cleanupError) { cleanupErrors.push(cleanupError); }
       if (cleanupErrors.length) {
