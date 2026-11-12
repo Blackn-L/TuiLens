@@ -224,7 +224,8 @@ Scenarios and performance runs can emit JUnit XML with `--junit <path>` for CI r
 
 ## MCP
 
-Configure your MCP client to launch this stdio server, using an **absolute path**:
+Build TuiLens first, then configure your MCP client to launch this stdio server using an
+**absolute path**:
 
 ```json
 {
@@ -237,9 +238,12 @@ Configure your MCP client to launch this stdio server, using an **absolute path*
 }
 ```
 
+See [MCP client setup](docs/MCP-SETUP.md) for source installation, Codex and JSON client
+configuration, verification, troubleshooting, and local-only security notes.
+
 Available tools: `terminal_launch`, `terminal_list`, `terminal_observe`, `terminal_find`,
 `terminal_clickText`, `terminal_input`, `terminal_inputAndWait`, `terminal_resize`, `terminal_wait`, `terminal_compare`,
-`terminal_replay`, `terminal_scenario`, `terminal_metrics`, and `terminal_close`.
+`terminal_replay`, `terminal_scenario`, `terminal_perf`, `terminal_metrics`, and `terminal_close`.
 `terminal_observe`, `terminal_replay`, and screenshot-enabled `terminal_inputAndWait` return PNG image content as well as text metadata.
 Disconnecting releases sessions created by that MCP connection.
 
@@ -274,7 +278,7 @@ Tests use independent fixtures. Generated captures, recordings, reports, and bui
 The daemon uses a local named pipe on Windows and an abstract Unix socket on Linux, authenticated by a local token.
 Set `TUILENS_HOME` to isolate its state directory (default: `~/.tuilens`). No public HTTP control server is exposed.
 
-[Architecture](docs/ARCHITECTURE.md) · [Terminal profiles](docs/PROFILES.md) · [Validation](docs/VALIDATION.md) · [Performance](docs/PERFORMANCE.md) · [Roadmap](docs/ROADMAP.md)
+[Architecture](docs/ARCHITECTURE.md) · [MCP setup](docs/MCP-SETUP.md) · [Terminal profiles](docs/PROFILES.md) · [Validation](docs/VALIDATION.md) · [Performance](docs/PERFORMANCE.md) · [Roadmap](docs/ROADMAP.md)
 
 ## Limitations
 

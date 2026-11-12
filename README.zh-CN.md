@@ -222,7 +222,7 @@ await tui.expectNoText("Error", { timeoutMs: 500 });
 
 ## MCP
 
-MCP 客户端配置使用绝对路径启动 stdio 服务：
+先构建 TuiLens，再让 MCP 客户端使用绝对路径启动 stdio 服务：
 
 ```json
 {
@@ -235,9 +235,12 @@ MCP 客户端配置使用绝对路径启动 stdio 服务：
 }
 ```
 
+安装、Codex 与 JSON 客户端配置、验收方法、排错和本机安全说明见
+[MCP 接入指南](docs/zh-CN/MCP-SETUP.md)。
+
 工具包括 `terminal_launch`、`terminal_list`、`terminal_observe`、`terminal_find`、
 `terminal_clickText`、`terminal_input`、`terminal_inputAndWait`、`terminal_resize`、`terminal_wait`、`terminal_compare`、
-`terminal_replay`、`terminal_scenario`、`terminal_metrics`、`terminal_close`。
+`terminal_replay`、`terminal_scenario`、`terminal_perf`、`terminal_metrics`、`terminal_close`。
 观察、回放和启用截图的 inputAndWait 返回 PNG image content 和文字元数据；MCP 断开时回收该连接创建的会话。
 
 ## TypeScript SDK
@@ -271,7 +274,7 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 后台服务使用本机命名管道或 Linux abstract Unix socket，并使用本地令牌认证。
 `TUILENS_HOME` 可隔离状态目录，默认 `~/.tuilens`；没有公开 HTTP 控制端口。
 
-[架构](docs/zh-CN/ARCHITECTURE.md) · [终端能力画像](docs/zh-CN/PROFILES.md) · [验证](docs/zh-CN/VALIDATION.md) · [性能](docs/zh-CN/PERFORMANCE.md) · [路线](docs/zh-CN/ROADMAP.md)
+[架构](docs/zh-CN/ARCHITECTURE.md) · [MCP 接入](docs/zh-CN/MCP-SETUP.md) · [终端能力画像](docs/zh-CN/PROFILES.md) · [验证](docs/zh-CN/VALIDATION.md) · [性能](docs/zh-CN/PERFORMANCE.md) · [路线](docs/zh-CN/ROADMAP.md)
 
 ## 限制
 
