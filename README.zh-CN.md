@@ -93,6 +93,23 @@ node dist/src/interfaces/cli.js shutdown
 终端自动应答默认使用 `--protocol-replies auto`，只转发及时且存在查询匹配的已知应答。
 若应用在 TTY 已回显时查询，使用 `--protocol-replies suppress` 或应用侧探测开关。
 
+## 语言
+
+CLI 帮助、MCP 工具描述、错误和断言信息默认使用英文。设置 `TUILENS_LANG=zh-CN`
+可切换到简体中文：
+
+```powershell
+$env:TUILENS_LANG = "zh-CN"
+```
+
+```sh
+export TUILENS_LANG=zh-CN
+```
+
+`TUILENS_LANG` 对大小写不敏感，接受 `en`、`zh` 和 `zh-CN`；不支持的值会回退到英文。
+使用 MCP 时，可在客户端的环境变量中设置该值，使该连接的工具描述和错误响应使用中文。
+CLI、MCP 和 SDK 的结构化错误同时提供 `messageEn` 与 `messageZh`，`message` 跟随当前语言。
+
 ## 图片与截图
 
 使用 `launch --images sixel`、`launch --images iterm` 或 `launch --images all`，默认 `off`。

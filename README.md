@@ -92,6 +92,24 @@ Plain input confirms delivery only; use `input-wait` or an explicit wait for a r
 Automatic terminal replies default to `--protocol-replies auto`: only timely, query-matched known replies are forwarded.
 If an application probes while its TTY already echoes, use `--protocol-replies suppress` or the application's own probe switch.
 
+## Language
+
+CLI help, MCP tool descriptions, errors and assertion messages default to English.
+Set `TUILENS_LANG=zh-CN` for Simplified Chinese:
+
+```powershell
+$env:TUILENS_LANG = "zh-CN"
+```
+
+```sh
+export TUILENS_LANG=zh-CN
+```
+
+`TUILENS_LANG` accepts `en`, `zh` and `zh-CN` case-insensitively; unsupported values
+fall back to English. Set it in the MCP client's environment to localize tool descriptions
+and error responses for that connection. Structured errors from CLI, MCP and the SDK expose
+both `messageEn` and `messageZh`; `message` follows the active locale.
+
 ## Images and screenshots
 
 Use `launch --images sixel`, `launch --images iterm`, or `launch --images all`. Images are **off by default**.

@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { TuiLensError } from "./errors.js";
+import { pick } from "./i18n.js";
 
 export interface ResolveExecutableOptions {
   cwd: string;
@@ -44,7 +45,8 @@ function assertDirectExecutable(file: string, command: string): void {
     throw new TuiLensError("EXECUTABLE_REQUIRES_SHELL", "Windows 批处理脚本不能直接作为 PTY 可执行文件启动", {
       command,
       resolved: file,
-      hint: "请改用原生 .exe/.com，或显式启动 shell",
+      hint: pick("Use a native .exe/.com program, or launch a shell explicitly.",
+        "请改用原生 .exe/.com，或显式启动 shell"),
     });
   }
 }

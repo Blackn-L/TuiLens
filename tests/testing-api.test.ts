@@ -35,7 +35,7 @@ test("断言句柄提供可读期望与实际，并附失败截图", { timeout: 
       assert.ok(error instanceof TuiLensAssertionError);
       assert.equal(error.code, "EXPECT_TEXT_FAILED");
       assert.match(error.assertion.expected, /NEVER_THERE/u);
-      assert.match(error.assertion.actual, /未找到/u);
+      assert.match(error.assertion.actual, /not found/u);
       // 失败证据必须真实存在，而不是只写一个路径。
       assert.ok(error.assertion.artifact);
       assert.match(error.assertion.screen ?? "", /READY/u);

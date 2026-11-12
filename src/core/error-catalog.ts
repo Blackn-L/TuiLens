@@ -1,10 +1,9 @@
 /**
  * 错误码的英文说明。
  *
- * 诊断文本本身是中文（面向主要使用者的自然语言），但错误码是稳定契约，
- * 面向国际用户与自动化工具时还需要一句可读的英文解释。这里为每个码
- * 提供固定英文摘要；`errorRecord` 会把它作为 `messageEn` 一并返回，
- * 因此不必改写上百处内联文案，也不会破坏既有错误信息。
+ * 错误码是稳定契约；每个码都有一句固定的英文摘要。`errorRecord` 同时返回
+ * `messageEn` 与 `messageZh`，默认展示英文，`TUILENS_LANG=zh-CN` 时展示中文。
+ * 这样可以保留已有的中文诊断，同时让国际调用方无需解析错误码。
  */
 export const ERROR_MESSAGES_EN: Readonly<Record<string, string>> = {
   ABORTED: "The operation was cancelled.",

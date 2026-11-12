@@ -2,10 +2,12 @@ import { z } from "zod";
 import {
   clickTextOptionsSchema, conditionSchema, inputSchema, launchSchema, regionSchema, visualOptionsSchema,
 } from "../core/protocol.js";
+import { pick } from "../core/i18n.js";
 
 const name = z.string().min(1).max(120);
 const profiles = z.array(z.string().min(1).max(8192)).min(1).max(32)
-  .refine((values) => new Set(values).size === values.length, "profiles 不能重复");
+  .refine((values) => new Set(values).size === values.length,
+    pick("profiles must be unique", "profiles 不能重复"));
 
 export const scenarioSchema = z.object({
   version: z.literal(1),

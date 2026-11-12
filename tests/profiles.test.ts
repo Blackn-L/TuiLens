@@ -296,7 +296,8 @@ test("单个 profile 失败不会丢弃其他性能矩阵结果", { timeout: 60_
     assert.equal(failed.profile, "missing-profile");
     assert.equal(failed.reportPath, null);
     assert.equal(failed.error.code, "PERF_NO_DATA");
-    assert.equal(failed.error.message, "性能运行没有产生任何有效轮次");
+    assert.equal(failed.error.messageEn, "The performance run produced no valid round.");
+    assert.equal(failed.error.messageZh, "性能运行没有产生任何有效轮次");
     assert.ok(passed && "rounds" in passed);
     assert.equal(passed.pass, true);
     assert.equal(passed.environment.terminalProfile, "linux-console-6");
