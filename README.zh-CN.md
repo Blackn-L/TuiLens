@@ -2,7 +2,7 @@
 
 **面向 AI Agent 的终端自动化工具。**
 
-[English](README.md) · [简体中文](README.zh-CN.md)
+[English](README.md) · [简体中文](README.zh-CN.md) · [MIT 许可证](LICENSE)
 
 TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScript SDK
 提供截图、终端状态、键盘与鼠标输入。
@@ -11,6 +11,8 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 
 > **状态：** 0.4.0 实验版本，用于功能和视觉测试。
 > 浏览器渲染链路不属于低干扰性能测量环境。
+
+[功能](#功能) · [安装](#安装) · [快速开始](#快速开始) · [接口](#接口) · [开发](#开发) · [文档](#文档) · [许可证](#许可证)
 
 ## 功能
 
@@ -40,14 +42,15 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 - Windows 或 Linux，以及本机 Chrome/Chromium 或 Playwright Chromium。
 - node-pty 无可用预编译包时，需要相应平台的 C++ 构建工具。
 
-## 快速开始
+## 安装
+
+当前从源码安装。满足上述环境要求后执行：
 
 ```sh
 git clone https://github.com/Blackn-L/TuiLens.git
 cd TuiLens
 npm ci
 npm run build
-node dist/src/interfaces/cli.js --help
 ```
 
 默认检测系统 Chrome/Edge；也可以安装 Playwright Chromium：
@@ -56,7 +59,17 @@ node dist/src/interfaces/cli.js --help
 npx playwright install chromium
 ```
 
-通过 `TUILENS_BROWSER_PATH` 指定浏览器。仓库根目录可直接运行独立场景：
+通过 `TUILENS_BROWSER_PATH` 指定浏览器。
+
+## 快速开始
+
+先查看 CLI 帮助：
+
+```sh
+node dist/src/interfaces/cli.js --help
+```
+
+然后从仓库根目录运行独立场景：
 
 ```sh
 node dist/src/interfaces/cli.js scenario --file examples/scenario.json
@@ -92,6 +105,16 @@ node dist/src/interfaces/cli.js shutdown
 `input-wait` 或显式等待。它不会自动重发输入。
 终端自动应答默认使用 `--protocol-replies auto`，只转发及时且存在查询匹配的已知应答。
 若应用在 TTY 已回显时查询，使用 `--protocol-replies suppress` 或应用侧探测开关。
+
+## 接口
+
+所有接口共用同一套 PTY 引擎和会话状态。按调用方需要选择最小接口。
+
+| 接口 | 适用场景 | 入口 | 详情 |
+| --- | --- | --- | --- |
+| CLI | Shell 脚本、CI 任务和手动探测 | `node dist/src/interfaces/cli.js <command>` | [快速开始](#快速开始) · [协议示例](docs/zh-CN/PROTOCOL.md) |
+| MCP | 需要工具调用和图片内容的 Agent | 通过 stdio 启动 `node /absolute/path/to/TuiLens/dist/src/interfaces/cli.js mcp` | [MCP 接入指南](docs/zh-CN/MCP-SETUP.md) |
+| TypeScript SDK | 测试套件和内嵌自动化 | `import { SessionManager, terminal } from "./dist/src/index.js"` | [测试断言](#测试断言) · [SDK 示例](#typescript-sdk) |
 
 ## 语言
 
@@ -221,7 +244,7 @@ node dist/src/interfaces/cli.js perf --file examples/perf.json \
 SDK 提供接近 playwright 的句柄：
 
 ```ts
-import { SessionManager, terminal } from "tuilens";
+import { SessionManager, terminal } from "./dist/src/index.js";
 
 const manager = new SessionManager({ artifactDir: "./artifacts" });
 const tui = await terminal(manager, { command: "my-tui", cols: 100, rows: 30 });
@@ -291,7 +314,20 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 后台服务使用本机命名管道或 Linux abstract Unix socket，并使用本地令牌认证。
 `TUILENS_HOME` 可隔离状态目录，默认 `~/.tuilens`；没有公开 HTTP 控制端口。
 
-[架构](docs/zh-CN/ARCHITECTURE.md) · [MCP 接入](docs/zh-CN/MCP-SETUP.md) · [终端能力画像](docs/zh-CN/PROFILES.md) · [验证](docs/zh-CN/VALIDATION.md) · [性能](docs/zh-CN/PERFORMANCE.md) · [路线](docs/zh-CN/ROADMAP.md)
+## 文档
+
+| 主题 | 简体中文 | English |
+| --- | --- | --- |
+| 架构 | [架构](docs/zh-CN/ARCHITECTURE.md) | [ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| MCP 接入 | [MCP 接入](docs/zh-CN/MCP-SETUP.md) | [MCP-SETUP.md](docs/MCP-SETUP.md) |
+| 协议 | [协议示例](docs/zh-CN/PROTOCOL.md) | [PROTOCOL.md](docs/PROTOCOL.md) |
+| 终端能力画像 | [终端能力画像](docs/zh-CN/PROFILES.md) | [PROFILES.md](docs/PROFILES.md) |
+| 录制与场景 | [录制与场景](docs/zh-CN/RECORDING.md) | [RECORDING.md](docs/RECORDING.md) |
+| 图片支持 | [图片支持](docs/zh-CN/IMAGES.md) | [IMAGES.md](docs/IMAGES.md) |
+| 视觉比较 | [视觉比较](docs/zh-CN/VISUAL.md) | [VISUAL.md](docs/VISUAL.md) |
+| 验证 | [验证](docs/zh-CN/VALIDATION.md) | [VALIDATION.md](docs/VALIDATION.md) |
+| 性能 | [性能](docs/zh-CN/PERFORMANCE.md) | [PERFORMANCE.md](docs/PERFORMANCE.md) |
+| 路线 | [路线](docs/zh-CN/ROADMAP.md) | [ROADMAP.md](docs/ROADMAP.md) |
 
 ## 限制
 
@@ -302,7 +338,12 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 - 浏览器解析、绘制、截图和录制都有开销；轻量 metrics 不消除渲染成本。
 - 输出回放不等同于应用重跑；区域稳定不证明所有后台工作结束。
 - Windows node-pty 1.1.0 清理期间可能输出 `AttachConsole failed`，需确认进程退出并保留诊断。
-- 项目尚未选择整体开源许可证。公开可见不额外授予再分发许可；第三方依赖保留各自许可证，见 [THIRD_PARTY.md](THIRD_PARTY.md)。
+
+## 许可证
+
+本项目采用 [MIT 许可证](LICENSE) 开源；版权所有 (c) 2026 Blackn-L。
+
+第三方组件保留各自的上游许可证，见 [THIRD_PARTY.md](THIRD_PARTY.md)。
 
 ## 贡献
 

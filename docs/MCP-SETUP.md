@@ -16,8 +16,8 @@ the machine where the terminal sessions should execute.
 
 ## Build the server
 
-Version 0.4.0 is currently distributed from the repository, not from the npm registry.
-`dist/` is generated and is not committed, so downloading a source archive is not enough.
+TuiLens is currently built from source. `dist/` is generated and is not committed,
+so downloading a source archive is not enough.
 
 ```powershell
 git clone https://github.com/Blackn-L/TuiLens.git

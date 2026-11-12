@@ -23,5 +23,6 @@ For visual changes inspect the generated PNG as well as structured assertions.
 Describe the trigger, observable change, checks performed and remaining limitations in the pull request.
 Do not equate text presence with visual correctness or a short benchmark with long-run stability.
 
-The package is currently private and does not publish to npm. Public redistribution terms have not been selected;
-see the license note in README before distributing a fork.
+TuiLens is released under the [MIT License](LICENSE). Unless explicitly stated otherwise,
+contributions are licensed under the same license.
+Third-party components retain their own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md).

@@ -16,7 +16,8 @@ Direct runtime dependencies / 直接运行依赖：
 Exact transitive versions and integrity hashes are recorded in `package-lock.json`.
 Preserve each dependency's license when distributing it. Chrome/Chromium and system fonts are external runtime dependencies.
 The protocol diacritic table is standard Unicode/Kitty protocol data; the source is attributed in its module.
-No project distribution license has been selected. `private: true` prevents accidental registry publication.
+TuiLens is released under the [MIT License](LICENSE). Third-party components retain their own licenses.
 
 传递依赖版本和校验值见锁文件，分发时保留各包许可证。浏览器与系统字体属于外部运行环境。
-组合符表为协议标准数据，模块中保留来源。项目尚未选择整体分发许可证，private 阻止意外发布到包注册表。
+组合符表为协议标准数据，模块中保留来源。TuiLens 采用 [MIT 许可证](LICENSE) 开源；
+各第三方组件仍保留上游许可证。
