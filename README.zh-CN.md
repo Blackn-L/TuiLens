@@ -7,7 +7,7 @@
 TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScript SDK
 提供截图、终端状态、键盘与鼠标输入。
 
-![TuiLens：面向 AI Agent 的终端自动化工具](docs/assets/tuilens-agent-banner.png)
+![TuiLens：面向 AI Agent 的终端自动化工具](docs/assets/tuilens-agent-banner.zh-CN.png)
 
 > **状态：** 0.4.0 实验版本，用于功能和视觉测试。
 > 浏览器渲染链路不属于低干扰性能测量环境。

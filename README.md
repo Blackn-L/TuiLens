@@ -7,7 +7,7 @@
 TuiLens runs real terminal applications in a PTY and exposes screenshots, terminal state,
 keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 
-![TuiLens terminal automation for AI agents](docs/assets/tuilens-agent-banner.png)
+![TuiLens terminal automation for AI agents](docs/assets/tuilens-agent-banner.en.png)
 
 > **Status:** experimental, version 0.4.0. Designed for functional and visual testing.
 > The browser renderer is not a low-overhead performance measurement environment.
