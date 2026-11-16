@@ -11,6 +11,8 @@ import { mcpTools, type McpMethod } from "./mcp-tools.js";
 import { VERSION } from "../version.js";
 import { pick } from "../core/i18n.js";
 
+const PROGRESS_METHODS = new Set<McpMethod>(["wait", "inputAndWait", "scenario", "perf", "replay"]);
+
 /** MCP 与 CLI 共用同一应用协议；断开时只释放此连接创建的会话。 */
 export async function startMcp(): Promise<void> {
   const server = new McpServer({ name: "tuilens", version: VERSION });
@@ -25,7 +27,8 @@ export async function startMcp(): Promise<void> {
       inputSchema: methodSchemas[method].shape,
     }, async (args: Record<string, unknown>, extra: RequestHandlerExtra<ServerRequest, ServerNotification>): Promise<CallToolResult> => {
       try {
-        const operation = request(method, args, { signal: AbortSignal.any([extra.signal, disconnect.signal]) });
+        const operation = withProgress(method, extra,
+          request(method, args, { signal: AbortSignal.any([extra.signal, disconnect.signal]) }));
         pending.add(operation);
         let data: unknown;
         try { data = await operation; } finally { pending.delete(operation); }
@@ -72,6 +75,46 @@ export async function startMcp(): Promise<void> {
     process.once(signal, () => { void cleanup().then(() => server.close()); });
   }
   await server.connect(new StdioServerTransport());
+}
+
+/**
+ * MCP 没有为普通工具提供强类型进度 API，但客户端通过 `_meta.progressToken`
+ * 请求时可以发送标准 notifications/progress。这里用心跳而不是伪造百分比；
+ * 真正取消仍由 extra.signal 驱动，并会一路传到 daemon 请求。
+ */
+async function withProgress<T>(
+  method: McpMethod,
+  extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
+  operation: Promise<T>,
+): Promise<T> {
+  const token = extra._meta?.progressToken;
+  if (token === undefined || !PROGRESS_METHODS.has(method)) return operation;
+  let progress = 0;
+  let stopped = false;
+  let sending = Promise.resolve();
+  const notify = (): void => {
+    if (stopped) return;
+    progress += 1;
+    const value = progress;
+    sending = sending.then(() => extra.sendNotification({
+      method: "notifications/progress",
+      params: {
+        progressToken: token,
+        progress: value,
+        message: pick(`${method} is still running`, `${method} 仍在运行`),
+      },
+    })).catch(() => undefined);
+  };
+  notify();
+  const timer = setInterval(notify, 1000);
+  timer.unref();
+  try {
+    return await operation;
+  } finally {
+    stopped = true;
+    clearInterval(timer);
+    await sending;
+  }
 }
 
 function imageObservation(method: McpMethod, data: unknown): Observation | undefined {

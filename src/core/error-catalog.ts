@@ -10,6 +10,7 @@ export const ERROR_MESSAGES_EN: Readonly<Record<string, string>> = {
   AMBIGUOUS_MATCH: "The text matched more than one location; narrow the region or selection.",
   BROWSER_NOT_FOUND: "The configured browser executable does not exist.",
   BROWSER_START_FAILED: "The terminal browser could not be started.",
+  DAEMON_UNAVAILABLE: "The local daemon is not running or cannot be reached.",
   DAEMON_START_FAILED: "The local daemon could not be started.",
   EMPTY_COMPARISON: "Masks cover every pixel, so nothing was compared.",
   ENGINE_CLOSED: "The terminal engine is already closed.",

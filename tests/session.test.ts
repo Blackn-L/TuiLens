@@ -165,6 +165,21 @@ test("同一批输出合并但显式输入保留顺序，并以轻量状态编�
   } finally { await f.session.close(); }
 });
 
+test("compact 观察裁剪行尾并省略字符格与默认截图", async () => {
+  const memory = memoryEngine();
+  const f = fixture(memory.engine, tmpdir());
+  try {
+    f.emit("TRAILING   \nNEXT\t ");
+    const observed = await f.session.observe({ compact: true });
+    assert.equal(observed.snapshot.text, "TRAILING\nNEXT");
+    assert.deepEqual(observed.snapshot.lines.slice(0, 2), ["TRAILING", "NEXT"]);
+    assert.deepEqual(observed.snapshot.cells, []);
+    assert.equal(observed.screenshot, null);
+  } finally {
+    await f.session.close();
+  }
+});
+
 test("协议应答只转发及时且有查询匹配的数据", async () => {
   const guard = new ProtocolReplyGuard({ mode: "auto", maxLatencyMs: 20 });
   guard.observeOutput("\x1b[");
@@ -368,6 +383,11 @@ test("closeAll 等待正在创建的引擎完成清理，不遗漏迟到启动",
   release.resolve();
   await rejected;
   await closing;
+  assert.deepEqual(manager.runtimeStats(), {
+    sessions: 0, pendingLaunches: 0, offline: 0, disposed: true,
+  });
+  // 重复关闭必须保持幂等，不能再次访问已释放的浏览器宿主。
+  await manager.closeAll();
   assert.equal(memory.counts().closes, 1);
   assert.deepEqual(manager.list(), []);
 });
@@ -389,6 +409,7 @@ test("真实 PTY 退出等待只读取最终快照且保留最后标记", { time
     assert.equal(metrics.receivedBytes, metrics.appliedBytes);
     await manager.close(session.id);
     await manager.close(session.id);
+    assert.equal(manager.runtimeStats().sessions, 0);
   } finally { await manager.closeAll(); }
 });
 
@@ -417,6 +438,42 @@ test("普通文本等待仅在命中后传输完整快照", { timeout: 15000 }, 
     assert.ok(probes >= 2);
     assert.equal(memory.counts().snapshots, 1);
   } finally { await manager.closeAll(); }
+});
+
+test("区域文本条件走引擎探测，命中前不读取整屏网格", { timeout: 15000 }, async () => {
+  const memory = memoryEngine();
+  let output = "";
+  let probes = 0;
+  let snapshots = 0;
+  const manager = new SessionManager({ artifactDir: tmpdir(), engineFactory: async () => ({
+    ...memory.engine,
+    write: async (data) => { output += data; await memory.engine.write(data); },
+    probeText: async (text) => {
+      probes += 1;
+      return { count: output.includes(text) ? 1 : 0, matches: [] };
+    },
+    snapshot: async (frameId) => {
+      snapshots += 1;
+      return memory.engine.snapshot(frameId);
+    },
+  }) });
+  try {
+    const session = await manager.launch({ command: process.execPath, args: ["-e",
+      "process.stdout.write('WAIT\\n');setTimeout(()=>process.stdout.write('REGION_READY\\n'),80);setInterval(()=>{},1000)"] });
+    const result = await manager.wait(session.id, {
+      conditions: [{
+        kind: "text", text: "REGION_READY",
+        region: { x: 0, y: 0, width: 40, height: 4 },
+        style: { bold: true },
+      }],
+      timeoutMs: 5000,
+    });
+    assert.match(result.observation.snapshot.text, /REGION_READY/u);
+    assert.ok(probes >= 2);
+    assert.equal(snapshots, 1);
+  } finally {
+    await manager.closeAll();
+  }
 });
 
 test("输出积压触发背压并在消费后恢复，计数不丢失", async () => {

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 ### Performance
 - **Snapshot transport rewritten.** Character grids are packed into two strings inside the browser and unpacked in Node. A 160×50 `observe` dropped from ~770 ms to ~4 ms; `find` from ~940 ms to ~5 ms.
@@ -8,6 +8,15 @@
 - Wait polling uses adaptive backoff (2 ms → 50 ms) instead of a fixed 50 ms tick, so `wait` and `perf` measurements are no longer quantized by the poll interval. Timeouts are now honored (~1.1 s for a 1 s timeout, previously ~2 s).
 
 ### Added
+- `doctor` command for local runtime, browser, `node-pty`, storage and daemon diagnostics without starting the daemon.
+- `ping` now reports daemon uptime plus live session, launch and replay counts; `shutdown` is idempotent when no daemon is running.
+- `observe --compact` trims line ends, omits cells and defaults to no screenshot; `watch` streams changed frames as JSONL and supports explicit `--control` TTY handoff.
+- Engine-side `probeText` evaluates regional text/style matches without transferring the full character grid before a match.
+- MCP long-running calls emit progress heartbeats when requested; cancellation aborts the matching daemon operation.
+- Optional `TUILENS_PTY_WORKER=1` / `ManagerOptions.ptyWorker` isolates `node-pty` in a per-session child process.
+- `probe` reports fixed-glyph widths plus renderer/font/grid metadata and a stable fingerprint; snapshots expose `render`.
+- `paint()` and `snapshot.render.paintMs` expose frame-level paint timing; `npm run soak` provides a bounded soak check.
+- The macOS runner joins the CI matrix as an experimental platform.
 - Optional WebGL renderer (`launch --renderer webgl`) on top of xterm.js, with DOM as the default.
   The actual renderer is returned in sessions and recorded in recording headers, scenario/perf environments,
   observation metadata and visual comparison JSON. WebGL failure falls back to DOM and reports the actual value.
@@ -27,6 +36,8 @@
 - `LICENSE` (MIT) and `package.json` `files`/`license`/`repository` metadata.
 
 ### Changed
+- Daemon shutdown handles `SIGBREAK` on Windows and `SIGHUP` on POSIX in addition to `SIGINT`/`SIGTERM`.
+- CI now covers Node.js 22 and 24 on Windows, Linux and macOS.
 - `images` is deprecated and internally maps to `capabilities.graphics`. DA1 feature `4` follows the resolved SIXEL capability.
 - Windows sessions that explicitly select a profile use the bundled node-pty ConPTY DLL so DA1/DA2 queries reach the emulator, with a bounded conout worker cleanup and a final profile-aware reply rewrite. The default fast path keeps system ConPTY.
 - Silenced node-pty's Windows console-list helper when `AttachConsole` fails during cleanup and made it fall back immediately instead of printing a stack trace and waiting for the 5 s timeout.
@@ -70,7 +81,11 @@
 
 ## 简体中文
 
-未发布：新增可选 WebGL renderer（默认 DOM），session、录制、scenario/perf、观察和视觉比较元数据
+0.5.0：新增 `doctor` 本地诊断命令，检查运行时、浏览器、`node-pty`、存储和 daemon 状态但不启动 daemon；
+`ping` 返回 daemon 运行时长和会话/启动/回放计数，未运行 daemon 时 `shutdown` 可幂等成功。
+新增 compact 观察、watch/control、引擎侧区域 probeText、MCP 进度与取消、可选 PTY worker、
+固定字形 probe、render/paint 元数据、soak 脚本；CI 覆盖 Windows/Linux/macOS 上的 Node.js 22 与 24。
+新增可选 WebGL renderer（默认 DOM），session、录制、scenario/perf、观察和视觉比较元数据
 记录实际 renderer；WebGL 不可用时回退并回传 DOM。增加 120 个块字符的周期暗列回归测试。
 新增终端能力画像与 9 个内置 preset，支持 JSON `extends` 派生、`--terminal-profile`、
 正交 `graphics` 和 profile 驱动的环境/应答/图片/键盘查询/回滚缓冲；场景与性能测试支持

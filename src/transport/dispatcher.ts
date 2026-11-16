@@ -12,7 +12,12 @@ export async function dispatch(manager: SessionManager, method: string, params: 
   const result = methodSchemas[method as Method].safeParse(params);
   if (!result.success) throw new TuiLensError("INVALID_ARGUMENT", "命令参数不合法", result.error.issues);
   switch (method) {
-    case "ping": return { version: VERSION, pid: process.pid };
+    case "ping": return {
+      version: VERSION,
+      pid: process.pid,
+      uptimeMs: Math.round(process.uptime() * 1000),
+      ...manager.runtimeStats(),
+    };
     case "launch": {
       const session = await manager.launch(result.data as LaunchOptions);
       // 客户端取消启动时不得留下无法返回 ID 的孤儿会话。
@@ -37,6 +42,7 @@ export async function dispatch(manager: SessionManager, method: string, params: 
       // 未请求字符格时在引擎侧就不构造网格，而不是传完整网格后再剥离。
       return presentObservation(await manager.observe(args.id, {
         cells: args.includeCells === true,
+        ...(args.compact === undefined ? {} : { compact: args.compact }),
         ...(args.screenshot === undefined ? {} : { screenshot: args.screenshot }),
         ...(args.region ? { region: args.region } : {}),
         ...(args.scrollback === undefined ? {} : { scrollback: args.scrollback }),

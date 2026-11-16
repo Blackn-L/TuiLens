@@ -14,9 +14,10 @@ import type {
 import { clickTextOptions, integer, launchOptions, waitOptions } from "../core/validation.js";
 import { createBrowserEngine, createBrowserEngineFactory } from "../engine/browser-engine.js";
 import {
-  installWindowsConptyCleanup, ManagedSession, releaseWindowsConptyWorker,
-  type OperationControl, type SessionMetrics,
+  ManagedSession, type OperationControl, type SessionMetrics,
 } from "./session.js";
+import { directPty, installWindowsConptyCleanup, type PtyHandle } from "./pty-runtime.js";
+import { spawnIsolatedPty } from "./pty-worker-client.js";
 import { RecordingWriter } from "../recording/writer.js";
 import { replayRecording, type ReplayOptions } from "../recording/replay.js";
 import { compareArtifact, type VisualOptions } from "../visual/artifacts.js";
@@ -60,6 +61,7 @@ export class SessionManager {
   private closing: Promise<void> | undefined;
 
   private readonly maxSessions: number;
+  private readonly ptyWorker: boolean;
   private readonly engineFactory: EngineFactory;
   private readonly shutdownEngine: (() => Promise<void>) | undefined;
 
@@ -68,6 +70,7 @@ export class SessionManager {
     if (!Number.isInteger(this.maxSessions) || this.maxSessions < 1 || this.maxSessions > 128) {
       throw new TuiLensError("INVALID_ARGUMENT", "maxSessions 必须是 1～128 的整数");
     }
+    this.ptyWorker = options.ptyWorker === true;
     // 默认在管理器内部共享一个浏览器进程；显式工厂仍由调用方决定生命周期。
     if (options.engineFactory) {
       this.engineFactory = options.engineFactory;
@@ -112,7 +115,7 @@ export class SessionManager {
         ...(options.colorMode === undefined ? {} : { colorMode: options.colorMode }),
       },
     );
-    let pty: nodePty.IPty | undefined;
+    let pty: PtyHandle | undefined;
     let session: ManagedSession | undefined;
     let recorder: RecordingWriter | undefined;
     const engine = await this.engineFactory({
@@ -159,16 +162,23 @@ export class SessionManager {
       const requested = process.platform === "win32" && ["node", "nodejs", "node.exe"].includes(options.command.toLowerCase())
         ? process.execPath : options.command;
       const resolved = await resolveExecutable(requested, { cwd, env });
-      pty = nodePty.spawn(resolved.file, options.args ?? [], {
-        name: getEnv(env, "TERM") ?? "xterm-256color", cols, rows, cwd, env,
-        // 系统 ConPTY 会抢答 DA1/DA2。只有显式要求终端画像时才承担随包 ConPTY 的启动成本。
-        ...(process.platform === "win32"
-          && (options.terminalProfile !== undefined || options.graphics !== undefined
-            || (options.images !== undefined && options.images !== "off"))
-          ? { useConptyDll: true }
-          : {}),
-      });
-      installWindowsConptyCleanup(pty);
+      const name = getEnv(env, "TERM") ?? "xterm-256color";
+      const useConptyDll = process.platform === "win32"
+        && (options.terminalProfile !== undefined || options.graphics !== undefined
+          || (options.images !== undefined && options.images !== "off"));
+      if (this.ptyWorker) {
+        pty = await spawnIsolatedPty({
+          command: resolved.file, args: options.args ?? [], name, cols, rows, cwd, env,
+          ...(useConptyDll ? { useConptyDll: true } : {}),
+        });
+      } else {
+        const spawned = nodePty.spawn(resolved.file, options.args ?? [], {
+          name, cols, rows, cwd, env,
+          ...(useConptyDll ? { useConptyDll: true } : {}),
+        });
+        installWindowsConptyCleanup(spawned);
+        pty = directPty(spawned);
+      }
       const info: SessionInfo = {
         id: sessionId, pid: pty.pid, cols, rows, status: "running",
         exitCode: null, createdAt: new Date().toISOString(),
@@ -185,7 +195,7 @@ export class SessionManager {
     } catch (error) {
       const cleanupErrors: unknown[] = [];
       try { pty?.kill(); } catch (cleanupError) { cleanupErrors.push(cleanupError); }
-      if (pty) releaseWindowsConptyWorker(pty);
+      try { pty?.dispose?.(); } catch (cleanupError) { cleanupErrors.push(cleanupError); }
       try { await engine.close(); } catch (cleanupError) { cleanupErrors.push(cleanupError); }
       try { await recorder?.close(); } catch (cleanupError) { cleanupErrors.push(cleanupError); }
       if (cleanupErrors.length) {
@@ -207,6 +217,21 @@ export class SessionManager {
 
   list(): SessionInfo[] {
     return [...this.sessions.values()].map((session) => session.info());
+  }
+
+  /** 供 daemon 健康检查使用的轻量状态，不读取引擎或字符格。 */
+  runtimeStats(): {
+    sessions: number;
+    pendingLaunches: number;
+    offline: number;
+    disposed: boolean;
+  } {
+    return {
+      sessions: this.sessions.size,
+      pendingLaunches: this.pendingLaunches.size,
+      offline: this.offline.size,
+      disposed: this.disposed,
+    };
   }
 
   /** 无浏览器调用的计数快照，性能采样不能复用完整 observe。 */
@@ -245,6 +270,10 @@ export class SessionManager {
 
   observe(id: string, options?: ObserveOptions, control?: OperationControl): Promise<Observation> {
     return this.session(id).observe(options, control);
+  }
+
+  paint(id: string, control?: OperationControl): Promise<{ paintMs: number } | undefined> {
+    return this.session(id).paint(control);
   }
 
   input(id: string, action: InputAction, guard?: InputGuard, control?: OperationControl): Promise<SessionInfo> {
@@ -376,15 +405,33 @@ export class SessionManager {
         pollDelay = Math.min(50, Math.max(pollDelay * 2, 2));
       }
       const only = options.conditions.length === 1 ? options.conditions[0] : undefined;
-      if (only?.kind === "text" && !only.region && !only.style && only.count === undefined) {
+      if (only?.kind === "text") {
         try {
-          const found = await session.hasText(only.text, remainingControl());
-          if (found !== undefined && (only.absent ? found : !found)) {
-            // 文本尚未出现：与通用路径共用退避节奏，
-            // 避免固定 25 ms 等待把毫秒级响应量化成数十毫秒。
+          const probe = await session.probeText(only.text, only.region, only.style, remainingControl());
+          if (probe) {
+            const satisfied = only.count !== undefined
+              ? probe.count === only.count
+              : only.absent ? probe.count === 0 : probe.count > 0;
+            const fresh = options.afterFrameId === undefined || probe.frameId > options.afterFrameId;
+            if (satisfied && fresh) {
+              const observation = await session.observe({ screenshot: false, cells: false }, remainingControl());
+              if (options.afterFrameId === undefined || observation.snapshot.frameId > options.afterFrameId) {
+                return { observation, elapsedMs: performance.now() - started };
+              }
+            }
+            // 条件未满足或还没有新帧：继续退避，不传输整屏字符格。
             pollDelay = Math.min(50, Math.max(2, pollDelay * 2));
             if (performance.now() - started + pollDelay >= timeout) break;
             continue;
+          }
+          // 兼容没有 probeText 的自定义引擎：仅对最简单的全文条件保留轻量查询。
+          if (!only.region && !only.style && only.count === undefined) {
+            const found = await session.hasText(only.text, remainingControl());
+            if (found !== undefined && (only.absent ? found : !found)) {
+              pollDelay = Math.min(50, Math.max(2, pollDelay * 2));
+              if (performance.now() - started + pollDelay >= timeout) break;
+              continue;
+            }
           }
         } catch (error) {
           if (options.signal?.aborted) throw new TuiLensError("ABORTED", "等待已取消");

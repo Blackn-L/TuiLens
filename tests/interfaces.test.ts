@@ -48,6 +48,16 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     assert.equal(observation.snapshot.frameId, observation.screenshot?.frameId);
     assert.match(observation.snapshot.text, /中文 🚀 A⠀B/u);
     assert.deepEqual([...((await readFile(observation.screenshot!.path)).subarray(0, 8))], [137, 80, 78, 71, 13, 10, 26, 10]);
+    const watched = await run(process.execPath, [
+      cli, "watch", session.id, "--interval", "50", "--timeout", "350",
+    ], { env, maxBuffer: 20 * 1024 * 1024 });
+    const watchLines = watched.stdout.trim().split("\n").map((line) => JSON.parse(line) as {
+      ok: boolean;
+      data: { stopped?: boolean; snapshot?: { cells?: unknown } };
+    });
+    assert.ok(watchLines.length >= 2);
+    assert.ok(watchLines.some((line) => line.data.stopped === true));
+    assert.ok(watchLines.some((line) => line.data.snapshot !== undefined && line.data.snapshot.cells === undefined));
     const crop = await call("observe", { id: session.id, region: { x: 0, y: 0, width: 12, height: 2 } }) as Observation;
     assert.ok(crop.screenshot!.width < observation.screenshot!.width);
     const comparison = await call("compare", { id: session.id, options: { baseline: crop.screenshot!.path,
@@ -75,7 +85,7 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     client = new Client({ name: "tuilens-test", version: "1" });
     const inherited = Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => e[1] !== undefined));
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [cli, "mcp"], env: inherited, stderr: "pipe" }));
-    assert.deepEqual(client.getServerVersion(), { name: "tuilens", version: "0.4.0" });
+    assert.deepEqual(client.getServerVersion(), { name: "tuilens", version: "0.5.0" });
     const tools = await client.listTools();
     const expectedTools = [
       "terminal_launch", "terminal_list", "terminal_observe", "terminal_input", "terminal_inputAndWait",
@@ -89,8 +99,18 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     const launchContent = launch.content as { type: string; text?: string }[];
     assert.notEqual(launch.isError, true, launchContent[0]?.text ?? "MCP launch failed");
     const mcpSession = JSON.parse(launchContent[0]!.text!) as SessionInfo;
-    const waiting = await client.callTool({ name: "terminal_wait", arguments: { id: mcpSession.id, conditions: [{ kind: "text", text: "TUILENS_READY" }] } });
+    const progress: unknown[] = [];
+    const waiting = await client.callTool({ name: "terminal_wait", arguments: { id: mcpSession.id, conditions: [{ kind: "text", text: "TUILENS_READY" }] } },
+      undefined, { onprogress: (item) => progress.push(item) });
     assert.notEqual(waiting.isError, true);
+    assert.ok(progress.length >= 1);
+    const abort = new AbortController();
+    const cancelled = client.callTool({
+      name: "terminal_wait",
+      arguments: { id: mcpSession.id, conditions: [{ kind: "text", text: "NEVER_MCP_EVIDENCE" }], timeoutMs: 10_000 },
+    }, undefined, { signal: abort.signal });
+    setTimeout(() => abort.abort(), 100);
+    await assert.rejects(cancelled, (error: unknown) => error instanceof Error);
     const confirmed = await client.callTool({
       name: "terminal_inputAndWait",
       arguments: {

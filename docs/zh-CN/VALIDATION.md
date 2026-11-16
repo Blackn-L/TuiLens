@@ -9,6 +9,7 @@ npm run check
 npm test
 ```
 
+`npm run soak` 单独运行有界渲染循环；可用 `TUILENS_SOAK_FRAMES` 调整长度。
 测试覆盖：
 
 - Chrome/xterm 的 Unicode、样式、模式、查询响应与 PNG。
@@ -20,6 +21,8 @@ npm test
 - 真实 PTY 未提交帧点击、区域指纹保护、按页和首尾滚动编码。
 - MCP 使用 `colorMode:"truecolor"` 启动，非法 colorMode 诊断包含收到的值。
 - 光标可见性/样式/闪烁、截图默认隐藏，以及 resize 后 PNG 网格尺寸。
+- `doctor` 的运行时、浏览器、PTY、存储和 daemon 检查，以及 daemon 幂等关闭。
+- `observe --compact`、区域 probeText、MCP 进度/取消、可选 PTY worker、固定字形探针和 JSONL watch。
 - CLI 与 MCP 的会话、图片返回及断开清理。
 - 并发启动、状态发布失败及服务重启。
 

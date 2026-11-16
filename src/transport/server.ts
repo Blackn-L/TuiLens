@@ -18,6 +18,7 @@ export async function serve(): Promise<void> {
   const manager = new SessionManager({
     artifactDir: paths.artifactDir,
     ...(process.env.TUILENS_BROWSER_PATH ? { executablePath: process.env.TUILENS_BROWSER_PATH } : {}),
+    ...(process.env.TUILENS_PTY_WORKER === "1" ? { ptyWorker: true } : {}),
     // 守护进程共享同一浏览器宿主，矩阵测试可按需提高并发会话上限。
     ...(Number.isInteger(configuredLimit) && configuredLimit > 0 ? { maxSessions: configuredLimit } : {}),
   });
@@ -89,7 +90,10 @@ export async function serve(): Promise<void> {
     await closed;
     if (failure) throw failure;
   }
-  for (const name of ["SIGINT", "SIGTERM"] as const) {
+  const shutdownSignals: NodeJS.Signals[] = process.platform === "win32"
+    ? ["SIGINT", "SIGTERM", "SIGBREAK"]
+    : ["SIGINT", "SIGTERM", "SIGHUP"];
+  for (const name of shutdownSignals) {
     process.once(name, () => { void stop().catch(reportStopError); });
   }
 }

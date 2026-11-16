@@ -9,10 +9,10 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 
 ![TuiLens：面向 AI Agent 的终端自动化工具](docs/assets/tuilens-agent-banner.zh-CN.png)
 
-> **状态：** 0.4.0 实验版本，用于功能和视觉测试。
+> **状态：** 0.5.0 实验版本，用于功能和视觉测试。
 > 浏览器渲染链路不属于低干扰性能测量环境。
 
-[功能](#功能) · [安装](#安装) · [快速开始](#快速开始) · [接口](#接口) · [开发](#开发) · [文档](#文档) · [许可证](#许可证)
+[功能](#功能) · [安装](#安装) · [诊断](#诊断) · [快速开始](#快速开始) · [接口](#接口) · [开发](#开发) · [文档](#文档) · [许可证](#许可证)
 
 ## 功能
 
@@ -31,16 +31,21 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 - **终端能力画像：** 内置 preset 或派生 JSON profile 统一驱动 `TERM`、DA1/DA2/XTVERSION/Kitty 查询应答、
   图片协议、键盘能力元数据和回滚缓冲；场景/性能测试可运行 profile 矩阵。
 - **回滚区断言：** `observe.scrollback` 返回视口上方的历史行，滚出屏幕的内容仍可断言。
+- **紧凑观察：** `observe --compact` 裁剪行尾、省略字符格且默认不截图；`watch` 以 JSONL 流式输出变化帧，`--control` 提供显式 TTY 接管。
+- **引擎侧探测：** 区域文本/样式等待在浏览器终端内判断，只有命中后才传输轻量快照。
 - **终端应答护栏：** 默认丢弃超时或无查询匹配的 DA1/DA2、CPR/DSR 等自动应答；`suppress` 保留普通输入。
 - **场景执行：** 声明式步骤、失败截图、报告和自动清理。
 - **性能测试：** 多轮声明式场景，支持历史增长准备、进程树内存采样、可选基线文件与劣化判定。
 - **断言层：** playwright 风格的 `Terminal` 句柄，失败时给出期望/实际/截图，并可输出 JUnit XML。
+- **本地诊断：** `doctor` 检查运行时、浏览器、`node-pty`、存储和 daemon 状态，不启动 daemon。
+- **渲染指纹：** `probe` 渲染固定字形样本，报告字符度量、renderer 与稳定的字体/网格指纹。
+- **隔离选项：** `TUILENS_PTY_WORKER=1` 会为每个会话在子进程加载 `node-pty`；默认仍走进程内快速路径。
 - **Agent 接口：** CLI/MCP 共用接口，同时提供 SDK。
 
 ## 环境要求
 
 - Node.js **22 或更高版本**。
-- Windows 或 Linux，以及本机 Chrome/Chromium 或 Playwright Chromium。
+- Windows、Linux 或 macOS（实验性），以及本机 Chrome/Chromium 或 Playwright Chromium。
 - node-pty 无可用预编译包时，需要相应平台的 C++ 构建工具。
 
 ## 安装
@@ -61,6 +66,19 @@ npx playwright install chromium
 ```
 
 通过 `TUILENS_BROWSER_PATH` 指定浏览器。
+
+## 诊断
+
+构建后运行本地诊断：
+
+```sh
+node dist/src/interfaces/cli.js doctor
+node dist/src/interfaces/cli.js probe
+```
+
+它会检查 Node.js 与平台支持、浏览器发现、`node-pty`、存储权限和 daemon 状态，
+但不会启动 daemon。存在错误级检查时退出码为 1；陈旧 daemon 元数据等警告不会使命令失败。
+设置 `TUILENS_LANG=zh-CN` 可输出中文消息。
 
 ## 快速开始
 
@@ -288,13 +306,15 @@ await tui.expectNoText("Error", { timeoutMs: 500 });
 `terminal_clickText`、`terminal_input`、`terminal_inputAndWait`、`terminal_resize`、`terminal_wait`、`terminal_compare`、
 `terminal_replay`、`terminal_scenario`、`terminal_perf`、`terminal_metrics`、`terminal_close`。
 观察、回放和启用截图的 inputAndWait 返回 PNG image content 和文字元数据；MCP 断开时回收该连接创建的会话。
+客户端请求 progress token 时，wait、inputAndWait、replay、scenario 和 perf 会发送进度心跳；
+取消 MCP 请求会中止对应的 daemon 操作。
 
 ## TypeScript SDK
 
 ```ts
 import { SessionManager } from "./dist/src/index.js";
 
-const manager = new SessionManager({ artifactDir: "./artifacts" });
+const manager = new SessionManager({ artifactDir: "./artifacts", ptyWorker: false });
 try {
   const session = await manager.launch({
     command: "node", args: ["examples/echo-tui.mjs"], cols: 80, rows: 16,
@@ -342,6 +362,9 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 - 截图默认隐藏光标本体；快照仍返回可见性、样式和闪烁状态，但无法验证真实宿主光标或 IME。
 - `protocolReplies: "auto"` 只为及时且有查询匹配的已知自动应答放行；`suppress` 只丢弃完整已知应答，不过滤任意输入。若应用在 TTY 已回显时查询，仍需 `suppress` 或应用侧开关。
 - 浏览器解析、绘制、截图和录制都有开销；轻量 metrics 不消除渲染成本。
+- `doctor` 只检查模块加载、路径和 daemon 元数据，不会启动浏览器或 PTY；运行时验证仍需真实会话和测试套件。
+- `watch` 默认只读；`--control` 会转发终端输入并要求交互式 TTY。`probe` 只代表当前字体、浏览器和平台组合。
+- `TUILENS_PTY_WORKER=1` 增加一次 IPC 转发，不等同于安全沙箱。
 - 输出回放不等同于应用重跑；区域稳定不证明所有后台工作结束。
 - Windows node-pty 1.1.0 清理期间可能输出 `AttachConsole failed`，需确认进程退出并保留诊断。
 

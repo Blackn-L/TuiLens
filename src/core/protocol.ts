@@ -128,6 +128,7 @@ export const methodSchemas = {
   find: z.object({ id: idSchema, text: text.min(1), region: regionSchema.optional(), options: matchOptionsSchema.optional() }).strict(),
   clickText: z.object({ id: idSchema, text: text.min(1), region: regionSchema.optional(), options: clickTextOptionsSchema.optional() }).strict(),
   observe: z.object({ id: idSchema, screenshot: z.boolean().optional(), includeCells: z.boolean().optional(),
+    compact: z.boolean().optional(),
     region: regionSchema.optional(), scrollback: z.number().int().min(1).max(5000).optional(),
     cursor: z.enum(["hide", "show"]).optional() }).strict(),
   compare: z.object({ id: idSchema, options: visualOptionsSchema }).strict(),

@@ -1,10 +1,12 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import type { Browser, Page } from "playwright";
 import { TuiLensError } from "../core/errors.js";
 import type {
-  BrowserEngineOptions, EngineFactory, Region, RendererKind, TerminalEngine, TerminalSnapshot, TerminalState,
+  BrowserEngineOptions, EngineFactory, Region, RenderMetadata, RendererKind, TerminalEngine, TerminalSnapshot,
+  TerminalState,
 } from "../core/types.js";
 import { BrowserHost } from "./browser-host.js";
 import { initializeBrowserRuntime } from "./browser-runtime.js";
@@ -42,6 +44,12 @@ function assertDimensions(cols: number, rows: number): void {
   if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 2 || rows < 2 || cols > 500 || rows > 250) {
     throw new TuiLensError("INVALID_SIZE", "终端尺寸必须为 2–500 列、2–250 行的整数");
   }
+}
+
+function renderMetadata(render: Omit<RenderMetadata, "fingerprint">): RenderMetadata {
+  const { paintMs, ...stable } = render;
+  const fingerprint = createHash("sha256").update(JSON.stringify(stable)).digest("hex").slice(0, 16);
+  return { ...render, fingerprint };
 }
 
 export async function createBrowserEngine(options: BrowserEngineOptions): Promise<TerminalEngine> {
@@ -277,6 +285,17 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
       await assertFrameReady();
       return page.evaluate((value) => window.__tuilens.hasText(value), text);
     },
+    async probeText(text, region, style) {
+      assertOpen();
+      await assertFrameReady();
+      return page.evaluate((args) => window.__tuilens.probeText(args.text, args.region, args.style), {
+        text, region, style,
+      });
+    },
+    async paint() {
+      assertOpen();
+      return page.evaluate(() => window.__tuilens.paint());
+    },
     async snapshot(frameId, options): Promise<TerminalSnapshot> {
       assertOpen();
       if (!options?.allowPendingFrame) await assertFrameReady();
@@ -296,6 +315,7 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
         cells: packed.grid ? unpackGrid(packed.grid, packed.cols, packed.rows) : [],
         cursor: packed.cursor,
         modes: packed.modes,
+        ...(packed.render ? { render: renderMetadata(packed.render) } : {}),
         ...(packed.scrollback ? { scrollback: packed.scrollback } : {}),
         ...(packed.scrollbackTruncated ? { scrollbackTruncated: true } : {}),
       };

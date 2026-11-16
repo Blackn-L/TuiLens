@@ -12,7 +12,7 @@ type McpToolDescriptions = Record<McpMethod, string>;
 const MCP_TOOLS_EN: McpToolDescriptions = {
   launch: "Launch a program in a real PTY. Returns a session ID. terminalProfile selects a built-in preset or JSON profile; graphics overrides image protocols; renderer selects dom (default) or webgl. Windows bare commands resolve through PATH/PATHEXT.",
   list: "List TuiLens sessions.",
-  observe: "Freeze output consumption and capture the same frame's character grid and terminal PNG; the screenshot cursor is hidden by default.",
+  observe: "Capture the same frame's terminal state and PNG. compact omits cells, trims line ends and defaults to no PNG; includeCells explicitly requests the full grid.",
   input: "Send text, bracketed paste, keys, clicks, wheel events or raw bytes. Wheel input supports page units and top/bottom endpoints. A successful call only means the input was delivered.",
   inputAndWait: "Send one input, then wait for a visible result or new frame. Supports text, size, stability, cursor and exit conditions; never retries automatically.",
   find: "Locate text in the character grid. Finding text does not prove that it is a clickable application control.",
@@ -30,7 +30,7 @@ const MCP_TOOLS_EN: McpToolDescriptions = {
 const MCP_TOOLS_ZH: McpToolDescriptions = {
   launch: "在真实 PTY 中启动程序。返回会话 ID；可用 terminalProfile 选择内置预设或 JSON profile，graphics 覆盖图片协议，renderer 选择 dom（默认）或 webgl；Windows 裸命令会按 PATH/PATHEXT 解析。",
   list: "列出 TuiLens 会话。",
-  observe: "冻结输出消费，获取同一 frameId 的字符格和实际终端 PNG；默认隐藏截图光标。",
+  observe: "获取同一 frameId 的终端状态与 PNG；compact 省略字符格、裁剪行尾且默认不截图，includeCells 才返回完整网格。",
   input: "发送文字、括号粘贴、按键、点击、滚轮或原始字节；滚轮支持 page 单位及 top/bottom 终点。只代表输入已送达。",
   inputAndWait: "发送一次输入后等待可见结果或新帧；支持文本、尺寸、稳定、光标和退出条件，不自动重发。",
   find: "从字符格定位文字；找到文字不等于业务控件可点击。",

@@ -16,6 +16,8 @@ export interface MetricSummary {
   name: string;
   /** 输入发出到目标条件成立的实际耗时（不含准备动作）。 */
   elapsedMs: SampleSummary;
+  /** 同一批样本最近一次写入到浏览器绘制的耗时。 */
+  paintMs?: SampleSummary;
   samples: number;
 }
 
@@ -31,7 +33,7 @@ export interface PerfRound {
   metrics: MetricSummary[];
   session: { receivedBytes: number; appliedBytes: number; writeBatches: number };
   /** 原始采样值，仅用于跨轮次合并；写入报告前剥离。 */
-  raw?: { phase: string; name: string; elapsed: number[] }[];
+  raw?: { phase: string; name: string; elapsed: number[]; paint?: number[] }[];
 }
 
 export interface MetricComparison {
@@ -324,13 +326,20 @@ async function runPerfSingle(
         await runSetup(manager, session.id, phase.setup ?? [], sequence, options.signal);
         for (const sample of phase.samples) {
           const elapsed: number[] = [];
+          const paint: number[] = [];
           for (let repeat = 0; repeat < repeats; repeat += 1) {
             if (options.signal?.aborted) throw new TuiLensError("ABORTED", "性能运行已取消");
-            elapsed.push(await measureSample(manager, session.id, sample, sequence, options.signal));
+            const measured = await measureSample(manager, session.id, sample, sequence, options.signal);
+            elapsed.push(measured.elapsed);
+            if (measured.paintMs !== undefined) paint.push(measured.paintMs);
           }
           const name = sample.name ?? describeSample(sample);
-          metrics.push({ phase: phase.name, name, elapsedMs: summarize(elapsed), samples: elapsed.length });
-          raw.push({ phase: phase.name, name, elapsed });
+          metrics.push({
+            phase: phase.name, name, elapsedMs: summarize(elapsed),
+            ...(paint.length ? { paintMs: summarize(paint) } : {}),
+            samples: elapsed.length,
+          });
+          raw.push({ phase: phase.name, name, elapsed, ...(paint.length ? { paint } : {}) });
         }
       }
       const info = manager.metrics(session.id);
@@ -471,22 +480,24 @@ async function readBaseline(path: string): Promise<BaselineFile> {
 /** 跨轮次合并同名指标的分布；轮次已隔离进程，合并可抵消机器抖动。 */
 function mergeRounds(rounds: PerfRound[]): MetricSummary[] {
   const order: string[] = [];
-  const buckets = new Map<string, { phase: string; name: string; elapsed: number[] }>();
+  const buckets = new Map<string, { phase: string; name: string; elapsed: number[]; paint: number[] }>();
   for (const round of rounds) {
     // 只在原始采样缺失时（例如旧报告）退回到聚合值，绝不凭空制造样本。
     const source = round.raw ?? round.metrics.map((metric) => ({
       phase: metric.phase, name: metric.name,
       elapsed: metric.elapsedMs.count > 0 ? [metric.elapsedMs.p50] : [],
+      ...(metric.paintMs ? { paint: [metric.paintMs.p50] } : {}),
     }));
     for (const item of source) {
       const key = `${item.phase}\u0000${item.name}`;
       let bucket = buckets.get(key);
       if (!bucket) {
-        bucket = { phase: item.phase, name: item.name, elapsed: [] };
+        bucket = { phase: item.phase, name: item.name, elapsed: [], paint: [] };
         buckets.set(key, bucket);
         order.push(key);
       }
       bucket.elapsed.push(...item.elapsed);
+      if (item.paint) bucket.paint.push(...item.paint);
     }
   }
   return order.map((key) => {
@@ -495,6 +506,7 @@ function mergeRounds(rounds: PerfRound[]): MetricSummary[] {
       phase: bucket.phase,
       name: bucket.name,
       elapsedMs: summarize(bucket.elapsed),
+      ...(bucket.paint.length ? { paintMs: summarize(bucket.paint) } : {}),
       samples: bucket.elapsed.length,
     };
   });
@@ -548,7 +560,7 @@ async function measureSample(
   sample: PerfSample,
   sequence: { value: number },
   signal?: AbortSignal,
-): Promise<number> {
+): Promise<{ elapsed: number; paintMs?: number }> {
   sequence.value += 1;
   const result = await manager.inputAndWait(id, sample.input as InputAction, undefined, {
     ...(sample.observe
@@ -556,7 +568,11 @@ async function measureSample(
       : {}),
     timeoutMs: sample.timeoutMs ?? 30_000,
   }, signal ? { signal } : {});
-  return rounded(result.elapsedMs);
+  const paint = await manager.paint(id, signal ? { signal } : {});
+  return {
+    elapsed: rounded(result.elapsedMs),
+    ...(paint === undefined ? {} : { paintMs: rounded(paint.paintMs) }),
+  };
 }
 
 /**

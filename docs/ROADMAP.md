@@ -12,22 +12,66 @@
 - Style-aware unique/nth locators and frame/region guards.
 - Terminal reply latency guard, inputAndWait, click hit areas, cursor metadata,
   screenshot cursor hiding, render stabilization and Windows bare-command resolution (0.4).
-- Packed snapshot transport and on-demand character grids (unreleased).
-- Kitty keyboard protocol and `modifyOtherKeys` encoding (unreleased).
-- Shared browser host, configurable session limit, scrollback assertions (unreleased).
-- Performance scenarios with baselines and regression gating (unreleased).
-- Assertion layer, JUnit output and CI evidence archiving (unreleased).
+- Packed snapshot transport and on-demand character grids (0.5).
+- Kitty keyboard protocol and `modifyOtherKeys` encoding (0.5).
+- Shared browser host, configurable session limit, scrollback assertions (0.5).
+- Performance scenarios with baselines and regression gating (0.5).
+- Assertion layer, JUnit output and CI evidence archiving (0.5).
+- Local `doctor` diagnostics, daemon counters and idempotent shutdown (0.5).
 
-## Next
+## 0.5.x plan
 
-- Terminal capability profiles: composable DA1/DA2/XTVERSION replies, `TERM`, colour and
-  graphics capabilities, and a preset registry for common terminals and versions.
-- Move regional condition evaluation into the engine to reduce full-grid transfers.
-- Add explicit rendering metadata, font fingerprints and cross-engine width checks.
-- Expand tested image protocol semantics without advertising unsupported behavior.
+Keep all follow-up work inside the 0.5 patch line. Do not open a 0.6 line until the
+0.5.x exit criteria are met. npm publishing, GitHub Release automation and clean-install
+smoke tests are deliberately deferred.
+The version stays at 0.5.0 while these phases land in one working tree; release slicing can
+map them to 0.5.1–0.5.4 later.
+
+### 0.5.0 Delivery foundation (current)
+
+- Add `doctor` for runtime, browser, `node-pty`, storage and daemon diagnostics.
+- Expose daemon uptime and live session/launch/replay counts from `ping`.
+- Make `shutdown` idempotent and handle Windows `SIGBREAK` plus POSIX `SIGHUP`.
+- Record stale daemon metadata without deleting it automatically.
+- Cover Node.js 22 and 24 on Windows and Linux in CI.
+
+Exit: diagnostic and lifecycle checks pass on Windows and Linux; no publishing dependency.
+
+### 0.5.1 Compact agent observation (landed)
+
+- Add a compact screen view for text, cursor, frame and region summaries.
+- Move regional text/style/stable evaluation behind the engine boundary.
+- Return only match evidence and fingerprints when full cells are not required.
+
+Exit: representative read/wait loops transfer less data and preserve existing semantics.
+
+### 0.5.2 Long-running MCP and PTY isolation (landed)
+
+- Add MCP progress and cancellation coverage for waits, scenarios and performance runs.
 - Isolate PTY workers to reduce native-module failure and teardown impact.
-- Extend `perf` with frame-level paint timing rather than condition-satisfied timing.
-- Evaluate a native processing engine using measured parser/IPC/rendering costs.
-- Add optional read-only live monitoring and explicit human control handoff.
+- Add crash/recovery tests that verify session ownership and cleanup.
+
+Exit: long waits can be cancelled; a PTY failure does not corrupt unrelated sessions.
+
+### 0.5.3 Cross-platform and rendering fidelity (landed)
+
+- macOS joins CI as an experimental platform.
+- Add font fingerprints, ambiguous-width/glyph probes and cross-engine comparisons.
+- Compare DOM, WebGL and terminal profiles against a fixed fixture matrix.
+
+Exit: supported platforms have CI evidence; visual differences are explainable.
+
+### 0.5.4 Performance and live observation (landed)
+
+- Add frame-level paint timing alongside condition-satisfied latency.
+- Add bounded soak tests for long-running sessions.
+- Add read-only `watch` JSONL monitoring; `--control` is explicit TTY handoff.
+
+Exit: measured budgets exist before any native-engine rewrite is considered.
+
+## Later
+
+- Expand tested image protocol semantics without advertising unsupported behavior.
+- Evaluate a native processing engine using measured parser, IPC and rendering costs.
 
 A browser-free engine still needs reproducible overhead measurements; changing language alone does not guarantee accuracy.

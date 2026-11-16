@@ -1,8 +1,8 @@
 import type { Terminal } from "@xterm/xterm";
 import type { ImageAddon, IImageAddonOptions } from "@xterm/addon-image";
 import type {
-  CursorState, RendererKind, TerminalGraphicsCapabilities, TerminalKeyboardCapabilities, TerminalModes,
-  TerminalReplies, TerminalState,
+  CursorState, MatchStyle, Region, RenderMetadata, RendererKind, TerminalGraphicsCapabilities,
+  TerminalKeyboardCapabilities, TerminalModes, TerminalReplies, TerminalState, TextProbe,
 } from "../core/types.js";
 import type { KittyRuntime } from "./kitty-runtime.js";
 import type { PackedGrid } from "./snapshot-codec.js";
@@ -24,6 +24,7 @@ export interface PackedSnapshot {
   /** 视口上方的回滚行；只有显式请求时才出现。 */
   scrollback?: string[];
   scrollbackTruncated?: boolean;
+  render?: Omit<RenderMetadata, "fingerprint">;
 }
 
 export interface BrowserRuntime {
@@ -32,6 +33,8 @@ export interface BrowserRuntime {
   settle(): Promise<void>;
   state(): TerminalState;
   hasText(text: string): boolean;
+  probeText(text: string, region?: Region, style?: MatchStyle): TextProbe;
+  paint(): Promise<{ paintMs: number }>;
   size(): { width: number; height: number };
   renderer(): RendererKind;
   snapshot(frameId: number, includeGrid: boolean, scrollbackLines: number): PackedSnapshot;
@@ -148,6 +151,9 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
   let cursorVisible = true;
   let cursorStyle: CursorState["style"] = "block";
   let cursorBlink = false;
+  let lastPaintMs: number | undefined;
+  let paintSerial = 0;
+  let lastPaint: Promise<number> | undefined;
   let mouseEncoding: "legacy" | "sgr" | "sgr-pixels" = "legacy";
   // xterm 的公开 modes 只暴露跟踪范围，编码需镜像已支持的 DECSET/DECRST。
   // 返回 false 让 xterm 继续执行默认处理；1005/1015 在 xterm 6 中不受支持。
@@ -411,8 +417,85 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
     },
     cursor: cursorState(),
   });
+  const probeText = (text: string, region?: Region, style?: MatchStyle): TextProbe => {
+    const buffer = terminal.buffer.active;
+    const reusableCell = buffer.getNullCell();
+    const area = region ?? { x: 0, y: 0, width: terminal.cols, height: terminal.rows };
+    const matches: TextProbe["matches"] = [];
+    let count = 0;
+    const hex6 = (value: number): string => value.toString(16).padStart(6, "0");
+    const color = (
+      cell: ReturnType<NonNullable<ReturnType<typeof buffer.getLine>>["getCell"]>,
+      foregroundSide: boolean,
+    ): string => {
+      if (foregroundSide) {
+        if (cell?.isFgRGB()) return `#${hex6(cell.getFgColor())}`;
+        if (cell?.isFgPalette()) return palette[cell.getFgColor()] ?? foreground;
+        return foreground;
+      }
+      if (cell?.isBgRGB()) return `#${hex6(cell.getBgColor())}`;
+      if (cell?.isBgPalette()) return palette[cell.getBgColor()] ?? background;
+      return background;
+    };
+    const matchesStyle = (line: NonNullable<ReturnType<typeof buffer.getLine>>,
+      start: number, end: number): boolean => {
+      if (!style) return true;
+      for (let x = start; x < end; x += 1) {
+        const cell = line.getCell(x, reusableCell);
+        if (!cell) return false;
+        const fg = color(cell, true);
+        const bg = color(cell, false);
+        const shownFg = cell.isInverse() ? bg : fg;
+        const shownBg = cell.isInverse() ? fg : bg;
+        if (style.fg !== undefined && shownFg.toLowerCase() !== style.fg.toLowerCase()) return false;
+        if (style.bg !== undefined && shownBg.toLowerCase() !== style.bg.toLowerCase()) return false;
+        if (style.bold !== undefined && Boolean(cell.isBold()) !== style.bold) return false;
+        if (style.italic !== undefined && Boolean(cell.isItalic()) !== style.italic) return false;
+        if (style.underline !== undefined && Boolean(cell.isUnderline()) !== style.underline) return false;
+      }
+      return true;
+    };
+    for (let y = area.y; y < area.y + area.height; y += 1) {
+      const line = buffer.getLine(buffer.viewportY + y);
+      if (!line) continue;
+      let content = "";
+      const starts: number[] = [];
+      const ends: number[] = [];
+      for (let x = area.x; x < area.x + area.width; x += 1) {
+        const cell = line.getCell(x, reusableCell);
+        const width = cell?.getWidth() ?? 1;
+        if (width === 0) continue;
+        const value = cell?.getChars() ?? "";
+        if (x + width > area.x + area.width) continue;
+        for (let offset = 0; offset < value.length; offset += 1) {
+          starts.push(x);
+          ends.push(x + Math.max(1, width));
+        }
+        content += value;
+      }
+      for (let offset = content.indexOf(text); offset >= 0; offset = content.indexOf(text, offset + 1)) {
+        const start = starts[offset];
+        const end = ends[offset + text.length - 1];
+        if (start === undefined || end === undefined || !matchesStyle(line, start, end)) continue;
+        count += 1;
+        if (matches.length < 64) {
+          matches.push({ text, region: { x: start, y, width: end - start, height: 1 } });
+        }
+      }
+    }
+    return { count, matches };
+  };
   host.__tuilens = {
-    write: (data) => kittyRuntime ? kittyRuntime.write(data) : nativeWrite(data),
+    write: async (data) => {
+      const serial = ++paintSerial;
+      const started = performance.now();
+      await (kittyRuntime ? kittyRuntime.write(data) : nativeWrite(data));
+      lastPaint = new Promise<number>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => {
+        const elapsed = performance.now() - started;
+        if (serial === paintSerial) lastPaintMs = elapsed;
+        resolve(lastPaintMs ?? elapsed);
+      })));
+    },
     resize: (cols, rows) => { terminal.resize(cols, rows); },
     settle,
     state,
@@ -423,6 +506,8 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
       }
       return false;
     },
+    probeText,
+    paint: async () => ({ paintMs: await (lastPaint ?? Promise.resolve(lastPaintMs ?? 0)) }),
     size: () => {
       const element = container.querySelector<HTMLElement>(".xterm-screen");
       if (!element) throw new Error("Terminal screen is missing");
@@ -520,6 +605,21 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
         cursor: cursorState(),
         modes: state().modes,
       };
+      const screen = container.querySelector<HTMLElement>(".xterm-screen");
+      const rectangle = screen?.getBoundingClientRect();
+      if (rectangle) {
+        snapshot.render = {
+          renderer: rendererKind,
+          fontFamily: options.fontFamily,
+          fontSize: options.fontSize,
+          cols: terminal.cols,
+          rows: terminal.rows,
+          cellWidth: Math.round(rectangle.width / terminal.cols * 100) / 100,
+          cellHeight: Math.round(rectangle.height / terminal.rows * 100) / 100,
+          deviceScaleFactor: window.devicePixelRatio,
+          ...(lastPaintMs === undefined ? {} : { paintMs: Math.round(lastPaintMs * 100) / 100 }),
+        };
+      }
       if (includeGrid) snapshot.grid = { text: textRows.join("\n"), style: styleRows.join("\n") };
       if (scrollback) {
         snapshot.scrollback = scrollback;
