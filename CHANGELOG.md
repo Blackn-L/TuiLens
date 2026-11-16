@@ -38,6 +38,7 @@
 ### Changed
 - Daemon shutdown handles `SIGBREAK` on Windows and `SIGHUP` on POSIX in addition to `SIGINT`/`SIGTERM`.
 - CI now covers Node.js 22 and 24 on Windows, Linux and macOS.
+- Pinned `node-pty@1.2.0-beta.14`: 1.1.0 ships a non-executable macOS `spawn-helper` and leaks file descriptors across repeated PTY spawns, which prevents the macOS CI job from launching any PTY.
 - `images` is deprecated and internally maps to `capabilities.graphics`. DA1 feature `4` follows the resolved SIXEL capability.
 - Windows sessions that explicitly select a profile use the bundled node-pty ConPTY DLL so DA1/DA2 queries reach the emulator, with a bounded conout worker cleanup and a final profile-aware reply rewrite. The default fast path keeps system ConPTY.
 - Silenced node-pty's Windows console-list helper when `AttachConsole` fails during cleanup and made it fall back immediately instead of printing a stack trace and waiting for the 5 s timeout.
@@ -95,7 +96,8 @@ Windows 显式选择 profile 时使用随包 ConPTY DLL，并在应答进入 PTY
 （保留区域指纹）、按页和首尾滚动导航；
 suppress 不再吞掉无关输入，非法 colorMode 诊断包含收到的值，并补充真实 PTY 与 MCP 回归。
 Windows 清理阶段的 node-pty 辅助进程在 `AttachConsole` 失败时不再输出告警，并立即回退，
-不再空等 5 秒超时。
+不再空等 5 秒超时。node-pty 固定到 `1.2.0-beta.14`：1.1.0 的 macOS npm 包缺少
+`spawn-helper` 执行位，并在反复启动 PTY 时泄漏文件描述符。
 
 0.4.0：新增迟到终端应答过滤与策略、clickText 命中区、inputAndWait、光标元数据与截图默认隐藏光标、
 截图强制重绘和 resize 网格校验、Windows 裸命令 PATH/PATHEXT 解析，并修复 JSON 命令别名。

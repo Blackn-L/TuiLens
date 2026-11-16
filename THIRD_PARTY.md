@@ -4,7 +4,7 @@ Direct runtime dependencies / 直接运行依赖：
 
 | 包 | 版本 | 用途 | 上游许可证 |
 | --- | --- | --- | --- |
-| node-pty | 1.1.0 | PTY / ConPTY 进程通道 | MIT |
+| node-pty | 1.2.0-beta.14 | PTY / ConPTY 进程通道 | MIT |
 | @xterm/xterm | 6.0.0 | 终端状态与绘制 | MIT |
 | @xterm/addon-unicode-graphemes | 0.4.0 | 字素与宽字符处理 | MIT |
 | @xterm/addon-image | 0.9.0 | SIXEL rendering / 图像渲染 | MIT |

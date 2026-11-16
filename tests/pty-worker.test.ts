@@ -1,17 +1,29 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import type { TerminalEngine } from "../src/core/types.js";
 import { SessionManager } from "../src/session/manager.js";
 import { spawnIsolatedPty } from "../src/session/pty-worker-client.js";
+
+const require = createRequire(import.meta.url);
 
 function inheritedEnv(): Record<string, string> {
   return Object.fromEntries(Object.entries(process.env).filter(
     (entry): entry is [string, string] => entry[1] !== undefined,
   ));
 }
+
+test("macOS node-pty spawn-helper 具有执行权限", {
+  skip: process.platform !== "darwin",
+}, async () => {
+  const packageRoot = dirname(require.resolve("node-pty/package.json"));
+  const helper = join(packageRoot, "prebuilds", `darwin-${process.arch}`, "spawn-helper");
+  const mode = (await stat(helper)).mode;
+  assert.notEqual(mode & 0o111, 0, `${helper} 不能是 0644；node-pty 1.1.0 会因此无法启动任何 PTY`);
+});
 
 test("PTY worker 在独立进程流式返回输出并报告退出", { timeout: 20_000 }, async () => {
   const pty = await spawnIsolatedPty({

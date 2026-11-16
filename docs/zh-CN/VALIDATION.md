@@ -40,6 +40,6 @@ npm test
 
 ## 平台限制
 
-Windows `node-pty 1.1.0` 在自然退出后的资源清理中可能由辅助进程输出
+Windows `node-pty 1.2.0-beta.14` 在自然退出后的资源清理中可能由辅助进程输出
 `AttachConsole failed`。必须核实进程最终释放，并保留原始诊断。
 测试成功不能替代各终端宿主、字体和输入法配置下的验收。

@@ -366,7 +366,7 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 - `watch` 默认只读；`--control` 会转发终端输入并要求交互式 TTY。`probe` 只代表当前字体、浏览器和平台组合。
 - `TUILENS_PTY_WORKER=1` 增加一次 IPC 转发，不等同于安全沙箱。
 - 输出回放不等同于应用重跑；区域稳定不证明所有后台工作结束。
-- Windows node-pty 1.1.0 清理期间可能输出 `AttachConsole failed`，需确认进程退出并保留诊断。
+- Windows node-pty 1.2.0-beta.14 清理期间可能输出 `AttachConsole failed`，需确认进程退出并保留诊断。
 
 ## 许可证
 

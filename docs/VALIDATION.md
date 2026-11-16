@@ -23,7 +23,7 @@ optional PTY workers, fixed-glyph rendering probes and JSONL watch. MCP launch i
 Inspect captures in `artifacts/engine/`, `artifacts/images/`, and `artifacts/visual/` for glyphs, colors and clipping.
 Text assertions alone do not prove visual correctness. CI artifacts are not automatically published because terminal output may contain data.
 
-The Windows `node-pty 1.1.0` helper can emit `AttachConsole failed` after natural exit during cleanup.
+The Windows `node-pty 1.2.0-beta.14` helper can emit `AttachConsole failed` after natural exit during cleanup.
 Tests must confirm eventual process release and retain that diagnostic.
 Unit tests do not establish full host-terminal, system IME or clipboard compatibility.
 See [performance](PERFORMANCE.md) for benchmark limits and [image support](IMAGES.md) for protocol scope.

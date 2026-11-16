@@ -373,7 +373,7 @@ Set `TUILENS_HOME` to isolate its state directory (default: `~/.tuilens`). No pu
 - `watch` is read-only by default; `--control` forwards terminal input and requires an interactive TTY. `probe` only represents the current font, browser and platform.
 - `TUILENS_PTY_WORKER=1` adds an IPC hop and is not a security sandbox.
 - Replay reproduces output, not application behavior. Stable regions do not prove an application has finished all work.
-- Windows `node-pty 1.1.0` may print `AttachConsole failed` during cleanup; verify process termination and retain diagnostics.
+- Windows `node-pty 1.2.0-beta.14` may print `AttachConsole failed` during cleanup; verify process termination and retain diagnostics.
 
 ## License
 
