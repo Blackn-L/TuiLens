@@ -7,12 +7,37 @@ import { TuiLensError } from "../core/errors.js";
 import type { Method } from "../interfaces/schemas.js";
 import { runtimePaths } from "./paths.js";
 
+function errorCode(error: unknown): string | undefined {
+  if (error instanceof TuiLensError) return error.code;
+  return (error as NodeJS.ErrnoException | undefined)?.code;
+}
+
+/** 缺失状态文件、拒绝连接或端点提前关闭都表示没有可控制的本机服务。 */
+export function isDaemonUnavailable(error: unknown): boolean {
+  const code = errorCode(error);
+  return code === "DAEMON_UNAVAILABLE" || code === "IPC_CLOSED"
+    || code === "ENOENT" || code === "ECONNREFUSED" || code === "ECONNRESET" || code === "ENOTSOCK";
+}
+
 export async function request(method: Method, params: unknown = {}, options: { autoStart?: boolean; signal?: AbortSignal; timeoutMs?: number } = {}): Promise<unknown> {
   const paths = runtimePaths();
   let token = "";
   const getToken = async (): Promise<string> => {
-    const state = JSON.parse(await readFile(paths.state, "utf8")) as { token?: unknown };
-    if (typeof state.token !== "string") throw new Error("Invalid daemon state");
+    let state: { token?: unknown };
+    try {
+      state = JSON.parse(await readFile(paths.state, "utf8")) as { token?: unknown };
+    } catch (error) {
+      if (isDaemonUnavailable(error) || error instanceof SyntaxError) {
+        throw new TuiLensError("DAEMON_UNAVAILABLE", "本机服务状态文件不可用",
+          { reason: error instanceof SyntaxError ? "invalid JSON" : errorCode(error) },
+          "The local daemon state file is unavailable.");
+      }
+      throw error;
+    }
+    if (typeof state.token !== "string") {
+      throw new TuiLensError("DAEMON_UNAVAILABLE", "本机服务状态文件无效", undefined,
+        "The local daemon state file is invalid.");
+    }
     return state.token;
   };
   const send = (command: string, payload: unknown, timeoutMs: number): Promise<unknown> => new Promise((resolve, reject) => {
@@ -46,7 +71,15 @@ export async function request(method: Method, params: unknown = {}, options: { a
     token = await getToken();
     await send("ping", {}, 1500);
   } catch (error) {
-    if (options.autoStart === false || options.signal?.aborted) throw error;
+    if (options.signal?.aborted) throw error;
+    if (options.autoStart === false) {
+      if (error instanceof TuiLensError && error.code === "DAEMON_UNAVAILABLE") throw error;
+      if (isDaemonUnavailable(error)) {
+        throw new TuiLensError("DAEMON_UNAVAILABLE", "本机服务未运行或无法连接",
+          { reason: errorCode(error) }, "The local daemon is not running or cannot be reached.");
+      }
+      throw error;
+    }
     await mkdir(paths.home, { recursive: true, mode: 0o700 });
     const log = await open(paths.log, "a", 0o600);
     const child = spawn(process.execPath, [fileURLToPath(new URL("../interfaces/cli.js", import.meta.url)), "_serve"], {

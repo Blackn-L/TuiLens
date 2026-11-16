@@ -1,14 +1,13 @@
-import { fork } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { IDisposable, IPty } from "node-pty";
+import type { IDisposable } from "node-pty";
 import { TuiLensError } from "../core/errors.js";
+import { compactSnapshot } from "../core/compact.js";
 import { encodeInput, encodeScrollBatches } from "../core/input.js";
 import type {
   CursorState, InputAction, InputGuard, Observation, ObserveOptions, SessionInfo, TerminalEngine,
-  FrameAccessOptions, ResolvedTerminalProfile,
+  FrameAccessOptions, MatchStyle, Region, ResolvedTerminalProfile, TextProbe,
 } from "../core/types.js";
 import { dimensions, inputGuard, regionWithin } from "../core/validation.js";
 import { regionFingerprint } from "../core/locator.js";
@@ -16,81 +15,10 @@ import type { RecordingWriter } from "../recording/writer.js";
 import {
   ProtocolReplyGuard, rewriteTerminalProfileReplies, type ProtocolRepliesOptions,
 } from "./protocol-replies.js";
+import type { PtyHandle } from "./pty-runtime.js";
 
 const MAX_PENDING_BYTES = 16 * 1024 * 1024;
 const MAX_BATCH_CHARS = 32 * 1024;
-const require = createRequire(import.meta.url);
-const CONPTY_PROCESS_LIST_AGENT = join(
-  dirname(require.resolve("node-pty")),
-  "conpty_console_list_agent.js",
-);
-const quietConptyAgents = new WeakSet<object>();
-
-interface WindowsPtyAgent {
-  _useConpty?: boolean;
-  _useConptyDll?: boolean;
-  _innerPid?: number;
-  _conoutSocketWorker?: { dispose?: () => void };
-  _getConsoleProcessList?: () => Promise<number[]>;
-}
-
-/**
- * node-pty 1.1.0 在关闭系统 ConPTY 时 fork 一个辅助进程执行 AttachConsole。
- * 目标控制台已退出时该进程会把异常写进继承的 stderr，且不会发送回复，
- * 父进程只能空等 5 秒超时。保留进程树清理，但改为静默子进程并在退出时立即回退。
- */
-export function installWindowsConptyCleanup(pty: IPty): void {
-  if (process.platform !== "win32") return;
-  const agent = (pty as unknown as { _agent?: WindowsPtyAgent })._agent;
-  if (!agent || agent._useConpty !== true || agent._useConptyDll === true || quietConptyAgents.has(agent)) return;
-  const shellPid = agent._innerPid;
-  if (typeof shellPid !== "number" || !Number.isInteger(shellPid)) return;
-  quietConptyAgents.add(agent);
-  agent._getConsoleProcessList = () => new Promise<number[]>((resolve) => {
-    let child: ReturnType<typeof fork>;
-    try {
-      child = fork(CONPTY_PROCESS_LIST_AGENT, [String(shellPid)], { silent: true });
-    } catch {
-      resolve([shellPid]);
-      return;
-    }
-    let settled = false;
-    let timer: NodeJS.Timeout | undefined;
-    const finish = (pids: number[]): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve([...new Set([shellPid, ...pids])]);
-    };
-    child.once("message", (message: unknown) => {
-      const value = message && typeof message === "object" && "consoleProcessList" in message
-        ? (message as { consoleProcessList?: unknown }).consoleProcessList
-        : undefined;
-      const pids = Array.isArray(value)
-        ? value.filter((pid): pid is number => Number.isInteger(pid))
-        : [];
-      finish(pids);
-    });
-    child.once("error", () => finish([]));
-    child.once("exit", () => finish([]));
-    child.stdout?.resume();
-    child.stderr?.resume();
-    timer = setTimeout(() => {
-      try { child.kill(); } catch { /* 辅助进程可能已退出。 */ }
-      finish([]);
-    }, 5000);
-  });
-}
-
-/**
- * node-pty 1.1.0 的 useConptyDll 分支只在 conout 再次收到 data 时释放 worker；
- * 无数据可读时该线程会阻止宿主退出。这里调用其内部可销毁句柄，仅限 Windows。
- */
-export function releaseWindowsConptyWorker(pty: IPty): void {
-  if (process.platform !== "win32") return;
-  const agent = (pty as unknown as { _agent?: WindowsPtyAgent })._agent;
-  try { agent?._conoutSocketWorker?.dispose?.(); } catch { /* 进程退出路径尽力清理。 */ }
-}
 
 export interface SessionMetrics {
   receivedBytes: number;
@@ -177,7 +105,7 @@ export class ManagedSession {
   constructor(
     private readonly details: SessionInfo,
     private readonly engine: TerminalEngine,
-    private readonly pty: IPty,
+    private readonly pty: PtyHandle,
     private readonly artifactDir: string,
     private readonly recorder?: RecordingWriter,
     protocolReplies?: ProtocolRepliesOptions,
@@ -327,6 +255,31 @@ export class ManagedSession {
     return controlled(pending, control);
   }
 
+  async probeText(text: string, region: Region | undefined, style: MatchStyle | undefined,
+    control: OperationControl): Promise<(TextProbe & { frameId: number }) | undefined> {
+    if (!this.engine.probeText) return undefined;
+    this.assertUsable();
+    this.sealBatch();
+    const pending = this.enqueue(async () => {
+      this.assertUsable();
+      if (control.signal?.aborted) throw new TuiLensError("ABORTED", "等待已取消");
+      const result = await this.engine.probeText!(text, region, style);
+      return { ...result, frameId: this.frameId };
+    });
+    return controlled(pending, control);
+  }
+
+  async paint(control: OperationControl = {}): Promise<{ paintMs: number } | undefined> {
+    if (!this.engine.paint) return undefined;
+    this.assertUsable();
+    this.sealBatch();
+    const pending = this.enqueue(async () => {
+      this.assertUsable();
+      return this.engine.paint!();
+    });
+    return controlled(pending, control);
+  }
+
   private async observeReady(options: ObserveOptions, control: OperationControl,
     frame: FrameAccessOptions = {}): Promise<Observation> {
     const deadline = performance.now() + (control.timeoutMs ?? 10_000);
@@ -344,13 +297,16 @@ export class ManagedSession {
         if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
         const snapshot = await this.engine.snapshot(this.frameId, {
           ...frame,
-          ...(options.cells === undefined ? {} : { cells: options.cells }),
+          ...(options.compact === true
+            ? { cells: false }
+            : options.cells === undefined ? {} : { cells: options.cells }),
           ...(options.scrollback === undefined ? {} : { scrollback: options.scrollback }),
         });
         if (options.region) regionWithin(options.region, snapshot.cols, snapshot.rows);
-        const observation: Observation = { session: this.info(), snapshot, screenshot: null };
+        const visible = options.compact === true ? compactSnapshot(snapshot) : snapshot;
+        const observation: Observation = { session: this.info(), snapshot: visible, screenshot: null };
         if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
-        if (options.screenshot !== false) {
+        if (options.compact === true ? options.screenshot === true : options.screenshot !== false) {
           const capture = await this.engine.screenshot(options.region, { cursor: options.cursor ?? "hide" });
           if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
           const prefix = join(this.artifactDir, `${this.details.id}-${this.frameId}-${++this.observationId}`);
@@ -527,7 +483,7 @@ export class ManagedSession {
         this.pty.kill();
       }
     } catch (error) { closeError = error; }
-    releaseWindowsConptyWorker(this.pty);
+    this.pty.dispose?.();
     for (const disposable of this.disposables.splice(0)) disposable.dispose();
     // 先关闭浏览器可打断卡住的 evaluate；再等待队列收敛，不能让 close 无限悬挂。
     try { await this.engine.close(); } catch (error) { closeError ??= error; }

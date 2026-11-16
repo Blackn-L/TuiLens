@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
+import { setTimeout as sleep } from "node:timers/promises";
 import { errorRecord, TuiLensError } from "../core/errors.js";
-import { request } from "../transport/client.js";
+import { isDaemonUnavailable, request } from "../transport/client.js";
 import { methodSchemas, type Method } from "./schemas.js";
 import { readBoundedFile } from "../core/bounded-file.js";
 import { VERSION } from "../version.js";
@@ -18,7 +19,7 @@ launch --cwd <path> [--terminal-profile kitty|wezterm|...|<JSON>] [--images off|
                                      --images is deprecated; use profile or graphics for image capabilities
 launch --json <JSON>                 also accepts --file <path> or --stdin
 list                                 list sessions
-observe <id> [--no-screenshot] [--cells] [--show-cursor]  same-frame text and PNG; cursor hidden by default
+observe <id> [--no-screenshot] [--cells] [--compact] [--show-cursor]  compact omits cells and defaults to no PNG
 type <id> <text>                     send text without submitting
 paste <id> <text>                    use negotiated bracketed paste
 key <id> Enter                       send a key or chord such as Ctrl+a
@@ -39,6 +40,9 @@ input-wait <id> <text> [--text expected] [--timeout 10000] [--screenshot]
 metrics <id>                         counters without screenshots or full-screen reads
 compare <id> --baseline <PNG> [--region x,y,w,h] [--show-cursor]  generate a visual diff and report
 replay <recording> [--speed 0]       replay output offline; does not execute input or programs
+doctor                               diagnose runtime, browser, PTY, storage and daemon state
+probe                                render fixed glyph samples and report font/grid fingerprints
+watch <id> [--interval 250] [--timeout 0] [--control]  JSONL live screen stream; --control forwards terminal input
 scenario --file <JSON>               run a declarative scenario, retain failure evidence and release the session
                                      the spec may include profiles:[...] to run a terminal matrix
 perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>]
@@ -51,7 +55,7 @@ shutdown                             release all sessions and stop the local ser
 mcp                                  start the MCP stdio interface
 
 Environment: TUILENS_HOME sets runtime data; TUILENS_BROWSER_PATH selects Chrome/Chromium;
-TUILENS_LANG selects en or zh-CN (default: en).
+TUILENS_LANG selects en or zh-CN (default: en); TUILENS_PTY_WORKER=1 isolates node-pty.
 The local IPC service starts automatically on first use. Observation has overhead and is not a zero-cost performance probe.
 `;
 
@@ -66,7 +70,7 @@ launch --cwd <路径> [--terminal-profile kitty|wezterm|...|<JSON>] [--images of
                                      --images 已弃用；profile 或 graphics 提供正交的图片能力
 launch --json <JSON>                 也可使用 --file <文件> 或 --stdin
 list                                列出会话
-observe <id> [--no-screenshot] [--cells] [--show-cursor]  同帧文字与 PNG；默认隐藏截图光标
+observe <id> [--no-screenshot] [--cells] [--compact] [--show-cursor]  compact 省略字符格且默认不截图
 type <id> <文本>                     输入文本，不自动提交
 paste <id> <文本>                    使用已协商的括号粘贴
 key <id> Enter                      按键或 Ctrl+a 等组合键
@@ -87,6 +91,9 @@ input-wait <id> <文本> [--text 确认文本] [--timeout 10000] [--screenshot]
 metrics <id>                        无截图、无全屏读取的计数
 compare <id> --baseline <PNG> [--region x,y,w,h] [--show-cursor]  生成视觉差异和报告
 replay <录制文件> [--speed 0]        离线回放输出，不执行输入或程序
+doctor                               诊断运行时、浏览器、PTY、存储和 daemon 状态
+probe                                渲染固定字形样本并报告字体/网格指纹
+watch <id> [--interval 250] [--timeout 0] [--control]  JSONL 实时画面流；--control 转发终端输入
 scenario --file <JSON>              执行声明式场景，失败留证并释放会话
                                     规格可含 profiles:[...]，按终端 profile 运行矩阵
 perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>]
@@ -98,7 +105,7 @@ shutdown                            释放所有会话并关闭本机服务
 mcp                                 启动 MCP stdio 接口
 
 环境：TUILENS_HOME 指定运行数据；TUILENS_BROWSER_PATH 指定 Chrome/Chromium；
-TUILENS_LANG 选择 en 或 zh-CN（默认 en）。
+TUILENS_LANG 选择 en 或 zh-CN（默认 en）；TUILENS_PTY_WORKER=1 隔离 node-pty。
 首次使用自动启动本机 IPC 服务。功能观察有开销，不能当作零开销性能探针。
 `;
 
@@ -112,6 +119,20 @@ async function main(): Promise<void> {
   if (command === "--version") { process.stdout.write(`${VERSION}\n`); return; }
   if (command === "_serve") { await (await import("../transport/server.js")).serve(); return; }
   if (command === "mcp") { await (await import("./mcp.js")).startMcp(); return; }
+  if (command === "doctor") {
+    const { runDoctor } = await import("../doctor.js");
+    const data = await runDoctor();
+    process.stdout.write(JSON.stringify({ ok: true, data }) + "\n");
+    if (!data.ok) process.exitCode = 1;
+    return;
+  }
+  if (command === "probe") {
+    const { runProbe } = await import("../probe.js");
+    const data = await runProbe();
+    process.stdout.write(JSON.stringify({ ok: true, data }) + "\n");
+    if (!data.ok) process.exitCode = 1;
+    return;
+  }
   const separator = rest.indexOf("--");
   const program = separator >= 0 ? rest.slice(separator + 1) : [];
   const { values, positionals } = parseArgs({
@@ -121,8 +142,10 @@ async function main(): Promise<void> {
       cwd: { type: "string" }, cols: { type: "string" }, rows: { type: "string" },
       env: { type: "string", multiple: true }, "color-mode": { type: "string" },
       "terminal-profile": { type: "string" },
-      "no-screenshot": { type: "boolean" }, cells: { type: "boolean" }, text: { type: "string" },
+      "no-screenshot": { type: "boolean" }, cells: { type: "boolean" }, compact: { type: "boolean" }, text: { type: "string" },
       region: { type: "string" }, stable: { type: "string" }, timeout: { type: "string" },
+      interval: { type: "string" },
+      control: { type: "boolean" },
       absent: { type: "boolean" }, exited: { type: "boolean" },
       images: { type: "string" }, renderer: { type: "string" }, record: { type: "boolean" }, baseline: { type: "string" },
       threshold: { type: "string" }, "max-diff": { type: "string" }, speed: { type: "string" },
@@ -137,6 +160,10 @@ async function main(): Promise<void> {
       "allow-env-mismatch": { type: "boolean" },
     },
   });
+  if (command === "watch") {
+    await runWatch(positionals[0], values.interval, values.timeout, values.control ?? false);
+    return;
+  }
   let method = command;
   let params: unknown;
   const payloadSources = [values.json !== undefined, values.file !== undefined, values.stdin === true].filter(Boolean).length;
@@ -212,6 +239,7 @@ async function main(): Promise<void> {
       }
       case "observe": params = {
         id, screenshot: !values["no-screenshot"], includeCells: values.cells ?? false,
+        ...(values.compact ? { compact: true } : {}),
         ...(region ? { region } : {}),
         ...(values["show-cursor"] ? { cursor: "show" } : {}),
       }; break;
@@ -297,7 +325,16 @@ async function main(): Promise<void> {
   }
   const abort = new AbortController();
   process.once("SIGINT", () => abort.abort());
-  const data = await request(method as Method, validated.data, { signal: abort.signal, autoStart: method !== "shutdown" });
+  let data: unknown;
+  try {
+    data = await request(method as Method, validated.data, {
+      signal: abort.signal,
+      autoStart: method !== "shutdown",
+    });
+  } catch (error) {
+    if (method !== "shutdown" || !isDaemonUnavailable(error)) throw error;
+    data = { stopped: true, alreadyStopped: true };
+  }
   process.stdout.write(JSON.stringify({ ok: true, data }) + "\n");
   if (values.junit) await writeJunit(values.junit, method, data);
   if (data && typeof data === "object" && "pass" in data && data.pass === false) process.exitCode = 1;
@@ -381,6 +418,86 @@ async function writeJunit(path: string, method: string, data: unknown): Promise<
   await mkdir(dirname(target), { recursive: true, mode: 0o700 });
   await writeFile(target, renderJunit(suites), { mode: 0o644 });
   process.stderr.write(`${pick("JUnit report written to", "JUnit 报告已写入")} ${target}\n`);
+}
+
+/** 只读实时观察：每个变化帧输出一行 JSONL，不发送输入，也不会自动关闭会话。 */
+async function runWatch(id: string | undefined, intervalValue: string | undefined,
+  timeoutValue: string | undefined, control: boolean): Promise<void> {
+  if (!id) {
+    throw new TuiLensError("INVALID_ARGUMENT", "watch 需要会话 ID",
+      undefined, "watch requires a session ID.");
+  }
+  const interval = Number(intervalValue ?? 250);
+  const timeout = Number(timeoutValue ?? 0);
+  if (!Number.isFinite(interval) || interval < 50 || interval > 60_000) {
+    throw new TuiLensError("INVALID_ARGUMENT", "watch interval 必须在 50～60000 ms 之间",
+      undefined, "watch interval must be between 50 and 60000 ms.");
+  }
+  if (!Number.isFinite(timeout) || timeout < 0 || timeout > 86_400_000) {
+    throw new TuiLensError("INVALID_ARGUMENT", "watch timeout 必须在 0～86400000 ms 之间",
+      undefined, "watch timeout must be between 0 and 86400000 ms.");
+  }
+  if (control && !process.stdin.isTTY) {
+    throw new TuiLensError("INVALID_ARGUMENT", "watch --control 需要交互式 TTY",
+      undefined, "watch --control requires an interactive TTY.");
+  }
+  const abort = new AbortController();
+  const stop = (): void => abort.abort();
+  process.once("SIGINT", stop);
+  let detachInput: (() => void) | undefined;
+  if (control) {
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    const forward = (chunk: Buffer | string): void => {
+      const data = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk;
+      // Ctrl+C 在这个模式里用于脱离，而不是送给被测程序。
+      if (data.includes("\u0003")) {
+        abort.abort();
+        return;
+      }
+      void request("input", { id, action: { type: "raw", data } }, { signal: abort.signal })
+        .catch(() => undefined);
+    };
+    process.stdin.on("data", forward);
+    detachInput = () => {
+      process.stdin.off("data", forward);
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+    };
+  }
+  const started = performance.now();
+  let lastFrame = -1;
+  let frames = 0;
+  const stopped = (): void => {
+    process.stdout.write(JSON.stringify({ ok: true, data: { stopped: true, frames } }) + "\n");
+  };
+  try {
+    while (!abort.signal.aborted) {
+      if (timeout > 0 && performance.now() - started >= timeout) break;
+      const data = await request("observe", {
+        id, screenshot: false, compact: true,
+      }, { signal: abort.signal });
+      const observation = data as { snapshot: { frameId: number } };
+      if (observation.snapshot.frameId !== lastFrame) {
+        lastFrame = observation.snapshot.frameId;
+        frames += 1;
+        process.stdout.write(JSON.stringify({ ok: true, data }) + "\n");
+      }
+      const remaining = timeout > 0 ? timeout - (performance.now() - started) : interval;
+      if (remaining <= 0) break;
+      await sleep(Math.min(interval, remaining), undefined, { signal: abort.signal });
+    }
+    stopped();
+  } catch (error) {
+    if (abort.signal.aborted) {
+      stopped();
+      return;
+    }
+    throw error;
+  } finally {
+    process.removeListener("SIGINT", stop);
+    detachInput?.();
+  }
 }
 
 function parseRegion(value: string) {

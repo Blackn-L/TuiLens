@@ -9,10 +9,10 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 
 ![TuiLens terminal automation for AI agents](docs/assets/tuilens-agent-banner.en.png)
 
-> **Status:** experimental, version 0.4.0. Designed for functional and visual testing.
+> **Status:** experimental, version 0.5.0. Designed for functional and visual testing.
 > The browser renderer is not a low-overhead performance measurement environment.
 
-[Features](#features) · [Installation](#installation) · [Quick start](#quick-start) · [Interfaces](#interfaces) · [Development](#development) · [Documentation](#documentation) · [License](#license)
+[Features](#features) · [Installation](#installation) · [Diagnostics](#diagnostics) · [Quick start](#quick-start) · [Interfaces](#interfaces) · [Development](#development) · [Documentation](#documentation) · [License](#license)
 
 ## Features
 
@@ -29,16 +29,21 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 - **Keyboard protocols:** traditional xterm encoding plus Kitty keyboard protocol (`CSI u`) and `modifyOtherKeys`, so `Shift+Enter`, `Ctrl+Enter` and `Ctrl+Space` reach applications that negotiate them.
 - **Terminal profiles:** declarative presets or JSON-derived profiles control `TERM`, DA1/DA2/XTVERSION and Kitty query replies, image protocols, keyboard capability metadata and scrollback. Scenario/perf runs can compare a matrix of profiles.
 - **Scrollback assertions:** `observe.scrollback` returns history lines above the viewport, so content that scrolled away can still be asserted.
+- **Compact observation:** `observe --compact` trims line ends, omits cells and defaults to no screenshot; `watch` streams changed frames as JSONL, with `--control` as an explicit TTY handoff.
+- **Engine-side probes:** regional text/style waits are evaluated inside the browser terminal and only the matching frame is transferred.
 - **Terminal reply guard:** late or unmatched DA1/DA2, CPR/DSR and related automatic replies are dropped by default; `suppress` preserves ordinary input.
 - **Scenario runner:** declarative steps with failure screenshots, reports, and automatic session cleanup.
 - **Performance testing:** declarative multi-round scenarios with setup history growth, process-tree RSS sampling, optional baseline files and regression gating.
 - **Test assertions:** a playwright-style `Terminal` handle with expected/actual/screenshot on failure, plus JUnit XML output for CI.
+- **Local diagnostics:** `doctor` checks runtime, browser, `node-pty`, storage and daemon state without starting the daemon.
+- **Rendering fingerprint:** `probe` renders fixed glyph samples and reports cell metrics, renderer and a stable font/grid fingerprint.
+- **Isolation option:** `TUILENS_PTY_WORKER=1` loads `node-pty` in a per-session child process; the default fast path stays in-process.
 - **Agent interfaces:** shared CLI/MCP operations and a directly importable SDK.
 
 ## Requirements
 
 - Node.js **22 or newer**.
-- Windows or Linux; a local Chrome/Chromium installation or Playwright's Chromium.
+- Windows, Linux, or macOS (experimental); a local Chrome/Chromium installation or Playwright's Chromium.
 - Platform build tools if `node-pty` cannot use a prebuilt binary.
 
 ## Installation
@@ -59,6 +64,20 @@ npx playwright install chromium
 ```
 
 Set `TUILENS_BROWSER_PATH` to select a specific browser executable.
+
+## Diagnostics
+
+Run the local diagnostic check after building:
+
+```sh
+node dist/src/interfaces/cli.js doctor
+node dist/src/interfaces/cli.js probe
+```
+
+It checks Node.js and platform support, browser discovery, `node-pty`, storage permissions,
+and daemon state without starting the daemon. The command exits with code 1 when an
+error-level check fails; warnings such as stale daemon metadata do not fail the command.
+Set `TUILENS_LANG=zh-CN` for Chinese messages.
 
 ## Quick start
 
@@ -294,13 +313,15 @@ Available tools: `terminal_launch`, `terminal_list`, `terminal_observe`, `termin
 `terminal_replay`, `terminal_scenario`, `terminal_perf`, `terminal_metrics`, and `terminal_close`.
 `terminal_observe`, `terminal_replay`, and screenshot-enabled `terminal_inputAndWait` return PNG image content as well as text metadata.
 Disconnecting releases sessions created by that MCP connection.
+Long-running wait, inputAndWait, replay, scenario and perf calls emit progress heartbeats when the client
+requests a progress token; cancelling the MCP request aborts the matching daemon operation.
 
 ## TypeScript SDK
 
 ```ts
 import { SessionManager } from "./dist/src/index.js";
 
-const manager = new SessionManager({ artifactDir: "./artifacts" });
+const manager = new SessionManager({ artifactDir: "./artifacts", ptyWorker: false });
 try {
   const session = await manager.launch({
     command: "node", args: ["examples/echo-tui.mjs"], cols: 80, rows: 16,
@@ -348,8 +369,11 @@ Set `TUILENS_HOME` to isolate its state directory (default: `~/.tuilens`). No pu
 - Screenshots hide the cursor by default; snapshots still expose visibility, style and blink, but real host cursor and IME behavior cannot be verified.
 - `protocolReplies: "auto"` forwards only timely, query-matched known replies. `suppress` drops only recognized complete replies, not arbitrary input. If an app probes while its TTY already echoes, use `suppress` or an app-side probe switch.
 - Browser parsing, rendering, capture and recording have overhead. `metrics` is lightweight, but does not remove the renderer's cost.
+- `doctor` checks module loading, paths and daemon metadata; it does not launch a browser or PTY. Use a real session and the test suite for runtime verification.
+- `watch` is read-only by default; `--control` forwards terminal input and requires an interactive TTY. `probe` only represents the current font, browser and platform.
+- `TUILENS_PTY_WORKER=1` adds an IPC hop and is not a security sandbox.
 - Replay reproduces output, not application behavior. Stable regions do not prove an application has finished all work.
-- Windows `node-pty 1.1.0` may print `AttachConsole failed` during cleanup; verify process termination and retain diagnostics.
+- Windows `node-pty 1.2.0-beta.14` may print `AttachConsole failed` during cleanup; verify process termination and retain diagnostics.
 
 ## License
 

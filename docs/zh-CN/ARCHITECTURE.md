@@ -13,10 +13,12 @@ TuiLens 提供面向 Agent 的终端运行环境。首版复用 PTY 与 xterm.js
 - `src/core/`：公开类型、协议、校验、定位、输入编码和有界文件读取。
 - `src/engine/`：浏览器版 xterm.js 适配器；同一实例维护字符格与可见画面。
 - `src/profiles/`：内置终端 preset、JSON profile 继承、能力与应答解析。
-- `src/session/`：PTY、输出顺序、观察屏障、等待、进程退出和证据。
+- `src/session/`：PTY、可选 PTY worker、输出顺序、观察屏障、等待、进程退出和证据。
 - `src/recording/`、`src/visual/`、`src/scenario/`：有界录制回放、视觉比较和声明式场景。
 - `src/transport/`：本机 IPC 与守护进程；CLI 多次调用共享会话。
 - `src/interfaces/`：JSON CLI 与 MCP stdio，调用相同应用服务。
+- `src/doctor.ts`：本地诊断运行时、浏览器、PTY、存储和 daemon 状态，不启动 daemon。
+- `src/probe.ts`：固定字形渲染探针，输出字体/网格指纹。
 - `tests/`：协议、生命周期、原生 PTY 与浏览器验收。
 - `scripts/`：基准与维护工具，运行参数显式传入。
 
@@ -50,6 +52,14 @@ TuiLens 提供面向 Agent 的终端运行环境。首版复用 PTY 与 xterm.js
     截图默认隐藏光标，但快照保留可见性、样式和闪烁元数据。
 19. 截图前强制刷新并校验字符网格与 PNG 尺寸；resize 后等待画布几何连续稳定。
 20. inputAndWait 发送一次输入后等待可观测条件，不自动重发；超时保留已接收证据。
+21. `doctor` 只做本地诊断，不启动 daemon；`ping` 返回运行时长和活动会话计数；
+    没有 daemon 时 `shutdown` 幂等成功。
+22. `observe.compact` 保留行数但裁剪行尾、省略字符格并默认不截图；区域文本/样式等待走引擎侧
+    `probeText`，不在未命中时传输整屏网格。
+23. `snapshot.render` 记录绘制后端、字体/网格度量、与时间无关的指纹和最近一次 `paintMs`；
+    `probe` 用固定字形样本比较实际落格宽度。
+24. `TUILENS_PTY_WORKER=1` 把 `node-pty` 放进每会话子进程；默认仍在进程内运行。两种模式都不是安全沙箱。
+25. `watch` 默认只输出只读 JSONL；`--control` 需要 TTY，并显式进入人工输入接管。
 
 ## 首版边界
 

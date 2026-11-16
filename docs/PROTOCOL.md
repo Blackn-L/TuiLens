@@ -179,6 +179,9 @@ A requested screenshot uses a separate bounded capture budget, so a successful w
 
 A cursor condition can combine `x`, `y`, `visible`, `style` and `blink` with AND semantics.
 `observe`/`compare` accept `cursor: "hide"` (default) or `"show"`; snapshots always include cursor metadata.
+`observe` also accepts `compact:true`: line endings are trimmed, cells are omitted, and no PNG is captured
+unless `screenshot:true` is explicit. Regional text/style waits are evaluated in the engine before a light
+observation is returned.
 
 ## Automatic terminal replies
 

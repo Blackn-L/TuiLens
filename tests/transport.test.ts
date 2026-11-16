@@ -33,12 +33,29 @@ test("并发自动启动只连接同一服务，关闭后可再次启动", { tim
   const env = { ...process.env, TUILENS_HOME: home };
   const call = async (command: string) => {
     const result = await execute(process.execPath, [cli, command], { env, timeout: 15000 });
-    return JSON.parse(result.stdout) as { ok: boolean; data: { pid: number } };
+    return JSON.parse(result.stdout) as {
+      ok: boolean;
+      data: {
+        pid: number;
+        version: string;
+        uptimeMs: number;
+        sessions: number;
+        pendingLaunches: number;
+        offline: number;
+        disposed: boolean;
+      };
+    };
   };
   try {
     const responses = await Promise.all(Array.from({ length: 5 }, () => call("ping")));
     assert.ok(responses.every((r) => r.ok));
     assert.equal(new Set(responses.map((r) => r.data.pid)).size, 1);
+    assert.equal(typeof responses[0]!.data.version, "string");
+    assert.equal(responses[0]!.data.sessions, 0);
+    assert.equal(responses[0]!.data.pendingLaunches, 0);
+    assert.equal(responses[0]!.data.offline, 0);
+    assert.equal(responses[0]!.data.disposed, false);
+    assert.ok(responses[0]!.data.uptimeMs >= 0);
     await call("shutdown");
     // shutdown 返回后端点关闭异步完成；探测旧 PID 消失再验证重启。
     for (let i = 0; i < 50; i += 1) {
@@ -50,5 +67,24 @@ test("并发自动启动只连接同一服务，关闭后可再次启动", { tim
   } finally {
     await call("shutdown").catch(() => undefined);
     await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});
+
+test("shutdown 在没有 daemon 时可重复执行", { timeout: 15000 }, async () => {
+  const home = await mkdtemp(join(tmpdir(), "tuilens-shutdown-idle-"));
+  try {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = await execute(process.execPath, [cli, "shutdown"], {
+        env: { ...process.env, TUILENS_HOME: home }, timeout: 10000,
+      });
+      const payload = JSON.parse(result.stdout) as {
+        ok: boolean;
+        data: { stopped: boolean; alreadyStopped: boolean };
+      };
+      assert.equal(payload.ok, true);
+      assert.deepEqual(payload.data, { stopped: true, alreadyStopped: true });
+    }
+  } finally {
+    await rm(home, { recursive: true, force: true });
   }
 });

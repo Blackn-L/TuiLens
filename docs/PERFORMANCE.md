@@ -89,6 +89,23 @@ payload as a flat string. Packing happens inside the page; unpacking and validat
 Wait polling now backs off from 2 ms to 50 ms. The old fixed 50 ms tick both quantized short waits and inflated
 `perf` results, because a 4 ms observation could only be sampled every 50 ms.
 
+## Frame paint and soak
+
+`snapshot.render.paintMs` records the most recent write-to-two-animation-frame interval. The renderer fingerprint
+excludes this timing value, so font/grid identity stays stable across paints. `perf` also records `paintMs`
+by waiting for the engine paint boundary when supported.
+
+Run a bounded soak without a real application:
+
+```powershell
+$env:TUILENS_SOAK_FRAMES = "500"
+npm run soak
+```
+
+The JSON result reports elapsed time, root RSS/heap and the last paint sample. It is a bounded tool check, not a
+multi-hour application soak. `watch` streams compact JSONL observations; `--control` is an explicit human handoff
+and does not improve measurement quality.
+
 ## Boundaries
 
 For long-running tests, fix fonts, grid, engine and browser versions; sample each process tree separately;

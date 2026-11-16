@@ -88,6 +88,21 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1 --out artifac
 等待轮询现在从 2 ms 退避到 50 ms。原先固定 50 ms 的轮询既让短等待被量化，
 也让 `perf` 结果偏大——4 ms 的观察只能每 50 ms 采样一次。
 
+## 帧级绘制与 soak
+
+`snapshot.render.paintMs` 记录最近一次写入到两次动画帧完成的间隔。renderer 指纹不包含该计时值，
+因此字体/网格身份不会随每次绘制变化。引擎支持时，`perf` 会等待绘制边界并输出 `paintMs`。
+
+可运行有界 soak：
+
+```powershell
+$env:TUILENS_SOAK_FRAMES = "500"
+npm run soak
+```
+
+结果 JSON 包含耗时、根进程 RSS/heap 和最后一次 paint；这是工具自身的有界检查，不是数小时应用 soak。
+`watch` 输出紧凑 JSONL 观察；`--control` 是显式人工接管，不改善测量质量。
+
 ## 长任务
 
 - 固定工作负载、字体、网格、引擎和浏览器版本。

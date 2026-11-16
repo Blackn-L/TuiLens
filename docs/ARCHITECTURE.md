@@ -9,7 +9,7 @@
 | `src/core` | Public types, protocol schemas, input encoding, locators, validation, bounded reads, error catalog |
 | `src/engine` | xterm.js browser adapter, shared browser host, snapshot codec, image decoding and rendering, viewport capture |
 | `src/profiles` | Built-in terminal presets, JSON profile inheritance, capability/reply resolution |
-| `src/session` | PTY lifecycle, ordered output, observation barriers, waits and resource limits |
+| `src/session` | PTY lifecycle, optional PTY worker, ordered output, observation barriers, waits and resource limits |
 | `src/recording` | Bounded versioned journals and offline replay |
 | `src/visual` | PNG validation, pixel comparison and diff artifacts |
 | `src/scenario` | Declarative execution and failure reports |
@@ -17,6 +17,8 @@
 | `src/testing` | Playwright-style assertions and JUnit XML rendering |
 | `src/transport` | Authenticated local IPC daemon/client and shared dispatch |
 | `src/interfaces` | CLI and MCP stdio |
+| `src/doctor.ts` | Local diagnostics for runtime, browser, PTY, storage and daemon state without starting the daemon |
+| `src/probe.ts` | Fixed-glyph rendering probe and font/grid fingerprint report |
 
 Interfaces delegate to the same application service. Protocol schemas are in core;
 scenarios do not import CLI implementations. `TerminalEngine` is the replaceable engine contract.
@@ -62,6 +64,11 @@ two strings — a token stream per row and a style run-length stream per row —
 - Automatic terminal replies can be forwarded or dropped by latency policy; suppress drops recognized replies rather than all input. Screenshots hide the cursor by default while snapshots retain visibility, style and blink metadata.
 - Capture forces a repaint and validates the grid and PNG dimensions; resize waits for stable canvas geometry.
 - inputAndWait sends one action and waits for observable evidence without automatic retry; timeouts retain accepted-input evidence.
+- `doctor` stays local and does not start the daemon. `ping` exposes uptime and live session counts; `shutdown` is idempotent when no daemon is running.
+- `observe.compact` keeps line count, trims line ends, omits cells and defaults to no screenshot. Regional text/style waits use the engine-side `probeText` path.
+- `snapshot.render` records renderer, font/grid metrics, a timing-independent fingerprint and the latest `paintMs`; `probe` compares fixed glyph widths.
+- `TUILENS_PTY_WORKER=1` moves `node-pty` into a per-session child process. The default fast path remains in-process; neither mode is a sandbox.
+- `watch` is a read-only JSONL stream by default; `--control` requires a TTY and explicitly forwards input.
 - A changed global frame rejects a frame guard. A region fingerprint can tolerate animation outside the target.
 - Replays and live sessions share an eight-operation budget and manager shutdown lifecycle.
 - Recordings are opt-in. They retain terminal content and mark dropped/truncated output explicitly.

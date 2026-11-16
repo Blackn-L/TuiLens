@@ -57,6 +57,39 @@ test("快速文本条件读取当前解析状态，支持中文且不等待截�
   } finally { await engine.close(); }
 });
 
+test("区域文本探测在引擎内统计文本、区域与样式匹配", { timeout: 30_000 }, async () => {
+  const engine = await createBrowserEngine({ cols: 40, rows: 4, onData() {} });
+  try {
+    await engine.write("\x1b[?25lRUN RUN \x1b[1mRUN\x1b[0m");
+    const all = await engine.probeText?.("RUN");
+    assert.ok(all);
+    assert.equal(all.count, 3);
+    assert.equal(all.matches.length, 3);
+    const region = await engine.probeText?.("RUN", { x: 4, y: 0, width: 12, height: 1 });
+    assert.equal(region?.count, 2);
+    const styled = await engine.probeText?.("RUN", undefined, { bold: true });
+    assert.equal(styled?.count, 1);
+    assert.deepEqual(styled?.matches[0]?.region, { x: 8, y: 0, width: 3, height: 1 });
+  } finally {
+    await engine.close();
+  }
+});
+
+test("帧级绘制采样与快照 render 元数据一致", { timeout: 30_000 }, async () => {
+  const engine = await createBrowserEngine({ cols: 40, rows: 4, onData() {} });
+  try {
+    await engine.write("PAINT");
+    const paint = await engine.paint?.();
+    assert.ok(paint);
+    assert.ok(paint.paintMs >= 0);
+    const snapshot = await engine.snapshot(1, { cells: false });
+    assert.equal(snapshot.render?.paintMs, Math.round(paint.paintMs * 100) / 100);
+    assert.equal(snapshot.render?.renderer, "dom");
+  } finally {
+    await engine.close();
+  }
+});
+
 test("默认引擎保留 xterm 原生 DA 应答", async () => {
   const responses: string[] = [];
   const engine = await createBrowserEngine({ cols: 20, rows: 4, onData: (data) => responses.push(data) });

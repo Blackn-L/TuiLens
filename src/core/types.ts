@@ -78,6 +78,29 @@ export interface TerminalSnapshot {
   scrollback?: string[];
   /** 请求的回滚行多于实际可用时，说明被截断的起始位置。 */
   scrollbackTruncated?: boolean;
+  /** 当前绘制环境的可比较元数据；旧引擎可以缺省。 */
+  render?: RenderMetadata;
+}
+
+/** 用于诊断字体、网格和绘制后端差异的渲染指纹。 */
+export interface RenderMetadata {
+  renderer: RendererKind;
+  fontFamily: string;
+  fontSize: number;
+  cols: number;
+  rows: number;
+  cellWidth: number;
+  cellHeight: number;
+  deviceScaleFactor: number;
+  fingerprint: string;
+  /** 最近一次写入到浏览器完成两帧绘制的耗时；无写入时缺省。 */
+  paintMs?: number;
+}
+
+/** 引擎内文本探测结果；matches 可截断，count 始终是区域内真实匹配数。 */
+export interface TextProbe {
+  count: number;
+  matches: TextMatch[];
 }
 
 export interface TextMatch {
@@ -231,6 +254,11 @@ export interface Observation {
 
 export interface ObserveOptions {
   screenshot?: boolean;
+  /**
+   * 紧凑文本观察：去掉行尾空白并省略字符格。除非显式 screenshot:true，
+   * 否则也不生成截图。适合 Agent 的高频状态轮询。
+   */
+  compact?: boolean;
   /** 字符格裁剪，仅影响 PNG；状态仍返回完整 viewport。 */
   region?: Region;
   /** 默认隐藏截图光标，避免块状光标遮挡字符。 */
@@ -313,6 +341,10 @@ export interface TerminalEngine {
   state(): Promise<TerminalState>;
   /** 可选快速文本条件：避免等待普通标记时跨进程传输整屏字符格。 */
   hasText?(text: string): Promise<boolean>;
+  /** 可选区域文本探测：在引擎内计算文本/样式匹配，避免传输区域外字符格。 */
+  probeText?(text: string, region?: Region, style?: MatchStyle): Promise<TextProbe>;
+  /** 等待最近一次写入完成两帧绘制；用于帧级性能采样。 */
+  paint?(): Promise<{ paintMs: number }>;
   snapshot(frameId: number, options?: FrameAccessOptions): Promise<TerminalSnapshot>;
   screenshot(region?: Region, options?: { cursor?: "hide" | "show" }): Promise<{ png: Buffer; width: number; height: number }>;
   close(): Promise<void>;
@@ -327,6 +359,8 @@ export interface ManagerOptions {
   engineFactory?: EngineFactory;
   /** 同时保留的会话（含回放任务）上限，默认 8；矩阵测试等场景可调高。 */
   maxSessions?: number;
+  /** 在子进程中加载 node-pty；默认保持进程内 PTY。 */
+  ptyWorker?: boolean;
 }
 
 export interface WaitResult {

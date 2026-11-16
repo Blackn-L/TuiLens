@@ -134,6 +134,7 @@ args = ["/home/<用户名>/TuiLens/dist/src/interfaces/cli.js", "mcp"]
 | 浏览器启动失败 | 没有检测到 Chrome/Edge | 执行 `npx playwright install chromium`，或设置 `TUILENS_BROWSER_PATH` |
 | 相对路径的文件或命令找不到 | 客户端的工作目录与 shell 不同 | 在工具参数中传入绝对 `cwd`、程序路径或脚本路径 |
 | 直接运行 `mcp` 命令后一直没有输出 | stdio 服务正在等待 JSON-RPC 输入，这是正常行为 | 通过 MCP 客户端测试，不要把它当成交互式终端命令 |
+| 不确定环境是否就绪 | 浏览器、PTY、存储或 daemon 状态可能缺失或无效 | 运行 `node dist/src/interfaces/cli.js doctor`；退出码 1 表示存在错误级检查 |
 | 工具失败后仍有会话进程 | 没有显式关闭会话 | 调用 `terminal_close`；MCP 连接断开时也会回收该连接创建的会话 |
 
 ## 安全与远程使用

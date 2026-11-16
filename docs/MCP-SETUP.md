@@ -137,6 +137,7 @@ Clients without image rendering can still use the terminal text and snapshot met
 | Browser launch failure | No Chrome/Edge installation was detected | Run `npx playwright install chromium` or set `TUILENS_BROWSER_PATH` |
 | Relative file or command not found | The client's working directory differs from the shell's | Pass an absolute `cwd` and absolute program or script paths in tool arguments |
 | The `mcp` command appears to hang with no output | This is a stdio server waiting for JSON-RPC input | Test it through an MCP client, not as an interactive terminal command |
+| Environment readiness is unclear | Browser, PTY, storage or daemon state may be missing or invalid | Run `node dist/src/interfaces/cli.js doctor`; exit code 1 means an error-level check failed |
 | Session processes remain after a tool failure | A session was not closed explicitly | Call `terminal_close`; disconnecting an MCP connection also releases sessions it created |
 
 ## Security and remote use
