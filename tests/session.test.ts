@@ -413,6 +413,41 @@ test("真实 PTY 退出等待只读取最终快照且保留最后标记", { time
   } finally { await manager.closeAll(); }
 });
 
+test("满载启动优先回收最旧的已退出会话，运行中的会话仍占用槽位", { timeout: 15000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tuilens-exited-reap-"));
+  const created: ReturnType<typeof memoryEngine>[] = [];
+  const manager = new SessionManager({
+    artifactDir: directory,
+    maxSessions: 1,
+    engineFactory: async () => {
+      const memory = memoryEngine();
+      created.push(memory);
+      return memory.engine;
+    },
+  });
+  try {
+    const exited = await manager.launch({
+      command: process.execPath, args: ["-e", "setTimeout(()=>{}, 50)"],
+    });
+    await manager.wait(exited.id, { conditions: [{ kind: "exited" }], timeoutMs: 5000 });
+    assert.equal((await manager.observe(exited.id, { screenshot: false })).session.status, "exited");
+
+    const running = await manager.launch({
+      command: process.execPath, args: ["-e", "setInterval(()=>{}, 1000)"],
+    });
+    assert.deepEqual(manager.list().map((session) => session.id), [running.id]);
+    assert.equal(created[0]?.counts().closes, 1);
+    await assert.rejects(async () => manager.observe(exited.id, { screenshot: false }), { code: "SESSION_NOT_FOUND" });
+
+    await assert.rejects(manager.launch({
+      command: process.execPath, args: ["-e", "setInterval(()=>{}, 1000)"],
+    }), { code: "SESSION_LIMIT" });
+  } finally {
+    await manager.closeAll();
+    await rm(directory, { recursive: true, force: true, maxRetries: 5 });
+  }
+});
+
 test("普通文本等待仅在命中后传输完整快照", { timeout: 15000 }, async () => {
   const memory = memoryEngine();
   let output = "";

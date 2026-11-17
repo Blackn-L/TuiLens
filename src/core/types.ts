@@ -357,7 +357,7 @@ export interface ManagerOptions {
   executablePath?: string;
   fontFamily?: string;
   engineFactory?: EngineFactory;
-  /** 同时保留的会话（含回放任务）上限，默认 8；矩阵测试等场景可调高。 */
+  /** 同时保留的会话（含回放任务）上限，默认 8；满载时优先回收已退出会话。 */
   maxSessions?: number;
   /** 在子进程中加载 node-pty；默认保持进程内 PTY。 */
   ptyWorker?: boolean;

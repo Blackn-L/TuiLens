@@ -34,7 +34,8 @@ renderer, which is propagated to sessions, recording headers, scenario/perf envi
   close, never before.
 - `createBrowserEngine` still creates an isolated host for callers that want one browser per engine.
 - `maxSessions` (default 8, `TUILENS_MAX_SESSIONS`) caps sessions plus offline replays; matrix testing needs a
-  higher value.
+  higher value. When a launch finds the budget full, the oldest exited sessions are reclaimed first; running
+  sessions are never evicted automatically.
 
 ## Snapshot codec
 
@@ -65,6 +66,8 @@ two strings — a token stream per row and a style run-length stream per row —
 - Capture forces a repaint and validates the grid and PNG dimensions; resize waits for stable canvas geometry.
 - inputAndWait sends one action and waits for observable evidence without automatic retry; timeouts retain accepted-input evidence.
 - `doctor` stays local and does not start the daemon. `ping` exposes uptime and live session counts; `shutdown` is idempotent when no daemon is running.
+- Exited sessions remain observable at normal capacity. A new launch under capacity pressure reclaims the oldest
+  exited sessions before reporting `SESSION_LIMIT`; explicit `close` still releases them immediately.
 - `observe.compact` keeps line count, trims line ends, omits cells and defaults to no screenshot. Regional text/style waits use the engine-side `probeText` path.
 - `snapshot.render` records renderer, font/grid metrics, a timing-independent fingerprint and the latest `paintMs`; `probe` compares fixed glyph widths.
 - `TUILENS_PTY_WORKER=1` moves `node-pty` into a per-session child process. The default fast path remains in-process; neither mode is a sandbox.

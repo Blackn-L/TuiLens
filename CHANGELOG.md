@@ -44,6 +44,7 @@
 - Silenced node-pty's Windows console-list helper when `AttachConsole` fails during cleanup and made it fall back immediately instead of printing a stack trace and waiting for the 5 s timeout.
 - Wheel `to:"top"/"bottom"` is written to the PTY in 20 batches of 100 events with event-loop yields, so long scrolls are cancellable and do not burst the application.
 - `createBrowserEngine` still owns an isolated browser; `SessionManager` uses a shared host by default.
+- Launch admission reclaims the oldest exited sessions when the session budget is full; running sessions still return `SESSION_LIMIT`.
 
 - Added explicit pending-frame `clickText` targeting with unchanged region guards.
 - Added page-unit wheel scrolling and bounded top/bottom navigation across SDK, CLI and MCP.
@@ -98,6 +99,7 @@ suppress 不再吞掉无关输入，非法 colorMode 诊断包含收到的值，
 Windows 清理阶段的 node-pty 辅助进程在 `AttachConsole` 失败时不再输出告警，并立即回退，
 不再空等 5 秒超时。node-pty 固定到 `1.2.0-beta.14`：1.1.0 的 macOS npm 包缺少
 `spawn-helper` 执行位，并在反复启动 PTY 时泄漏文件描述符。
+会话额度满时，新启动会先回收最旧的已退出会话，运行中的会话不会被自动关闭。
 
 0.4.0：新增迟到终端应答过滤与策略、clickText 命中区、inputAndWait、光标元数据与截图默认隐藏光标、
 截图强制重绘和 resize 网格校验、Windows 裸命令 PATH/PATHEXT 解析，并修复 JSON 命令别名。

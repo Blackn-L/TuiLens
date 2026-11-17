@@ -59,6 +59,7 @@ export class SessionManager {
   private readonly offline = new Map<Promise<unknown>, AbortController>();
   private disposed = false;
   private closing: Promise<void> | undefined;
+  private launchAdmission: Promise<void> = Promise.resolve();
 
   private readonly maxSessions: number;
   private readonly ptyWorker: boolean;
@@ -84,17 +85,53 @@ export class SessionManager {
   async launch(options: LaunchOptions): Promise<SessionInfo> {
     launchOptions(options);
     if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
-    if (this.sessions.size + this.pendingLaunches.size + this.offline.size >= this.maxSessions) {
-      throw new TuiLensError("SESSION_LIMIT", `最多同时保留 ${this.maxSessions} 个会话，请先关闭不再使用的会话`, {
-        maxSessions: this.maxSessions,
-      });
-    }
-    const pending = this.launchProcess(options);
-    this.pendingLaunches.add(pending);
+    const { pending } = await this.admitLaunch(options);
     try {
       return await pending;
     } finally {
       this.pendingLaunches.delete(pending);
+    }
+  }
+
+  /**
+   * 启动槽位先按顺序分配，再创建引擎。满载时优先回收最旧的已退出会话；
+   * 已退出会话在真正需要槽位前仍保留最后画面，运行中的会话不会被自动关闭。
+   */
+  private async admitLaunch(options: LaunchOptions): Promise<{ pending: Promise<SessionInfo> }> {
+    const prior = this.launchAdmission;
+    let release: () => void = () => {};
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    this.launchAdmission = prior.then(() => current);
+    await prior;
+    try {
+      if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
+      await this.reclaimExitedSessions();
+      if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
+      if (this.slotsUsed() >= this.maxSessions) {
+        throw new TuiLensError("SESSION_LIMIT", `最多同时保留 ${this.maxSessions} 个会话，请先关闭不再使用的会话`, {
+          maxSessions: this.maxSessions,
+        });
+      }
+      const pending = this.launchProcess(options);
+      this.pendingLaunches.add(pending);
+      return { pending };
+    } finally {
+      release();
+    }
+  }
+
+  private slotsUsed(): number {
+    return this.sessions.size + this.pendingLaunches.size + this.offline.size;
+  }
+
+  private async reclaimExitedSessions(): Promise<void> {
+    while (this.slotsUsed() >= this.maxSessions) {
+      const oldestExited = [...this.sessions.values()]
+        .map((session) => session.info())
+        .filter((session) => session.status === "exited")
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0];
+      if (!oldestExited) return;
+      await this.close(oldestExited.id);
     }
   }
 
@@ -241,7 +278,7 @@ export class SessionManager {
 
   async replay(path: string, options: ReplayOptions = {}) {
     if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
-    if (this.sessions.size + this.pendingLaunches.size + this.offline.size >= this.maxSessions) {
+    if (this.slotsUsed() >= this.maxSessions) {
       throw new TuiLensError("SESSION_LIMIT", `会话和回放任务总数不能超过 ${this.maxSessions}`, {
         maxSessions: this.maxSessions,
       });
