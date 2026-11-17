@@ -139,6 +139,7 @@ Clients without image rendering can still use the terminal text and snapshot met
 | The `mcp` command appears to hang with no output | This is a stdio server waiting for JSON-RPC input | Test it through an MCP client, not as an interactive terminal command |
 | Environment readiness is unclear | Browser, PTY, storage or daemon state may be missing or invalid | Run `node dist/src/interfaces/cli.js doctor`; exit code 1 means an error-level check failed |
 | Session processes remain after a tool failure | A session was not closed explicitly | Call `terminal_close`; disconnecting an MCP connection also releases sessions it created |
+| Session budget stays full after repeated demos | The PTY exited, but TuiLens still retains its final frame as a session | Call `terminal_close` for immediate release; a new launch reclaims the oldest exited sessions when the budget is full |
 
 ## Security and remote use
 

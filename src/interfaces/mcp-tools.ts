@@ -10,7 +10,7 @@ type McpToolDescriptions = Record<McpMethod, string>;
  * English; `TUILENS_LANG=zh-CN` selects the Chinese copy.
  */
 const MCP_TOOLS_EN: McpToolDescriptions = {
-  launch: "Launch a program in a real PTY. Returns a session ID. terminalProfile selects a built-in preset or JSON profile; graphics overrides image protocols; renderer selects dom (default) or webgl. Windows bare commands resolve through PATH/PATHEXT.",
+  launch: "Launch a program in a real PTY. Returns a session ID. terminalProfile selects a built-in preset or JSON profile; graphics overrides image protocols; renderer selects dom (default) or webgl. Windows bare commands resolve through PATH/PATHEXT. When the session budget is full, the oldest exited sessions are reclaimed automatically; running sessions still require terminal_close.",
   list: "List TuiLens sessions.",
   observe: "Capture the same frame's terminal state and PNG. compact omits cells, trims line ends and defaults to no PNG; includeCells explicitly requests the full grid.",
   input: "Send text, bracketed paste, keys, clicks, wheel events or raw bytes. Wheel input supports page units and top/bottom endpoints. A successful call only means the input was delivered.",
@@ -28,7 +28,7 @@ const MCP_TOOLS_EN: McpToolDescriptions = {
 };
 
 const MCP_TOOLS_ZH: McpToolDescriptions = {
-  launch: "在真实 PTY 中启动程序。返回会话 ID；可用 terminalProfile 选择内置预设或 JSON profile，graphics 覆盖图片协议，renderer 选择 dom（默认）或 webgl；Windows 裸命令会按 PATH/PATHEXT 解析。",
+  launch: "在真实 PTY 中启动程序。返回会话 ID；可用 terminalProfile 选择内置预设或 JSON profile，graphics 覆盖图片协议，renderer 选择 dom（默认）或 webgl；Windows 裸命令会按 PATH/PATHEXT 解析。会话额度满时会自动回收最旧的已退出会话；运行中的会话仍需 terminal_close。",
   list: "列出 TuiLens 会话。",
   observe: "获取同一 frameId 的终端状态与 PNG；compact 省略字符格、裁剪行尾且默认不截图，includeCells 才返回完整网格。",
   input: "发送文字、括号粘贴、按键、点击、滚轮或原始字节；滚轮支持 page 单位及 top/bottom 终点。只代表输入已送达。",

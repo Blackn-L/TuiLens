@@ -136,6 +136,7 @@ args = ["/home/<用户名>/TuiLens/dist/src/interfaces/cli.js", "mcp"]
 | 直接运行 `mcp` 命令后一直没有输出 | stdio 服务正在等待 JSON-RPC 输入，这是正常行为 | 通过 MCP 客户端测试，不要把它当成交互式终端命令 |
 | 不确定环境是否就绪 | 浏览器、PTY、存储或 daemon 状态可能缺失或无效 | 运行 `node dist/src/interfaces/cli.js doctor`；退出码 1 表示存在错误级检查 |
 | 工具失败后仍有会话进程 | 没有显式关闭会话 | 调用 `terminal_close`；MCP 连接断开时也会回收该连接创建的会话 |
+| 连续演示后会话额度一直满 | PTY 已退出，但 TuiLens 仍保留最后画面作为会话 | 调用 `terminal_close` 可立即释放；新启动在额度满时优先回收最旧的已退出会话 |
 
 ## 安全与远程使用
 
