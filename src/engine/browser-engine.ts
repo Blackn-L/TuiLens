@@ -123,7 +123,7 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
     const addonModule = require.resolve("@xterm/addon-unicode-graphemes");
     await page.addStyleTag({ path: join(dirname(terminalModule), "../css/xterm.css") });
     await page.addStyleTag({
-      content: "html,body{margin:0;padding:0;overflow:hidden;background:#101114}#terminal{display:inline-block}.xterm{padding:0}.xterm-viewport{scrollbar-width:none!important}.xterm-viewport::-webkit-scrollbar{display:none}.xterm-scrollable-element>.scrollbar{display:none!important}.tuilens-cursor-hidden .xterm-cursor{visibility:hidden!important;animation:none!important}",
+      content: "html,body{margin:0;padding:0;overflow:hidden;background:#101114}#terminal{display:inline-block}.xterm{padding:0}.xterm-viewport{scrollbar-width:none!important}.xterm-viewport::-webkit-scrollbar{display:none}.xterm-scrollable-element>.scrollbar{display:none!important}",
     });
     await page.addScriptTag({ path: terminalModule });
     await page.addScriptTag({ path: addonModule });
@@ -233,11 +233,6 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
     await assertFrameReady();
     const hideCursor = options.cursor !== "show";
     try {
-      if (hideCursor) {
-        await page.evaluate(() => document.documentElement.classList.add("tuilens-cursor-hidden"));
-      } else {
-        await page.evaluate(() => document.documentElement.classList.remove("tuilens-cursor-hidden"));
-      }
       for (let attempt = 0; attempt < 3; attempt += 1) {
         await settle();
         const { rectangle, current } = await waitForGeometry();
@@ -254,6 +249,8 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
           const bottom = Math.ceil(rectangle.y + rectangle.height * (region.y + region.height) / current.rows);
           clip = { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
         }
+        // 放在 settle 之后，避免重绘重新生成带光标类的节点。
+        await setScreenshotCursorHidden(hideCursor);
         const png = await page.screenshot({ type: "png", animations: "disabled", caret: "initial", clip });
         const width = png.readUInt32BE(16);
         const height = png.readUInt32BE(20);
@@ -261,10 +258,28 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
       }
       throw new TuiLensError("ENGINE_FAILED", "截图尺寸与终端画布不一致");
     } finally {
-      if (hideCursor) {
-        await page.evaluate(() => document.documentElement.classList.remove("tuilens-cursor-hidden")).catch(() => undefined);
-      }
+      await setScreenshotCursorHidden(false).catch(() => undefined);
     }
+  }
+
+  /** xterm 把光标格字符画在 `.xterm-cursor` span 上；只隐藏该元素会连字符一起
+   *  隐藏，露出终端底色。截图时摘掉光标类、保留 span 自身的字符与配色，截完恢复。 */
+  async function setScreenshotCursorHidden(hidden: boolean): Promise<void> {
+    await page.evaluate((hide) => {
+      if (hide) {
+        for (const element of document.querySelectorAll<HTMLElement>(".xterm-cursor")) {
+          if (element.dataset.tuilensCursorClass === undefined) {
+            element.dataset.tuilensCursorClass = element.className;
+          }
+          element.classList.remove("xterm-cursor");
+        }
+        return;
+      }
+      for (const element of document.querySelectorAll<HTMLElement>("[data-tuilens-cursor-class]")) {
+        element.className = element.dataset.tuilensCursorClass ?? "";
+        delete element.dataset.tuilensCursorClass;
+      }
+    }, hidden);
   }
 
   return {
