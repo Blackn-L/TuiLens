@@ -82,8 +82,8 @@ node dist/src/interfaces/cli.js probe
 通过 `TUILENS_FONT_FILE` 指定 `.ttf`、`.otf`、`.woff` 或 `.woff2` 文件，可固定截图字体；
 `TUILENS_FONT_FAMILY` 可覆盖回退字体栈。修改后需重启 daemon。内嵌字体会在
 `snapshot.render.fontHash` 中留下标识；`probe --font-file <路径> --strict-font` 会检查圈码字阶是否一致。
-默认字体栈在 generic `monospace` 之前尝试 `Noto Sans SC`、`MS PGothic`、`Segoe UI Symbol`/`Apple Symbols`，避免 Windows
-把 `⓪` 和 `⑪`–`⑳` 悄悄交给 Consolas 的小字形。
+默认渲染会注入只覆盖圈码的本地字面：`Noto Sans`、`MS PGothic`、`Segoe UI Symbol` 和
+`Apple Symbols`，避免 Windows 把 `⓪` 和 `⑪`–`⑳` 悄悄交给 Consolas 的小字形，同时不影响主 ASCII/CJK 字体选择。
 
 设置 `TUILENS_LANG=zh-CN` 可输出中文消息。
 

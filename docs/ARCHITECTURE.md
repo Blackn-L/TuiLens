@@ -70,7 +70,7 @@ two strings — a token stream per row and a style run-length stream per row —
   exited sessions before reporting `SESSION_LIMIT`; explicit `close` still releases them immediately.
 - `observe.compact` keeps line count, trims line ends, omits cells and defaults to no screenshot. Regional text/style waits use the engine-side `probeText` path.
 - `snapshot.render` records renderer, font/grid metrics, a timing-independent fingerprint and the latest `paintMs`; `probe` compares fixed glyph widths.
-- A configured font file is read with a byte limit, embedded as a `FontFace` before xterm starts, and represented by a SHA-256 prefix in `snapshot.render`; generic monospace stays after symbol/CJK fallbacks.
+- A configured font file is read with a byte limit, embedded as a `FontFace` before xterm starts, and represented by a SHA-256 prefix in `snapshot.render`; `unicode-range`-scoped symbol faces cover circled numerals without changing primary font selection.
 - `TUILENS_PTY_WORKER=1` moves `node-pty` into a per-session child process. The default fast path remains in-process; neither mode is a sandbox.
 - `watch` is a read-only JSONL stream by default; `--control` requires a TTY and explicitly forwards input.
 - A changed global frame rejects a frame guard. A region fingerprint can tolerate animation outside the target.

@@ -34,9 +34,10 @@ Accepting a new baseline is an explicit file operation; comparisons never approv
 
 Chromium cannot read fonts private to a terminal package. In particular, Windows Terminal's bundled
 `Cascadia Mono` is not a system font, and its bundled build does not necessarily cover all circled numerals.
-The default stack therefore tries `Noto Sans SC`, `MS PGothic`, `Segoe UI Symbol`, and `Apple Symbols`
-before generic `monospace`; this prevents `⓪` and `⑪`–`⑳` from being rendered by Consolas at a
-visibly smaller optical size.
+The default renderer therefore injects `unicode-range`-scoped local faces from `Noto Sans`,
+`MS PGothic`, `Segoe UI Symbol`, and `Apple Symbols`. They affect only circled numerals, so
+`⓪` and `⑪`–`⑳` do not reach Consolas at a smaller optical size and the main ASCII/CJK font
+selection remains unchanged.
 
 For an exact font identity, set `TUILENS_FONT_FILE` or `ManagerOptions.fontFile` to a `.ttf`, `.otf`,
 `.woff` or `.woff2` file. The file is bounded, embedded as a `FontFace`, and its hash appears in

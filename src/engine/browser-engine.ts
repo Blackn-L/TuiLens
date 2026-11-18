@@ -19,8 +19,20 @@ import { applyTerminalProfileOverrides, defaultTerminalProfile } from "../profil
 
 const require = createRequire(import.meta.url);
 // Windows Terminal 的 Cascadia Mono 来自私有字体集合，且不能假定它覆盖全部圈码；
-// 先在 CJK 字体中寻找 16px 圈码，再用 MS PGothic/符号字体兜底，最后才允许 generic monospace。
-const DEFAULT_FONT = "'Cascadia Mono','DejaVu Sans Mono','Noto Sans Mono CJK SC','Noto Sans CJK SC','Microsoft YaHei','Noto Sans SC','MS PGothic','Segoe UI Symbol','Apple Symbols','Segoe UI Emoji','Noto Color Emoji',monospace";
+// 使用只覆盖圈码的本地 FontFace，避免符号字体影响 ASCII/CJK 的主字体和格宽。
+const DEFAULT_FONT = "'Cascadia Mono','DejaVu Sans Mono','Noto Sans Mono CJK SC','Noto Sans CJK SC','Microsoft YaHei','Segoe UI Emoji','Noto Color Emoji',monospace";
+const SYMBOL_FONT_FAMILY = "'TuiLensSymbolNoto','TuiLensSymbolPGothic','TuiLensSymbolSegoe','TuiLensSymbolApple'";
+const SYMBOL_UNICODE_RANGE = "U+24EA,U+2460-2473";
+const SYMBOL_FONT_CSS = [
+  `@font-face{font-family:'TuiLensSymbolNoto';src:local('Noto Sans CJK SC'),local('Noto Sans SC');`
+    + `unicode-range:${SYMBOL_UNICODE_RANGE};font-display:block}`,
+  `@font-face{font-family:'TuiLensSymbolPGothic';src:local('MS PGothic');`
+    + `unicode-range:${SYMBOL_UNICODE_RANGE};font-display:block}`,
+  `@font-face{font-family:'TuiLensSymbolSegoe';src:local('Segoe UI Symbol');`
+    + `unicode-range:${SYMBOL_UNICODE_RANGE};font-display:block}`,
+  `@font-face{font-family:'TuiLensSymbolApple';src:local('Apple Symbols');`
+    + `unicode-range:${SYMBOL_UNICODE_RANGE};font-display:block}`,
+].join("");
 const EMBEDDED_FONT_FAMILY = "TuiLensEmbeddedFont";
 const MAX_FONT_BYTES = 32 * 1024 * 1024;
 const FONT_FORMATS: Record<string, { mime: string; format: string }> = {
@@ -148,7 +160,8 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
   }
   const embeddedFont = options.fontFile === undefined ? undefined : await loadEmbeddedFont(options.fontFile);
   const requestedFontFamily = options.fontFamily ?? DEFAULT_FONT;
-  const fontFamily = embeddedFont ? `'${embeddedFont.family}',${requestedFontFamily}` : requestedFontFamily;
+  const fontFamily = [embeddedFont ? `'${embeddedFont.family}'` : "", SYMBOL_FONT_FAMILY, requestedFontFamily]
+    .filter(Boolean).join(",");
   const host = shared ?? new BrowserHost(resolveBrowserExecutable(options.executablePath));
   const ownsHost = shared === undefined;
   let browser: Browser | undefined;
@@ -179,6 +192,7 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
     await page.addStyleTag({
       content: "html,body{margin:0;padding:0;overflow:hidden;background:#101114}#terminal{display:inline-block}.xterm{padding:0}.xterm-viewport{scrollbar-width:none!important}.xterm-viewport::-webkit-scrollbar{display:none}.xterm-scrollable-element>.scrollbar{display:none!important}",
     });
+    await page.addStyleTag({ content: SYMBOL_FONT_CSS });
     if (embeddedFont) {
       await page.addStyleTag({ content: embeddedFont.css });
       try {

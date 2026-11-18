@@ -16,7 +16,7 @@
 - Optional `TUILENS_PTY_WORKER=1` / `ManagerOptions.ptyWorker` isolates `node-pty` in a per-session child process.
 - `probe` reports fixed-glyph widths plus renderer/font/grid metadata and a stable fingerprint; snapshots expose `render`.
 - Screenshot font pinning via `TUILENS_FONT_FILE`/`ManagerOptions.fontFile`, with a font hash in `render`;
-  the default stack places symbol fonts before generic monospace, and `probe --strict-font` detects
+  the default renderer injects circled-numeral-only local fallbacks, and `probe --strict-font` detects
   inconsistent circled-numeral glyph scale.
 - `paint()` and `snapshot.render.paintMs` expose frame-level paint timing; `npm run soak` provides a bounded soak check.
 - The macOS runner joins the CI matrix as an experimental platform.
@@ -91,7 +91,7 @@
 新增 compact 观察、watch/control、引擎侧区域 probeText、MCP 进度与取消、可选 PTY worker、
 固定字形 probe、render/paint 元数据、soak 脚本；CI 覆盖 Windows/Linux/macOS 上的 Node.js 22 与 24。
 截图字体可用 `TUILENS_FONT_FILE`/`ManagerOptions.fontFile` 固定，并在 `render` 中记录字体哈希；
-默认字体栈把符号字体放在 generic monospace 之前，`probe --strict-font` 会检查圈码字阶。
+默认渲染注入只覆盖圈码的本地 fallback，`probe --strict-font` 会检查圈码字阶。
 新增可选 WebGL renderer（默认 DOM），session、录制、scenario/perf、观察和视觉比较元数据
 记录实际 renderer；WebGL 不可用时回退并回传 DOM。增加 120 个块字符的周期暗列回归测试。
 新增终端能力画像与 9 个内置 preset，支持 JSON `extends` 派生、`--terminal-profile`、
