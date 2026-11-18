@@ -180,6 +180,19 @@ test("光标可见性、样式和闪烁进入状态与快照，截图默认隐�
   } finally { await engine.close(); }
 });
 
+test("截图隐藏块光标时保留宽字符光标格", { timeout: 30_000 }, async () => {
+  const engine = await createBrowserEngine({ cols: 12, rows: 4, onData() {} });
+  try {
+    await engine.write("\x1b[2 q\x1b[1;1H\x1b[38;2;255;255;255m\x1b[48;2;35;35;56m输\x1b[1;1H");
+    const cursorOnText = await engine.screenshot();
+
+    await engine.write("\x1b[4;4H\x1b[?25l");
+    const cursorHidden = await engine.screenshot();
+
+    assert.deepEqual(cursorOnText.png, cursorHidden.png);
+  } finally { await engine.close(); }
+});
+
 test("resize 后截图直接使用新网格并保持 PNG 尺寸一致", { timeout: 30_000 }, async () => {
   const engine = await createBrowserEngine({ cols: 20, rows: 8, onData() {} });
   try {
