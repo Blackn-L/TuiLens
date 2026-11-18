@@ -1,7 +1,7 @@
 import type { Terminal } from "@xterm/xterm";
 import type { ImageAddon, IImageAddonOptions } from "@xterm/addon-image";
 import type {
-  CursorState, MatchStyle, Region, RenderMetadata, RendererKind, TerminalGraphicsCapabilities,
+  CursorState, GlyphMetric, MatchStyle, Region, RenderMetadata, RendererKind, TerminalGraphicsCapabilities,
   TerminalKeyboardCapabilities, TerminalModes, TerminalReplies, TerminalState, TextProbe,
 } from "../core/types.js";
 import type { KittyRuntime } from "./kitty-runtime.js";
@@ -34,6 +34,7 @@ export interface BrowserRuntime {
   state(): TerminalState;
   hasText(text: string): boolean;
   probeText(text: string, region?: Region, style?: MatchStyle): TextProbe;
+  glyphMetrics(texts: string[]): GlyphMetric[];
   paint(): Promise<{ paintMs: number }>;
   size(): { width: number; height: number };
   renderer(): RendererKind;
@@ -64,6 +65,7 @@ export interface RuntimeOptions {
   rows: number;
   fontFamily: string;
   fontSize: number;
+  fontHash?: string;
   renderer: RendererKind;
   scrollback: number;
   graphics: Required<TerminalGraphicsCapabilities>;
@@ -485,6 +487,20 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
     }
     return { count, matches };
   };
+  const glyphMetrics = (texts: string[]): GlyphMetric[] => {
+    const context = document.createElement("canvas").getContext("2d");
+    if (!context) return [];
+    context.font = `${options.fontSize}px ${options.fontFamily}`;
+    return texts.map((text) => {
+      const metrics = context.measureText(text);
+      return {
+        text,
+        advance: metrics.width,
+        ascent: metrics.actualBoundingBoxAscent,
+        descent: metrics.actualBoundingBoxDescent,
+      };
+    });
+  };
   host.__tuilens = {
     write: async (data) => {
       const serial = ++paintSerial;
@@ -507,6 +523,7 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
       return false;
     },
     probeText,
+    glyphMetrics,
     paint: async () => ({ paintMs: await (lastPaint ?? Promise.resolve(lastPaintMs ?? 0)) }),
     size: () => {
       const element = container.querySelector<HTMLElement>(".xterm-screen");
@@ -611,6 +628,7 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
         snapshot.render = {
           renderer: rendererKind,
           fontFamily: options.fontFamily,
+          ...(options.fontHash ? { fontHash: options.fontHash } : {}),
           fontSize: options.fontSize,
           cols: terminal.cols,
           rows: terminal.rows,

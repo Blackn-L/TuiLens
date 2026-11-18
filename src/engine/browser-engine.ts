@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
-import type { Browser, Page } from "playwright";
+import { dirname, extname, join } from "node:path";
+import type { Browser, BrowserContext, Page } from "playwright";
 import { TuiLensError } from "../core/errors.js";
+import { readBoundedFile } from "../core/bounded-file.js";
 import type {
   BrowserEngineOptions, EngineFactory, Region, RenderMetadata, RendererKind, TerminalEngine, TerminalSnapshot,
   TerminalState,
@@ -17,7 +18,56 @@ import { KITTY_DIACRITICS } from "./kitty-diacritics.js";
 import { applyTerminalProfileOverrides, defaultTerminalProfile } from "../profiles/index.js";
 
 const require = createRequire(import.meta.url);
-const DEFAULT_FONT = "'Cascadia Mono','DejaVu Sans Mono','Noto Sans Mono CJK SC','Noto Sans CJK SC','Microsoft YaHei','Segoe UI Emoji','Noto Color Emoji',monospace";
+// Windows Terminal 的 Cascadia Mono 来自私有字体集合，且不能假定它覆盖全部圈码；
+// 先在 CJK 字体中寻找 16px 圈码，再用 MS PGothic/符号字体兜底，最后才允许 generic monospace。
+const DEFAULT_FONT = "'Cascadia Mono','DejaVu Sans Mono','Noto Sans Mono CJK SC','Noto Sans CJK SC','Microsoft YaHei','Noto Sans SC','MS PGothic','Segoe UI Symbol','Apple Symbols','Segoe UI Emoji','Noto Color Emoji',monospace";
+const EMBEDDED_FONT_FAMILY = "TuiLensEmbeddedFont";
+const MAX_FONT_BYTES = 32 * 1024 * 1024;
+const FONT_FORMATS: Record<string, { mime: string; format: string }> = {
+  ".ttf": { mime: "font/ttf", format: "truetype" },
+  ".otf": { mime: "font/otf", format: "opentype" },
+  ".woff": { mime: "font/woff", format: "woff" },
+  ".woff2": { mime: "font/woff2", format: "woff2" },
+};
+
+interface EmbeddedFont {
+  family: string;
+  css: string;
+  hash: string;
+}
+
+/**
+ * 读取本地字体并编码为内联 FontFace。Chromium 看不到终端私有的字体集合，
+ * 例如 Windows Terminal AppX 包内的 Cascadia Mono；显式字体文件是唯一可靠的固定方式。
+ */
+async function loadEmbeddedFont(fontFile: string): Promise<EmbeddedFont> {
+  const extension = extname(fontFile).toLowerCase();
+  const format = FONT_FORMATS[extension];
+  if (!format) {
+    throw new TuiLensError("INVALID_FONT_FILE", "字体文件格式必须是 .ttf、.otf、.woff 或 .woff2", {
+      path: fontFile,
+      extension,
+    }, "The font file must use .ttf, .otf, .woff or .woff2.");
+  }
+  let bytes: Buffer;
+  try {
+    bytes = await readBoundedFile(fontFile, MAX_FONT_BYTES);
+  } catch (error) {
+    throw new TuiLensError("INVALID_FONT_FILE", "无法读取字体文件", {
+      path: fontFile,
+      reason: error instanceof Error ? error.message : String(error),
+    }, "The font file could not be read.");
+  }
+  if (bytes.length === 0) {
+    throw new TuiLensError("INVALID_FONT_FILE", "字体文件为空", { path: fontFile },
+      "The font file is empty.");
+  }
+  const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+  const css = `@font-face{font-family:'${EMBEDDED_FONT_FAMILY}';`
+    + `src:url("data:${format.mime};base64,${bytes.toString("base64")}") format('${format.format}');`
+    + "font-display:block}";
+  return { family: EMBEDDED_FONT_FAMILY, css, hash };
+}
 
 /** 优先显式配置，其次复用系统 Chrome；均不可用时使用 Playwright 已安装的 Chromium。 */
 export function resolveBrowserExecutable(explicit?: string): string | undefined {
@@ -96,16 +146,20 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
   if (!Number.isFinite(fontSize) || fontSize < 8 || fontSize > 48) {
     throw new TuiLensError("INVALID_FONT_SIZE", "字体大小必须在 8–48 像素范围内");
   }
+  const embeddedFont = options.fontFile === undefined ? undefined : await loadEmbeddedFont(options.fontFile);
+  const requestedFontFamily = options.fontFamily ?? DEFAULT_FONT;
+  const fontFamily = embeddedFont ? `'${embeddedFont.family}',${requestedFontFamily}` : requestedFontFamily;
   const host = shared ?? new BrowserHost(resolveBrowserExecutable(options.executablePath));
   const ownsHost = shared === undefined;
   let browser: Browser | undefined;
+  let context: BrowserContext | undefined;
   let page: Page;
   let closed = false;
   let crashed = false;
   let actualRenderer: RendererKind = "dom";
   try {
     browser = await host.acquire();
-    const context = await browser.newContext({
+    context = await browser.newContext({
       deviceScaleFactor: 1,
       viewport: { width: 1600, height: 1200 },
       colorScheme: "dark",
@@ -125,6 +179,22 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
     await page.addStyleTag({
       content: "html,body{margin:0;padding:0;overflow:hidden;background:#101114}#terminal{display:inline-block}.xterm{padding:0}.xterm-viewport{scrollbar-width:none!important}.xterm-viewport::-webkit-scrollbar{display:none}.xterm-scrollable-element>.scrollbar{display:none!important}",
     });
+    if (embeddedFont) {
+      await page.addStyleTag({ content: embeddedFont.css });
+      try {
+        const loaded = await page.evaluate(async ({ family, size }) => {
+          const faces = await document.fonts.load(`${size}px "${family}"`);
+          await document.fonts.ready;
+          return faces.length > 0 && faces.every((face) => face.status === "loaded");
+        }, { family: embeddedFont.family, size: fontSize });
+        if (!loaded) throw new Error("FontFace was not loaded");
+      } catch (error) {
+        throw new TuiLensError("INVALID_FONT_FILE", "字体文件无法在浏览器中加载", {
+          path: options.fontFile,
+          reason: error instanceof Error ? error.message : String(error),
+        }, "The font file could not be loaded in the browser.");
+      }
+    }
     await page.addScriptTag({ path: terminalModule });
     await page.addScriptTag({ path: addonModule });
     if (graphics.sixel || graphics.iterm) {
@@ -141,8 +211,9 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
     actualRenderer = await page.evaluate(initializeBrowserRuntime, {
       cols: options.cols,
       rows: options.rows,
-      fontFamily: options.fontFamily ?? DEFAULT_FONT,
+      fontFamily,
       fontSize,
+      ...(embeddedFont ? { fontHash: embeddedFont.hash } : {}),
       renderer,
       scrollback,
       graphics,
@@ -152,6 +223,8 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
     });
     await resizeViewport();
   } catch (error) {
+    // 字体解码等启动中途失败时，不能把已创建的页面留在共享浏览器里。
+    try { await context?.close(); } catch { /* 浏览器或页面可能已崩溃。 */ }
     // 启动失败只归还本次引用；共享浏览器可能仍有其他会话在用。
     if (ownsHost) await host.shutdown();
     else host.release();
@@ -306,6 +379,15 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
       return page.evaluate((args) => window.__tuilens.probeText(args.text, args.region, args.style), {
         text, region, style,
       });
+    },
+    async glyphMetrics(texts) {
+      assertOpen();
+      if (!Array.isArray(texts) || texts.length === 0 || texts.length > 64
+        || texts.some((text) => typeof text !== "string" || text.length === 0 || text.length > 16)) {
+        throw new TuiLensError("INVALID_ARGUMENT", "glyphMetrics 需要 1～64 个非空短字符串");
+      }
+      await settle();
+      return page.evaluate((samples) => window.__tuilens.glyphMetrics(samples), texts);
     },
     async paint() {
       assertOpen();

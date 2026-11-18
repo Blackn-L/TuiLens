@@ -38,6 +38,20 @@
 时间、动画和光标等动态区域应显式遮罩，不能通过扩大容差隐藏布局回归。
 实际截图默认隐藏光标；只有基准确实包含光标时才设置 `cursor: "show"`。
 
+## 固定截图字体
+
+Chromium 读不到终端包内的私有字体。Windows Terminal 自带的 `Cascadia Mono` 不是系统字体，
+而且随包版本不一定覆盖全部圈码。因此默认字体栈在 generic `monospace` 之前尝试
+`Noto Sans SC`、`MS PGothic`、`Segoe UI Symbol` 和 `Apple Symbols`，避免 `⓪` 和 `⑪`–`⑳`
+被 Consolas 以明显更小的字阶接管。
+
+需要精确字体身份时，可通过 `TUILENS_FONT_FILE` 或 `ManagerOptions.fontFile` 指定 `.ttf`、
+`.otf`、`.woff` 或 `.woff2` 文件。文件有大小上限，会以内联 `FontFace` 加载，并在
+`snapshot.render.fontHash` 中记录哈希；它只提供文件实际包含的字形，缺字仍按回退栈继续匹配。
+回放应使用同一配置。更换字体后必须重新录制基准。
+`probe --font-file <路径> --strict-font` 会把圈码字形度量不一致判为失败。
+`fontScale` 是 Canvas 度量启发式：它检测字阶是否一致，不等同于逐字符字体来源验证。
+
 ## 输入边界
 
 接受非交错的 8 位静态 PNG。单图最多 32 MiB，

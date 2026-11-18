@@ -86,6 +86,8 @@ export interface TerminalSnapshot {
 export interface RenderMetadata {
   renderer: RendererKind;
   fontFamily: string;
+  /** 内嵌字体文件的 SHA-256 前缀；使用系统字体时缺省。 */
+  fontHash?: string;
   fontSize: number;
   cols: number;
   rows: number;
@@ -95,6 +97,14 @@ export interface RenderMetadata {
   fingerprint: string;
   /** 最近一次写入到浏览器完成两帧绘制的耗时；无写入时缺省。 */
   paintMs?: number;
+}
+
+/** Canvas 级字体度量；同一终端字体应保持一致的圈码字阶。 */
+export interface GlyphMetric {
+  text: string;
+  advance: number;
+  ascent: number;
+  descent: number;
 }
 
 /** 引擎内文本探测结果；matches 可截断，count 始终是区域内真实匹配数。 */
@@ -321,6 +331,8 @@ export interface BrowserEngineOptions {
   onData: (data: string) => void;
   executablePath?: string;
   fontFamily?: string;
+  /** 显式字体文件；会被嵌入页面并优先于 fontFamily。 */
+  fontFile?: string;
   fontSize?: number;
   /** 请求的绘制后端；默认 dom。 */
   renderer?: RendererKind;
@@ -343,6 +355,8 @@ export interface TerminalEngine {
   hasText?(text: string): Promise<boolean>;
   /** 可选区域文本探测：在引擎内计算文本/样式匹配，避免传输区域外字符格。 */
   probeText?(text: string, region?: Region, style?: MatchStyle): Promise<TextProbe>;
+  /** 可选字体度量：用于诊断逐字 fallback 和圈码字阶差异。 */
+  glyphMetrics?(texts: string[]): Promise<GlyphMetric[]>;
   /** 等待最近一次写入完成两帧绘制；用于帧级性能采样。 */
   paint?(): Promise<{ paintMs: number }>;
   snapshot(frameId: number, options?: FrameAccessOptions): Promise<TerminalSnapshot>;
@@ -356,6 +370,8 @@ export interface ManagerOptions {
   artifactDir: string;
   executablePath?: string;
   fontFamily?: string;
+  /** 显式字体文件；同一管理器下的会话和回放共享。 */
+  fontFile?: string;
   engineFactory?: EngineFactory;
   /** 同时保留的会话（含回放任务）上限，默认 8；满载时优先回收已退出会话。 */
   maxSessions?: number;

@@ -32,6 +32,8 @@ npx playwright install chromium
 ```
 
 也可以通过 `TUILENS_BROWSER_PATH` 明确指定浏览器路径。
+`TUILENS_FONT_FILE` 可固定截图字体，`TUILENS_FONT_FAMILY` 可覆盖回退字体栈；
+修改后需重启 MCP 客户端，并先停止已有 daemon。
 
 配置 MCP 客户端前，在仓库根目录运行一次 launch/observe/close 冒烟测试：
 
@@ -94,7 +96,7 @@ args = ["/home/<用户名>/TuiLens/dist/src/interfaces/cli.js", "mcp"]
 ```
 
 不同客户端的配置文件和重启方式不同，但 `command` 与 `args` 保持一致。如果客户端支持环境变量，
-可以通过 `TUILENS_BROWSER_PATH` 指定浏览器可执行文件。
+可以通过 `TUILENS_BROWSER_PATH` 指定浏览器可执行文件，通过 `TUILENS_FONT_FILE` 固定字体文件。
 
 ## 验证接入
 

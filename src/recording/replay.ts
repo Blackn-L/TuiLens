@@ -162,6 +162,7 @@ export async function replayRecording(path: string, manager: ManagerOptions, opt
     ...(start.profile ? { profile: replayProfile(start.profile) } : {}), onData: () => {},
     ...(manager.executablePath ? { executablePath: manager.executablePath } : {}),
     ...(manager.fontFamily ? { fontFamily: manager.fontFamily } : {}),
+    ...(manager.fontFile ? { fontFile: manager.fontFile } : {}),
   });
   let closing: Promise<void> | undefined;
   const close = () => closing ??= closeBounded(engine,
