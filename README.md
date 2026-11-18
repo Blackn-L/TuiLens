@@ -79,6 +79,14 @@ and daemon state without starting the daemon. The command exits with code 1 when
 error-level check fails; warnings such as stale daemon metadata do not fail the command.
 Set `TUILENS_LANG=zh-CN` for Chinese messages.
 
+Set `TUILENS_FONT_FILE` to a `.ttf`, `.otf`, `.woff` or `.woff2` file to pin capture rendering
+to a specific font, and `TUILENS_FONT_FAMILY` to override the fallback stack. Restart the
+daemon after changing either value. `snapshot.render.fontHash` identifies an embedded font,
+and `probe --font-file <path> --strict-font` checks that circled numerals keep one glyph scale.
+The default renderer injects circled-numeral-only local faces from `Noto Sans`, `MS PGothic`,
+`Segoe UI Symbol`, and `Apple Symbols`; this prevents Windows from switching `⓪` and
+`⑪`–`⑳` to Consolas's smaller glyphs without changing the main ASCII/CJK font selection.
+
 ## Quick start
 
 Inspect the CLI:

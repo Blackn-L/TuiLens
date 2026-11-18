@@ -78,6 +78,13 @@ node dist/src/interfaces/cli.js probe
 
 它会检查 Node.js 与平台支持、浏览器发现、`node-pty`、存储权限和 daemon 状态，
 但不会启动 daemon。存在错误级检查时退出码为 1；陈旧 daemon 元数据等警告不会使命令失败。
+
+通过 `TUILENS_FONT_FILE` 指定 `.ttf`、`.otf`、`.woff` 或 `.woff2` 文件，可固定截图字体；
+`TUILENS_FONT_FAMILY` 可覆盖回退字体栈。修改后需重启 daemon。内嵌字体会在
+`snapshot.render.fontHash` 中留下标识；`probe --font-file <路径> --strict-font` 会检查圈码字阶是否一致。
+默认渲染会注入只覆盖圈码的本地字面：`Noto Sans`、`MS PGothic`、`Segoe UI Symbol` 和
+`Apple Symbols`，避免 Windows 把 `⓪` 和 `⑪`–`⑳` 悄悄交给 Consolas 的小字形，同时不影响主 ASCII/CJK 字体选择。
+
 设置 `TUILENS_LANG=zh-CN` 可输出中文消息。
 
 ## 快速开始

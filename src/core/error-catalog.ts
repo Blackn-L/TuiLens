@@ -26,6 +26,7 @@ export const ERROR_MESSAGES_EN: Readonly<Record<string, string>> = {
   INVALID_BASELINE: "The performance baseline file is invalid or unsupported.",
   INVALID_CWD: "The working directory does not exist or is not a readable directory.",
   INVALID_FILE: "The path is not a readable regular file.",
+  INVALID_FONT_FILE: "The font file is invalid or could not be loaded.",
   INVALID_FONT_SIZE: "The font size is outside the supported range.",
   INVALID_HITBOX: "The click hit area or point lies outside the terminal grid.",
   INVALID_IMAGE_PROFILE: "The requested image profile is not supported.",

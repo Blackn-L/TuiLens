@@ -59,7 +59,9 @@ TuiLens 提供面向 Agent 的终端运行环境。首版复用 PTY 与 xterm.js
 22. `observe.compact` 保留行数但裁剪行尾、省略字符格并默认不截图；区域文本/样式等待走引擎侧
     `probeText`，不在未命中时传输整屏网格。
 23. `snapshot.render` 记录绘制后端、字体/网格度量、与时间无关的指纹和最近一次 `paintMs`；
-    `probe` 用固定字形样本比较实际落格宽度。
+    `probe` 用固定字形样本比较实际落格宽度和圈码字阶。字体文件有大小上限，在 xterm 启动前
+    以内联 `FontFace` 加载，并以 SHA-256 前缀进入渲染元数据；带 `unicode-range` 的符号字面只接管圈码，
+    不改变主字体选择。
 24. `TUILENS_PTY_WORKER=1` 把 `node-pty` 放进每会话子进程；默认仍在进程内运行。两种模式都不是安全沙箱。
 25. `watch` 默认只输出只读 JSONL；`--control` 需要 TTY，并显式进入人工输入接管。
 

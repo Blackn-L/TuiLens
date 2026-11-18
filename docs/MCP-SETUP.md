@@ -33,6 +33,8 @@ npx playwright install chromium
 ```
 
 `TUILENS_BROWSER_PATH` can select a browser explicitly.
+`TUILENS_FONT_FILE` can pin the capture font; `TUILENS_FONT_FAMILY` overrides the fallback stack.
+Restart the MCP client and stop an existing daemon after changing either value.
 
 Run a launch/observe/close smoke test from the repository root before configuring the MCP
 client:
@@ -97,7 +99,7 @@ For clients that accept the common `mcpServers` JSON shape:
 
 The exact configuration file and restart procedure depend on the client; keep the same
 command and arguments. If the client supports environment variables, `TUILENS_BROWSER_PATH`
-can point to a specific browser executable.
+can point to a specific browser executable, and `TUILENS_FONT_FILE` can pin a font file.
 
 ## Verify the connection
 

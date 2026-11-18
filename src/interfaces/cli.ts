@@ -41,7 +41,8 @@ metrics <id>                         counters without screenshots or full-screen
 compare <id> --baseline <PNG> [--region x,y,w,h] [--show-cursor]  generate a visual diff and report
 replay <recording> [--speed 0]       replay output offline; does not execute input or programs
 doctor                               diagnose runtime, browser, PTY, storage and daemon state
-probe                                render fixed glyph samples and report font/grid fingerprints
+probe [--font-file <path>] [--font-family <css>] [--strict-font]
+                                     render fixed glyph samples and report font/grid fingerprints
 watch <id> [--interval 250] [--timeout 0] [--control]  JSONL live screen stream; --control forwards terminal input
 scenario --file <JSON>               run a declarative scenario, retain failure evidence and release the session
                                      the spec may include profiles:[...] to run a terminal matrix
@@ -55,6 +56,7 @@ shutdown                             release all sessions and stop the local ser
 mcp                                  start the MCP stdio interface
 
 Environment: TUILENS_HOME sets runtime data; TUILENS_BROWSER_PATH selects Chrome/Chromium;
+TUILENS_FONT_FILE pins a screenshot font file; TUILENS_FONT_FAMILY overrides the fallback stack;
 TUILENS_LANG selects en or zh-CN (default: en); TUILENS_PTY_WORKER=1 isolates node-pty.
 The local IPC service starts automatically on first use. Observation has overhead and is not a zero-cost performance probe.
 `;
@@ -92,7 +94,8 @@ metrics <id>                        无截图、无全屏读取的计数
 compare <id> --baseline <PNG> [--region x,y,w,h] [--show-cursor]  生成视觉差异和报告
 replay <录制文件> [--speed 0]        离线回放输出，不执行输入或程序
 doctor                               诊断运行时、浏览器、PTY、存储和 daemon 状态
-probe                                渲染固定字形样本并报告字体/网格指纹
+probe [--font-file <路径>] [--font-family <CSS>] [--strict-font]
+                                     渲染固定字形样本并报告字体/网格指纹
 watch <id> [--interval 250] [--timeout 0] [--control]  JSONL 实时画面流；--control 转发终端输入
 scenario --file <JSON>              执行声明式场景，失败留证并释放会话
                                     规格可含 profiles:[...]，按终端 profile 运行矩阵
@@ -105,6 +108,7 @@ shutdown                            释放所有会话并关闭本机服务
 mcp                                 启动 MCP stdio 接口
 
 环境：TUILENS_HOME 指定运行数据；TUILENS_BROWSER_PATH 指定 Chrome/Chromium；
+TUILENS_FONT_FILE 固定截图字体文件；TUILENS_FONT_FAMILY 覆盖回退字体栈；
 TUILENS_LANG 选择 en 或 zh-CN（默认 en）；TUILENS_PTY_WORKER=1 隔离 node-pty。
 首次使用自动启动本机 IPC 服务。功能观察有开销，不能当作零开销性能探针。
 `;
@@ -128,7 +132,28 @@ async function main(): Promise<void> {
   }
   if (command === "probe") {
     const { runProbe } = await import("../probe.js");
-    const data = await runProbe();
+    const { values } = parseArgs({
+      args: rest,
+      options: {
+        "font-file": { type: "string" },
+        "font-family": { type: "string" },
+        "font-size": { type: "string" },
+        renderer: { type: "string" },
+        "strict-font": { type: "boolean" },
+      },
+    });
+    if (values.renderer !== undefined && values.renderer !== "dom" && values.renderer !== "webgl") {
+      throw new TuiLensError("INVALID_ARGUMENT", "renderer 必须是 dom 或 webgl");
+    }
+    const fontFile = values["font-file"] ?? (process.env.TUILENS_FONT_FILE?.trim() || undefined);
+    const fontFamily = values["font-family"] ?? (process.env.TUILENS_FONT_FAMILY?.trim() || undefined);
+    const data = await runProbe({
+      ...(fontFile ? { fontFile } : {}),
+      ...(fontFamily ? { fontFamily } : {}),
+      ...(values["font-size"] === undefined ? {} : { fontSize: Number(values["font-size"]) }),
+      ...(values.renderer === undefined ? {} : { renderer: values.renderer }),
+      ...(values["strict-font"] ? { strictFont: true } : {}),
+    });
     process.stdout.write(JSON.stringify({ ok: true, data }) + "\n");
     if (!data.ok) process.exitCode = 1;
     return;

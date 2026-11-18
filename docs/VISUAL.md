@@ -29,3 +29,20 @@ written to observation and comparison metadata; re-record baselines when switchi
 Mask only known nondeterministic regions.
 Captures hide the cursor by default; set `cursor: "show"` when cursor pixels are part of the expected baseline.
 Accepting a new baseline is an explicit file operation; comparisons never approve updates automatically.
+
+## Pinning the capture font
+
+Chromium cannot read fonts private to a terminal package. In particular, Windows Terminal's bundled
+`Cascadia Mono` is not a system font, and its bundled build does not necessarily cover all circled numerals.
+The default renderer therefore injects `unicode-range`-scoped local faces from `Noto Sans`,
+`MS PGothic`, `Segoe UI Symbol`, and `Apple Symbols`. They affect only circled numerals, so
+`⓪` and `⑪`–`⑳` do not reach Consolas at a smaller optical size and the main ASCII/CJK font
+selection remains unchanged.
+
+For an exact font identity, set `TUILENS_FONT_FILE` or `ManagerOptions.fontFile` to a `.ttf`, `.otf`,
+`.woff` or `.woff2` file. The file is bounded, embedded as a `FontFace`, and its hash appears in
+`snapshot.render.fontHash`. It only supplies glyphs present in the file; missing characters continue
+through the fallback stack. Apply the same setting to replay. Re-record baselines after changing a font.
+`probe --font-file <path> --strict-font` treats inconsistent circled-numeral glyph metrics as a failure.
+`fontScale` is a Canvas metric heuristic: it detects inconsistent scale, not the exact font used for
+each character.

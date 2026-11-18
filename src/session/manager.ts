@@ -161,6 +161,7 @@ export class SessionManager {
       onData: (data) => { session?.protocolResponse(data); },
       ...(this.options.executablePath ? { executablePath: this.options.executablePath } : {}),
       ...(this.options.fontFamily ? { fontFamily: this.options.fontFamily } : {}),
+      ...(this.options.fontFile ? { fontFile: this.options.fontFile } : {}),
       ...(options.renderer === undefined ? {} : { renderer: options.renderer }),
     });
     try {
