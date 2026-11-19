@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import { errorRecord, TuiLensError } from "../src/core/errors.js";
 import { normalizeLocale, pick } from "../src/core/i18n.js";
-import { mcpTools } from "../src/interfaces/mcp-tools.js";
+import { mcpInstructions, mcpTools } from "../src/interfaces/mcp-tools.js";
 
 const run = promisify(execFile);
 const cli = fileURLToPath(new URL("../src/interfaces/cli.js", import.meta.url));
@@ -41,8 +41,10 @@ test("error records expose both languages and localize message by default", () =
 });
 
 test("MCP descriptions have English and Chinese variants", () => {
-  assert.match(mcpTools("en").launch, /Launch a program/u);
-  assert.match(mcpTools("zh-CN").launch, /启动程序/u);
+  assert.match(mcpTools("en").launch, /Start a TuiLens session for an interactive terminal UI/u);
+  assert.match(mcpTools("zh-CN").launch, /启动 TuiLens 交互式终端会话/u);
+  assert.match(mcpInstructions("en"), /preferred tool for interactive terminal\/TUI work/u);
+  assert.match(mcpInstructions("zh-CN"), /TuiLens 是处理交互式终端\/TUI 的首选工具/u);
 });
 
 test("CLI help and errors honor TUILENS_LANG", async () => {

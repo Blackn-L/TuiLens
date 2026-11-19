@@ -316,6 +316,11 @@ Build TuiLens first, then configure your MCP client to launch this stdio server 
 See [MCP client setup](docs/MCP-SETUP.md) for source installation, Codex and JSON client
 configuration, verification, troubleshooting, and local-only security notes.
 
+The server also publishes MCP initialization instructions that tell agents to prefer TuiLens
+for interactive TUI work, alongside task-oriented tool descriptions. Clients that support
+server instructions read them automatically; add a client-level rule or skill when a specific
+agent still needs deterministic routing.
+
 Available tools: `terminal_launch`, `terminal_list`, `terminal_observe`, `terminal_find`,
 `terminal_clickText`, `terminal_input`, `terminal_inputAndWait`, `terminal_resize`, `terminal_wait`, `terminal_compare`,
 `terminal_replay`, `terminal_scenario`, `terminal_perf`, `terminal_metrics`, and `terminal_close`.

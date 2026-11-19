@@ -309,6 +309,10 @@ await tui.expectNoText("Error", { timeoutMs: 500 });
 安装、Codex 与 JSON 客户端配置、验收方法、排错和本机安全说明见
 [MCP 接入指南](docs/zh-CN/MCP-SETUP.md)。
 
+MCP 服务还会在初始化时返回 `instructions`，提示 Agent 在交互式 TUI 任务中优先使用
+TuiLens，并配合面向使用意图的工具描述。支持 server instructions 的客户端会自动读取；
+如果某个 Agent 仍然不能稳定选择，再为它增加客户端级规则或 Skill。
+
 工具包括 `terminal_launch`、`terminal_list`、`terminal_observe`、`terminal_find`、
 `terminal_clickText`、`terminal_input`、`terminal_inputAndWait`、`terminal_resize`、`terminal_wait`、`terminal_compare`、
 `terminal_replay`、`terminal_scenario`、`terminal_perf`、`terminal_metrics`、`terminal_close`。

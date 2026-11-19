@@ -125,6 +125,23 @@ args = ["/home/<用户名>/TuiLens/dist/src/interfaces/cli.js", "mcp"]
 支持 MCP 图片内容的客户端会收到 PNG 截图和文字元数据；不支持图片渲染的客户端仍可使用终端文字
 和快照元数据。
 
+## 让 Agent 主动选择 TuiLens
+
+MCP 客户端初始化连接时，TuiLens 会返回 `instructions`，说明何时使用本服务以及
+launch/observe/input/close 的标准流程。Codex 和支持 MCP server instructions 的客户端会自动
+读取；每个工具的描述也写明了应触发它的用户意图。
+
+Server instructions 只能提高选择概率，不能强制模型发起工具调用。如果某个 Agent 仍会退回普通
+shell，再为它增加客户端级规则或 Skill。例如在 Codex 的 `AGENTS.md` 中明确写：
+
+```text
+交互式终端/TUI 任务优先使用 tuilens MCP 工具，不要先退回普通 shell。以 terminal_launch 开始，
+用 terminal_observe 或 terminal_wait 检查画面，用 terminal_input 或 terminal_inputAndWait
+操作，最后调用 terminal_close。
+```
+
+简单非交互命令仍走普通 shell，避免无谓地启动浏览器会话。
+
 ## 常见问题
 
 | 现象 | 可能原因 | 处理方式 |
