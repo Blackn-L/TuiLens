@@ -128,6 +128,27 @@ A minimal smoke test:
 Clients that support MCP image content receive a PNG screenshot as well as text metadata.
 Clients without image rendering can still use the terminal text and snapshot metadata.
 
+## Make agents select TuiLens
+
+When the MCP client initializes the connection, TuiLens returns an `instructions` field that
+describes when to use the server and the normal launch/observe/input/close flow. Codex and
+other clients that support MCP server instructions read this automatically. The individual
+tool descriptions also state the user intent that should trigger them.
+
+Server instructions improve selection but do not force a tool call; model routing remains
+probabilistic. If a particular agent still falls back to raw shell commands, add a
+client-level rule or skill that says to use TuiLens for interactive terminal/TUI work. A
+Codex `AGENTS.md` rule can be explicit:
+
+```text
+For interactive terminal/TUI work, use the tuilens MCP tools before falling back to raw
+shell commands. Start with terminal_launch, inspect with terminal_observe or terminal_wait,
+interact with terminal_input or terminal_inputAndWait, and finish with terminal_close.
+```
+
+Keep simple non-interactive commands on the normal shell path so the agent does not launch a
+browser-backed session unnecessarily.
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Action |

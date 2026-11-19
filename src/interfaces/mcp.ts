@@ -7,7 +7,7 @@ import type { Observation, SessionInfo } from "../core/types.js";
 import { errorRecord } from "../core/errors.js";
 import { request } from "../transport/client.js";
 import { methodSchemas } from "./schemas.js";
-import { mcpTools, type McpMethod } from "./mcp-tools.js";
+import { mcpInstructions, mcpTools, type McpMethod } from "./mcp-tools.js";
 import { VERSION } from "../version.js";
 import { pick } from "../core/i18n.js";
 
@@ -15,7 +15,9 @@ const PROGRESS_METHODS = new Set<McpMethod>(["wait", "inputAndWait", "scenario",
 
 /** MCP 与 CLI 共用同一应用协议；断开时只释放此连接创建的会话。 */
 export async function startMcp(): Promise<void> {
-  const server = new McpServer({ name: "tuilens", version: VERSION });
+  const server = new McpServer({ name: "tuilens", version: VERSION }, {
+    instructions: mcpInstructions(),
+  });
   const tools = mcpTools();
   const owned = new Set<string>();
   const disconnect = new AbortController();

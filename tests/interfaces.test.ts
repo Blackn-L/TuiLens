@@ -17,7 +17,7 @@ const fixture = fileURLToPath(new URL("./fixtures/terminal.js", import.meta.url)
 
 test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话", { timeout: 90000 }, async () => {
   const home = await mkdtemp(join(tmpdir(), "tuilens-interface-"));
-  const env = { ...process.env, TUILENS_HOME: home };
+  const env = { ...process.env, TUILENS_HOME: home, TUILENS_LANG: "en" };
   const call = async (method: string, params = {}): Promise<unknown> => {
     const result = await run(process.execPath, [cli, method, "--json", JSON.stringify(params)], { env, maxBuffer: 20 * 1024 * 1024 });
     const payload = JSON.parse(result.stdout) as { ok: boolean; data: unknown };
@@ -86,6 +86,7 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     const inherited = Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => e[1] !== undefined));
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [cli, "mcp"], env: inherited, stderr: "pipe" }));
     assert.deepEqual(client.getServerVersion(), { name: "tuilens", version: "0.5.0" });
+    assert.match(client.getInstructions() ?? "", /preferred tool for interactive terminal\/TUI work/u);
     const tools = await client.listTools();
     const expectedTools = [
       "terminal_launch", "terminal_list", "terminal_observe", "terminal_input", "terminal_inputAndWait",
