@@ -32,7 +32,7 @@ jobs:
         continue-on-error: true
       - name: Upload failure evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tuilens-evidence-${{ matrix.os }}-node${{ matrix.node }}-${{ github.run_attempt }}
           path: |
@@ -67,7 +67,7 @@ jobs:
         env:
           TUILENS_HOME: ${{ runner.temp }}/tuilens
         continue-on-error: true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: tuilens-perf-${{ github.run_attempt }}
