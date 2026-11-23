@@ -98,6 +98,28 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     assert.ok(watchLines.length >= 2);
     assert.ok(watchLines.some((line) => line.data.stopped === true));
     assert.ok(watchLines.some((line) => line.data.snapshot !== undefined && line.data.snapshot.cells === undefined));
+    const shortLived = (await call("launch", {
+      command: process.execPath,
+      args: ["-e", "process.stdout.write('WATCH_EXIT\\n');setTimeout(()=>process.exit(0),100)"],
+      cols: 40,
+      rows: 8,
+    })) as SessionInfo;
+    await call("wait", { id: shortLived.id, conditions: [{ kind: "exited" }], timeoutMs: 5000 });
+    const exitedWatch = await run(
+      process.execPath,
+      [cli, "watch", shortLived.id, "--interval", "50", "--timeout", "0"],
+      {
+        env,
+        timeout: 5000,
+        maxBuffer: 20 * 1024 * 1024,
+      }
+    );
+    const exitWatchLines = exitedWatch.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { ok: boolean; data: { stopped?: boolean } });
+    assert.ok(exitWatchLines.some((line) => line.data.stopped === true));
+    await call("close", { id: shortLived.id });
     const crop = (await call("observe", {
       id: session.id,
       region: { x: 0, y: 0, width: 12, height: 2 },

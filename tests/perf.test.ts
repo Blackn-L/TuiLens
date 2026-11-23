@@ -95,6 +95,8 @@ test("性能场景按模板等待每次新证据，并能写出可比较的基�
     assert.ok(!("matrix" in first));
     assert.equal(first.pass, true);
     assert.equal(first.environment.renderer, "dom");
+    assert.equal(first.processTree.errors, 0);
+    assert.ok(first.processTree.peakRootRssBytes > 0);
     // 2 轮 × 2 次重复 = 4 个样本。
     assert.equal(first.metrics.length, 1);
     assert.equal(first.metrics[0]!.samples, 4);

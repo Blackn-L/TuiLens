@@ -126,6 +126,7 @@ async function runScenarioSingle(
             const observation = await manager.observe(
               id,
               {
+                cells: false,
                 ...(step.region ? { region: step.region } : {}),
                 ...(step.cursor ? { cursor: step.cursor } : {}),
               },
@@ -161,7 +162,7 @@ async function runScenarioSingle(
     if (!result.steps.length) result.steps.push({ index: -1, type: "launch", elapsedMs: 0, error: errorRecord(error) });
     if (id && !signal?.aborted) {
       try {
-        const capture = await manager.observe(id, {}, { timeoutMs: 2000 });
+        const capture = await manager.observe(id, { cells: false }, { timeoutMs: 5000 });
         if (capture.screenshot) result.failureScreenshot = capture.screenshot.path;
       } catch (captureError) {
         result.steps.push({ index: -1, type: "failureEvidence", elapsedMs: 0, error: errorRecord(captureError) });

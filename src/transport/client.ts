@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, stat, unlink, type FileHandle } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, stat, unlink, type FileHandle } from "node:fs/promises";
 import { connect } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -37,7 +37,13 @@ export function isDaemonUnavailable(error: unknown): boolean {
 
 function isStartableFailure(error: unknown): boolean {
   const code = errorCode(error);
-  return code === "DAEMON_UNAVAILABLE" || code === "ENOENT" || code === "ECONNREFUSED" || code === "ENOTSOCK";
+  return (
+    code === "DAEMON_UNAVAILABLE" ||
+    code === "ENOENT" ||
+    code === "ECONNREFUSED" ||
+    code === "ENOTSOCK" ||
+    code === "SHUTTING_DOWN"
+  );
 }
 
 interface LockState {
@@ -86,8 +92,42 @@ async function lockIsStale(path: string, staleMs: number): Promise<boolean> {
 }
 
 async function unlinkIfOwner(path: string, token: string): Promise<boolean> {
+  const before = await stat(path).catch(() => undefined);
+  if (!before) return false;
   const state = await readLockState(path);
   if (!state || state.token !== token) return false;
+  const after = await stat(path).catch(() => undefined);
+  if (!after || before.dev !== after.dev || before.ino !== after.ino) return false;
+  try {
+    await unlink(path);
+    return true;
+  } catch (error) {
+    return errorCode(error) === "ENOENT";
+  }
+}
+
+async function fileIdentity(path: string): Promise<{ dev: number; ino: number } | undefined> {
+  try {
+    const info = await lstat(path);
+    return { dev: info.dev, ino: info.ino };
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+async function handleIdentity(handle: FileHandle): Promise<{ dev: number; ino: number } | undefined> {
+  try {
+    const info = await handle.stat();
+    return { dev: info.dev, ino: info.ino };
+  } catch {
+    return undefined;
+  }
+}
+
+async function unlinkIfIdentity(path: string, identity: { dev: number; ino: number }): Promise<boolean> {
+  const current = await fileIdentity(path);
+  if (!current || current.dev !== identity.dev || current.ino !== identity.ino) return false;
   try {
     await unlink(path);
     return true;
@@ -114,7 +154,12 @@ async function withCleanupLock<T>(path: string, signal: AbortSignal | undefined,
           throw new TuiLensError("ABORTED", "操作已取消");
         }
         if (stale) await unlinkIfOwner(path, stale.token);
-        else if (await lockIsStale(path, CLEANUP_LOCK_STALE_MS)) await unlink(path).catch(() => undefined);
+        else {
+          const identity = await fileIdentity(path);
+          if (identity && (await lockIsStale(path, CLEANUP_LOCK_STALE_MS))) {
+            await unlinkIfIdentity(path, identity).catch(() => undefined);
+          }
+        }
         continue;
       }
       if (performance.now() >= deadline) {
@@ -134,9 +179,10 @@ async function withCleanupLock<T>(path: string, signal: AbortSignal | undefined,
       wrote = true;
       return await task();
     } finally {
+      const identity = wrote ? undefined : await handleIdentity(handle);
       await handle.close().catch(() => undefined);
       if (wrote) await unlinkIfOwner(path, token).catch(() => undefined);
-      else await unlink(path).catch(() => undefined);
+      else if (identity) await unlinkIfIdentity(path, identity).catch(() => undefined);
     }
   }
 }
@@ -146,10 +192,10 @@ async function removeStaleStartLock(paths: RuntimePaths, signal: AbortSignal | u
     if (!(await lockIsStale(paths.startLock, START_LOCK_STALE_MS))) return;
     const stale = await readLockState(paths.startLock);
     if (stale) await unlinkIfOwner(paths.startLock, stale.token);
-    else
-      await unlink(paths.startLock).catch((error) => {
-        if (errorCode(error) !== "ENOENT") throw error;
-      });
+    else {
+      const identity = await fileIdentity(paths.startLock);
+      if (identity) await unlinkIfIdentity(paths.startLock, identity);
+    }
   });
 }
 
@@ -189,9 +235,10 @@ async function withStartLock<T>(
       wrote = true;
       return await task();
     } finally {
+      const identity = wrote ? undefined : await handleIdentity(handle);
       await handle.close().catch(() => undefined);
       if (wrote) await unlinkIfOwner(paths.startLock, token).catch(() => undefined);
-      else await unlink(paths.startLock).catch(() => undefined);
+      else if (identity) await unlinkIfIdentity(paths.startLock, identity).catch(() => undefined);
     }
   }
 }
@@ -310,6 +357,22 @@ export async function request(
         return;
       } catch (error) {
         if (options.signal?.aborted) throw error;
+        if (errorCode(error) === "SHUTTING_DOWN") {
+          const deadline = performance.now() + 5_000;
+          while (performance.now() < deadline) {
+            try {
+              token = await getToken();
+              await send("ping", {}, 500);
+            } catch (pingError) {
+              if (errorCode(pingError) !== "SHUTTING_DOWN" && isDaemonUnavailable(pingError)) break;
+            }
+            try {
+              await sleep(50, options.signal ? { signal: options.signal } : {});
+            } catch {
+              throw new TuiLensError("ABORTED", "操作已取消");
+            }
+          }
+        }
       }
       await mkdir(paths.home, { recursive: true, mode: 0o700 });
       const log = await open(paths.log, "a", 0o600);

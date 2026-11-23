@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -60,6 +61,8 @@ test("并发自动启动只连接同一服务，关闭后可再次启动", { tim
     const responses = await Promise.all(Array.from({ length: 5 }, () => call("ping")));
     assert.ok(responses.every((r) => r.ok));
     assert.equal(new Set(responses.map((r) => r.data.pid)).size, 1);
+    assert.equal(existsSync(join(home, "daemon-start.lock")), false);
+    assert.equal(existsSync(join(home, "daemon-start.lock.cleanup")), false);
     assert.equal(typeof responses[0]!.data.version, "string");
     assert.equal(responses[0]!.data.sessions, 0);
     assert.equal(responses[0]!.data.pendingLaunches, 0);
@@ -78,6 +81,25 @@ test("并发自动启动只连接同一服务，关闭后可再次启动", { tim
     }
     const restarted = await call("ping");
     assert.notEqual(restarted.data.pid, responses[0]!.data.pid);
+  } finally {
+    await call("shutdown").catch(() => undefined);
+    await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});
+
+test("shutdown 关闭窗口内立即请求会等待旧实例并自动重启", { timeout: 30000 }, async () => {
+  const home = await mkdtemp(join(tmpdir(), "tuilens-shutdown-restart-"));
+  const env = { ...process.env, TUILENS_HOME: home };
+  const call = async (command: string): Promise<{ ok: boolean; data: { pid: number } }> => {
+    const result = await execute(process.execPath, [cli, command], { env, timeout: 15000 });
+    return JSON.parse(result.stdout) as { ok: boolean; data: { pid: number } };
+  };
+  try {
+    const first = await call("ping");
+    await call("shutdown");
+    const restarted = await call("ping");
+    assert.equal(restarted.ok, true);
+    assert.notEqual(restarted.data.pid, first.data.pid);
   } finally {
     await call("shutdown").catch(() => undefined);
     await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

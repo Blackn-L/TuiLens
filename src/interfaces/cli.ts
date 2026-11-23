@@ -665,17 +665,24 @@ async function runWatch(
   const stop = (): void => abort.abort();
   process.once("SIGINT", stop);
   let detachInput: (() => void) | undefined;
+  let forwarding: Promise<void> = Promise.resolve();
   if (control) {
     process.stdin.setRawMode(true);
     process.stdin.resume();
     const forward = (chunk: Buffer | string): void => {
       const data = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk;
-      // Ctrl+C 在这个模式里用于脱离，而不是送给被测程序。
-      if (data.includes("\u0003")) {
-        abort.abort();
-        return;
+      const controlAt = data.indexOf("\u0003");
+      const payload = controlAt < 0 ? data : data.slice(0, controlAt);
+      if (payload) {
+        forwarding = forwarding
+          .then(() => request("input", { id, action: { type: "raw", data: payload } }, { signal: abort.signal }))
+          .then(
+            () => {},
+            () => undefined
+          );
       }
-      void request("input", { id, action: { type: "raw", data } }, { signal: abort.signal }).catch(() => undefined);
+      // Ctrl+C 在这个模式里用于脱离，而不是送给被测程序。
+      if (controlAt >= 0) abort.abort();
     };
     process.stdin.on("data", forward);
     detachInput = () => {
@@ -702,12 +709,16 @@ async function runWatch(
         },
         { signal: abort.signal }
       );
-      const observation = data as { snapshot: { frameId: number } };
+      const observation = data as {
+        snapshot: { frameId: number };
+        session: { status?: "running" | "exited" | "closed" };
+      };
       if (observation.snapshot.frameId !== lastFrame) {
         lastFrame = observation.snapshot.frameId;
         frames += 1;
         process.stdout.write(JSON.stringify({ ok: true, data }) + "\n");
       }
+      if (observation.session.status === "exited" || observation.session.status === "closed") break;
       const remaining = timeout > 0 ? timeout - (performance.now() - started) : interval;
       if (remaining <= 0) break;
       await sleep(Math.min(interval, remaining), undefined, { signal: abort.signal });
@@ -722,6 +733,7 @@ async function runWatch(
   } finally {
     process.removeListener("SIGINT", stop);
     detachInput?.();
+    await forwarding;
   }
 }
 
