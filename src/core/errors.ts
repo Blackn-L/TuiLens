@@ -10,7 +10,7 @@ export class TuiLensError extends Error {
     public readonly code: string,
     message: string,
     public readonly details?: unknown,
-    messageEn = englishMessage(code),
+    messageEn = englishMessage(code)
   ) {
     super(message);
     this.name = "TuiLensError";

@@ -5,14 +5,14 @@
 ## Setup
 
 Use Node.js 22+, run `npm ci`, then `npm run build`. Install a compatible browser if needed with
-`npx playwright install chromium`. Read [architecture](docs/ARCHITECTURE.md) before changing layer boundaries.
+`npx playwright-core install chromium`. Read [architecture](docs/ARCHITECTURE.md) before changing layer boundaries.
 
 ## Changes
 
 - Keep protocol, engine, session and interface responsibilities separate.
 - Add independent minimal fixtures for behavior changes; avoid external services and environment-specific assumptions.
 - Preserve cancellation, output order, capacity bounds and cleanup behavior.
-- Use exact dependency versions and include the lockfile.
+- Use SemVer ranges for stable dependencies, keep the prerelease `node-pty` pin exact, and include the lockfile.
 - Keep generated output, credentials and machine-specific configuration out of commits.
 - Document support boundaries, especially for terminal/image protocols.
 

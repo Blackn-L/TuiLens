@@ -47,8 +47,7 @@ function inspectPng(buffer: Buffer): { width: number; height: number } {
   }
   const width = buffer.readUInt32BE(16);
   const height = buffer.readUInt32BE(20);
-  if (!width || !height || width > MAX_DIMENSION || height > MAX_DIMENSION ||
-      width * height > MAX_PIXELS) {
+  if (!width || !height || width > MAX_DIMENSION || height > MAX_DIMENSION || width * height > MAX_PIXELS) {
     throw new TuiLensError("IMAGE_LIMIT", "PNG 边长不能超过 8192，像素数不能超过 16777216");
   }
   if (buffer[24] !== 8 || buffer[26] !== 0 || buffer[27] !== 0 || buffer[28] !== 0) {
@@ -80,8 +79,11 @@ function decodePng(buffer: Buffer) {
   const size = inspectPng(buffer);
   try {
     const image = PNG.sync.read(buffer, { checkCRC: true });
-    if (image.width !== size.width || image.height !== size.height ||
-        image.data.length !== size.width * size.height * 4) {
+    if (
+      image.width !== size.width ||
+      image.height !== size.height ||
+      image.data.length !== size.width * size.height * 4
+    ) {
       invalid("PNG 解码尺寸不一致");
     }
     return image;
@@ -99,8 +101,14 @@ function validateOptions(options: CompareOptions): { threshold: number; ratio: n
   }
   const threshold = options.pixelThreshold ?? 0;
   const ratio = options.maxDiffRatio ?? 0;
-  if (!Number.isInteger(threshold) || threshold < 0 || threshold > 255 ||
-      !Number.isFinite(ratio) || ratio < 0 || ratio > 1) {
+  if (
+    !Number.isInteger(threshold) ||
+    threshold < 0 ||
+    threshold > 255 ||
+    !Number.isFinite(ratio) ||
+    ratio < 0 ||
+    ratio > 1
+  ) {
     throw new TuiLensError("INVALID_ARGUMENT", "像素阈值为 0～255 整数，差异比例为 0～1");
   }
   const masks = options.masks ?? [];
@@ -114,9 +122,16 @@ function buildMask(masks: Region[], width: number, height: number): Uint8Array {
   const result = new Uint8Array(width * height);
   let work = 0;
   for (const region of masks) {
-    if (!region || ![region.x, region.y, region.width, region.height].every(Number.isInteger) ||
-        region.x < 0 || region.y < 0 || region.width < 1 || region.height < 1 ||
-        region.x + region.width > width || region.y + region.height > height) {
+    if (
+      !region ||
+      ![region.x, region.y, region.width, region.height].every(Number.isInteger) ||
+      region.x < 0 ||
+      region.y < 0 ||
+      region.width < 1 ||
+      region.height < 1 ||
+      region.x + region.width > width ||
+      region.y + region.height > height
+    ) {
       throw new TuiLensError("INVALID_ARGUMENT", "像素遮罩必须完整位于比较图片内");
     }
     work += region.width * region.height;
@@ -140,10 +155,13 @@ function pixelDistance(left: Buffer, right: Buffer, offset: number): number {
   let distance = 0;
   for (let channel = 0; channel < 3; channel += 1) {
     for (const matte of [0, 255]) {
-      distance = Math.max(distance, Math.abs(
-        composite(left[offset + channel]!, left[offset + 3]!, matte)
-        - composite(right[offset + channel]!, right[offset + 3]!, matte),
-      ));
+      distance = Math.max(
+        distance,
+        Math.abs(
+          composite(left[offset + channel]!, left[offset + 3]!, matte) -
+            composite(right[offset + channel]!, right[offset + 3]!, matte)
+        )
+      );
     }
   }
   return distance;
@@ -156,7 +174,8 @@ export function compareImages(actual: Buffer, baseline: Buffer, options: Compare
   const baselineSize = inspectPng(baseline);
   if (actualSize.width !== baselineSize.width || actualSize.height !== baselineSize.height) {
     throw new TuiLensError("IMAGE_DIMENSIONS_MISMATCH", "实际图片与基准图片尺寸不一致", {
-      actual: actualSize, baseline: baselineSize,
+      actual: actualSize,
+      baseline: baselineSize,
     });
   }
   const { width, height } = actualSize;
@@ -181,9 +200,12 @@ export function compareImages(actual: Buffer, baseline: Buffer, options: Compare
       diff.data[offset + 1] = 32;
       diff.data[offset + 2] = 64;
     } else {
-      const gray = Math.round((composite(current.data[offset]!, current.data[offset + 3]!, 255)
-        + composite(current.data[offset + 1]!, current.data[offset + 3]!, 255)
-        + composite(current.data[offset + 2]!, current.data[offset + 3]!, 255)) / 3);
+      const gray = Math.round(
+        (composite(current.data[offset]!, current.data[offset + 3]!, 255) +
+          composite(current.data[offset + 1]!, current.data[offset + 3]!, 255) +
+          composite(current.data[offset + 2]!, current.data[offset + 3]!, 255)) /
+          3
+      );
       const dimmed = Math.round(128 + gray / 2);
       diff.data[offset] = dimmed;
       diff.data[offset + 1] = dimmed;
@@ -192,7 +214,12 @@ export function compareImages(actual: Buffer, baseline: Buffer, options: Compare
   }
   const diffRatio = differentPixels / totalPixels;
   return {
-    pass: diffRatio <= ratio, differentPixels, totalPixels, diffRatio, width, height,
+    pass: diffRatio <= ratio,
+    differentPixels,
+    totalPixels,
+    diffRatio,
+    width,
+    height,
     diffPng: PNG.sync.write(diff),
   };
 }

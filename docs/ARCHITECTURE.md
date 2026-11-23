@@ -47,6 +47,22 @@ two strings — a token stream per row and a style run-length stream per row —
 `cells:false` skips packing entirely. Callers that only need text, size, cursor or a screenshot use it;
 `observe` over CLI/MCP does so unless `includeCells` is requested.
 
+## Renderer boundary and exit criteria
+
+The browser-backed engine is deliberate: xterm.js and Chromium provide the measured fidelity for terminal
+parsing, WebGL/DOM rendering, fonts, images and screenshots. The accepted costs are Chromium cold start,
+memory use, and platform font fallback.
+
+A browser-free or native engine is not a short-term refactor. It must first demonstrate:
+
+1. Parser, mode, cursor, wide-character and image-protocol equivalence against the existing fixtures.
+2. Startup, idle RSS and long-session RSS budgets measured with the same workloads.
+3. Stable font/grid fingerprints on Windows, Linux and macOS or an explicit platform support contract.
+4. A bounded image subset with protocol errors instead of silently advertising unsupported features.
+
+Until those gates are met, the public engine boundary is `TerminalEngine`; callers must not depend on
+Playwright internals. See [performance](PERFORMANCE.md), [images](IMAGES.md) and [roadmap](ROADMAP.md).
+
 ## Contracts
 
 - Public coordinates are zero-based terminal cells; PNG masks are pixels.

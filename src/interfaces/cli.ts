@@ -57,7 +57,8 @@ mcp                                  start the MCP stdio interface
 
 Environment: TUILENS_HOME sets runtime data; TUILENS_BROWSER_PATH selects Chrome/Chromium;
 TUILENS_FONT_FILE pins a screenshot font file; TUILENS_FONT_FAMILY overrides the fallback stack;
-TUILENS_LANG selects en or zh-CN (default: en); TUILENS_PTY_WORKER=1 isolates node-pty.
+TUILENS_LANG selects en or zh-CN (default: en); TUILENS_PTY_WORKER=1 isolates node-pty;
+TUILENS_IPC_TIMEOUT_MS optionally bounds IPC waits (default: no fixed cap).
 The local IPC service starts automatically on first use. Observation has overhead and is not a zero-cost performance probe.
 `;
 
@@ -109,7 +110,8 @@ mcp                                 启动 MCP stdio 接口
 
 环境：TUILENS_HOME 指定运行数据；TUILENS_BROWSER_PATH 指定 Chrome/Chromium；
 TUILENS_FONT_FILE 固定截图字体文件；TUILENS_FONT_FAMILY 覆盖回退字体栈；
-TUILENS_LANG 选择 en 或 zh-CN（默认 en）；TUILENS_PTY_WORKER=1 隔离 node-pty。
+TUILENS_LANG 选择 en 或 zh-CN（默认 en）；TUILENS_PTY_WORKER=1 隔离 node-pty；
+TUILENS_IPC_TIMEOUT_MS 可限制 IPC 等待（默认不设固定上限）。
 首次使用自动启动本机 IPC 服务。功能观察有开销，不能当作零开销性能探针。
 `;
 
@@ -119,10 +121,22 @@ function helpText(): string {
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (!command || command === "--help" || command === "help") { process.stdout.write(helpText()); return; }
-  if (command === "--version") { process.stdout.write(`${VERSION}\n`); return; }
-  if (command === "_serve") { await (await import("../transport/server.js")).serve(); return; }
-  if (command === "mcp") { await (await import("./mcp.js")).startMcp(); return; }
+  if (!command || command === "--help" || command === "help") {
+    process.stdout.write(helpText());
+    return;
+  }
+  if (command === "--version") {
+    process.stdout.write(`${VERSION}\n`);
+    return;
+  }
+  if (command === "_serve") {
+    await (await import("../transport/server.js")).serve();
+    return;
+  }
+  if (command === "mcp") {
+    await (await import("./mcp.js")).startMcp();
+    return;
+  }
   if (command === "doctor") {
     const { runDoctor } = await import("../doctor.js");
     const data = await runDoctor();
@@ -161,26 +175,53 @@ async function main(): Promise<void> {
   const separator = rest.indexOf("--");
   const program = separator >= 0 ? rest.slice(separator + 1) : [];
   const { values, positionals } = parseArgs({
-    args: separator >= 0 ? rest.slice(0, separator) : rest, allowPositionals: true,
+    args: separator >= 0 ? rest.slice(0, separator) : rest,
+    allowPositionals: true,
     options: {
-      json: { type: "string" }, file: { type: "string" }, stdin: { type: "boolean" },
-      cwd: { type: "string" }, cols: { type: "string" }, rows: { type: "string" },
-      env: { type: "string", multiple: true }, "color-mode": { type: "string" },
+      json: { type: "string" },
+      file: { type: "string" },
+      stdin: { type: "boolean" },
+      cwd: { type: "string" },
+      cols: { type: "string" },
+      rows: { type: "string" },
+      env: { type: "string", multiple: true },
+      "color-mode": { type: "string" },
       "terminal-profile": { type: "string" },
-      "no-screenshot": { type: "boolean" }, cells: { type: "boolean" }, compact: { type: "boolean" }, text: { type: "string" },
-      region: { type: "string" }, stable: { type: "string" }, timeout: { type: "string" },
+      "no-screenshot": { type: "boolean" },
+      cells: { type: "boolean" },
+      compact: { type: "boolean" },
+      text: { type: "string" },
+      region: { type: "string" },
+      stable: { type: "string" },
+      timeout: { type: "string" },
       interval: { type: "string" },
       control: { type: "boolean" },
-      absent: { type: "boolean" }, exited: { type: "boolean" },
-      images: { type: "string" }, renderer: { type: "string" }, record: { type: "boolean" }, baseline: { type: "string" },
-      threshold: { type: "string" }, "max-diff": { type: "string" }, speed: { type: "string" },
-      "allow-truncated": { type: "boolean" }, nth: { type: "string" }, unique: { type: "boolean" },
-      shift: { type: "boolean" }, ctrl: { type: "boolean" }, alt: { type: "boolean" },
-      page: { type: "boolean" }, top: { type: "boolean" }, bottom: { type: "boolean" },
-      frame: { type: "string" }, "after-frame": { type: "string" },
-      "protocol-replies": { type: "string" }, "protocol-reply-latency": { type: "string" },
-      "show-cursor": { type: "boolean" }, screenshot: { type: "boolean" },
-      "write-baseline": { type: "string" }, "max-regression": { type: "string" },
+      absent: { type: "boolean" },
+      exited: { type: "boolean" },
+      images: { type: "string" },
+      renderer: { type: "string" },
+      record: { type: "boolean" },
+      baseline: { type: "string" },
+      threshold: { type: "string" },
+      "max-diff": { type: "string" },
+      speed: { type: "string" },
+      "allow-truncated": { type: "boolean" },
+      nth: { type: "string" },
+      unique: { type: "boolean" },
+      shift: { type: "boolean" },
+      ctrl: { type: "boolean" },
+      alt: { type: "boolean" },
+      page: { type: "boolean" },
+      top: { type: "boolean" },
+      bottom: { type: "boolean" },
+      frame: { type: "string" },
+      "after-frame": { type: "string" },
+      "protocol-replies": { type: "string" },
+      "protocol-reply-latency": { type: "string" },
+      "show-cursor": { type: "boolean" },
+      screenshot: { type: "boolean" },
+      "write-baseline": { type: "string" },
+      "max-regression": { type: "string" },
       junit: { type: "string" },
       "allow-env-mismatch": { type: "boolean" },
     },
@@ -191,10 +232,16 @@ async function main(): Promise<void> {
   }
   let method = command;
   let params: unknown;
-  const payloadSources = [values.json !== undefined, values.file !== undefined, values.stdin === true].filter(Boolean).length;
+  const payloadSources = [values.json !== undefined, values.file !== undefined, values.stdin === true].filter(
+    Boolean
+  ).length;
   if (payloadSources > 1) {
-    throw new TuiLensError("INVALID_ARGUMENT", "--json、--file 和 --stdin 只能选择一个",
-      undefined, "Use only one of --json, --file, or --stdin.");
+    throw new TuiLensError(
+      "INVALID_ARGUMENT",
+      "--json、--file 和 --stdin 只能选择一个",
+      undefined,
+      "Use only one of --json, --file, or --stdin."
+    );
   }
   if (payloadSources) {
     method = normalizeMethod(command);
@@ -228,20 +275,30 @@ async function main(): Promise<void> {
     const [id, first, second, third, fourth] = positionals;
     const region = values.region ? parseRegion(values.region) : undefined;
     const modifiers = { shift: values.shift ?? false, ctrl: values.ctrl ?? false, alt: values.alt ?? false };
-    const matchOptions = { ...(values.unique ? { selection: "unique" } : {}),
-      ...(values.nth === undefined ? {} : { nth: Number(values.nth) }) };
+    const matchOptions = {
+      ...(values.unique ? { selection: "unique" } : {}),
+      ...(values.nth === undefined ? {} : { nth: Number(values.nth) }),
+    };
     switch (command) {
       case "launch": {
         if (!program[0]) {
-          throw new TuiLensError("INVALID_ARGUMENT", "请在 -- 后指定程序，或使用 --json",
-            undefined, "Specify a program after --, or use --json.");
+          throw new TuiLensError(
+            "INVALID_ARGUMENT",
+            "请在 -- 后指定程序，或使用 --json",
+            undefined,
+            "Specify a program after --, or use --json."
+          );
         }
         const env: Record<string, string> = {};
         for (const pair of values.env ?? []) {
           const index = pair.indexOf("=");
           if (index <= 0) {
-            throw new TuiLensError("INVALID_ARGUMENT", "--env 格式为 NAME=VALUE",
-              undefined, "--env values must use NAME=VALUE.");
+            throw new TuiLensError(
+              "INVALID_ARGUMENT",
+              "--env 格式为 NAME=VALUE",
+              undefined,
+              "--env values must use NAME=VALUE."
+            );
           }
           env[pair.slice(0, index)] = pair.slice(index + 1);
         }
@@ -251,8 +308,12 @@ async function main(): Promise<void> {
           protocolReplies.maxLatencyMs = Number(values["protocol-reply-latency"]);
         }
         params = {
-          command: program[0], args: program.slice(1), cwd: values.cwd ?? process.cwd(), env,
-          cols: Number(values.cols ?? 160), rows: Number(values.rows ?? 50),
+          command: program[0],
+          args: program.slice(1),
+          cwd: values.cwd ?? process.cwd(),
+          env,
+          cols: Number(values.cols ?? 160),
+          rows: Number(values.rows ?? 50),
           ...(values["color-mode"] ? { colorMode: values["color-mode"] } : {}),
           ...(values.renderer ? { renderer: values.renderer } : {}),
           ...(values.images ? { images: values.images } : {}),
@@ -262,47 +323,122 @@ async function main(): Promise<void> {
         };
         break;
       }
-      case "observe": params = {
-        id, screenshot: !values["no-screenshot"], includeCells: values.cells ?? false,
-        ...(values.compact ? { compact: true } : {}),
-        ...(region ? { region } : {}),
-        ...(values["show-cursor"] ? { cursor: "show" } : {}),
-      }; break;
-      case "type": method = "input"; params = { id, action: { type: "text", text: first } }; break;
-      case "paste": method = "input"; params = { id, action: { type: "paste", text: first } }; break;
-      case "key": method = "input"; params = { id, action: { type: "key", key: first } }; break;
-      case "click": method = "input"; params = { id, action: { type: "click", x: Number(first), y: Number(second), modifiers } }; break;
-      case "mouse-down": case "mouse-up": method = "input"; params = { id, action: { type: command === "mouse-down" ? "mouseDown" : "mouseUp",
-        x: Number(first), y: Number(second), modifiers } }; break;
-      case "drag": method = "input"; params = { id, action: { type: "drag", from: { x: Number(first), y: Number(second) },
-        to: { x: Number(third), y: Number(fourth) }, modifiers } }; break;
+      case "observe":
+        params = {
+          id,
+          screenshot: !values["no-screenshot"],
+          includeCells: values.cells ?? false,
+          ...(values.compact ? { compact: true } : {}),
+          ...(region ? { region } : {}),
+          ...(values["show-cursor"] ? { cursor: "show" } : {}),
+        };
+        break;
+      case "type":
+        method = "input";
+        params = { id, action: { type: "text", text: first } };
+        break;
+      case "paste":
+        method = "input";
+        params = { id, action: { type: "paste", text: first } };
+        break;
+      case "key":
+        method = "input";
+        params = { id, action: { type: "key", key: first } };
+        break;
+      case "click":
+        method = "input";
+        params = { id, action: { type: "click", x: Number(first), y: Number(second), modifiers } };
+        break;
+      case "mouse-down":
+      case "mouse-up":
+        method = "input";
+        params = {
+          id,
+          action: {
+            type: command === "mouse-down" ? "mouseDown" : "mouseUp",
+            x: Number(first),
+            y: Number(second),
+            modifiers,
+          },
+        };
+        break;
+      case "drag":
+        method = "input";
+        params = {
+          id,
+          action: {
+            type: "drag",
+            from: { x: Number(first), y: Number(second) },
+            to: { x: Number(third), y: Number(fourth) },
+            modifiers,
+          },
+        };
+        break;
       case "scroll": {
         if (values.top && values.bottom) {
-          throw new TuiLensError("INVALID_ARGUMENT", "--top 与 --bottom 不能同时使用",
-            undefined, "--top and --bottom cannot be used together.");
+          throw new TuiLensError(
+            "INVALID_ARGUMENT",
+            "--top 与 --bottom 不能同时使用",
+            undefined,
+            "--top and --bottom cannot be used together."
+          );
         }
         if ((values.top || values.bottom) && values.page) {
-          throw new TuiLensError("INVALID_ARGUMENT", "--page 不能与滚动终点同时使用",
-            undefined, "--page cannot be combined with a scroll endpoint.");
+          throw new TuiLensError(
+            "INVALID_ARGUMENT",
+            "--page 不能与滚动终点同时使用",
+            undefined,
+            "--page cannot be combined with a scroll endpoint."
+          );
         }
         if ((values.top || values.bottom) && (third !== undefined || fourth !== undefined)) {
-          throw new TuiLensError("INVALID_ARGUMENT", "--top/--bottom 不能与方向或数量同时使用",
-            undefined, "--top/--bottom cannot be combined with a direction or count.");
+          throw new TuiLensError(
+            "INVALID_ARGUMENT",
+            "--top/--bottom 不能与方向或数量同时使用",
+            undefined,
+            "--top/--bottom cannot be combined with a direction or count."
+          );
         }
         method = "input";
-        params = { id, action: values.top || values.bottom
-          ? { type: "scroll", x: Number(first), y: Number(second), to: values.top ? "top" : "bottom", modifiers }
-          : { type: "scroll", x: Number(first), y: Number(second), direction: third,
-            amount: Number(fourth ?? 3), ...(values.page ? { unit: "page" } : {}), modifiers } };
+        params = {
+          id,
+          action:
+            values.top || values.bottom
+              ? { type: "scroll", x: Number(first), y: Number(second), to: values.top ? "top" : "bottom", modifiers }
+              : {
+                  type: "scroll",
+                  x: Number(first),
+                  y: Number(second),
+                  direction: third,
+                  amount: Number(fourth ?? 3),
+                  ...(values.page ? { unit: "page" } : {}),
+                  modifiers,
+                },
+        };
         break;
       }
-      case "resize": params = { id, cols: Number(first), rows: Number(second) }; break;
-      case "find": params = { id, text: first, ...(region ? { region } : {}), options: matchOptions }; break;
-      case "click-text": method = "clickText"; params = { id, text: first, ...(region ? { region } : {}), options: matchOptions }; break;
-      case "compare": params = { id, options: { baseline: values.baseline, ...(region ? { region } : {}),
-        ...(values.threshold === undefined ? {} : { pixelThreshold: Number(values.threshold) }),
-        ...(values["max-diff"] === undefined ? {} : { maxDiffRatio: Number(values["max-diff"]) }),
-        ...(values["show-cursor"] ? { cursor: "show" } : {}) } }; break;
+      case "resize":
+        params = { id, cols: Number(first), rows: Number(second) };
+        break;
+      case "find":
+        params = { id, text: first, ...(region ? { region } : {}), options: matchOptions };
+        break;
+      case "click-text":
+        method = "clickText";
+        params = { id, text: first, ...(region ? { region } : {}), options: matchOptions };
+        break;
+      case "compare":
+        params = {
+          id,
+          options: {
+            baseline: values.baseline,
+            ...(region ? { region } : {}),
+            ...(values.threshold === undefined ? {} : { pixelThreshold: Number(values.threshold) }),
+            ...(values["max-diff"] === undefined ? {} : { maxDiffRatio: Number(values["max-diff"]) }),
+            ...(values["show-cursor"] ? { cursor: "show" } : {}),
+          },
+        };
+        break;
       case "input-wait": {
         method = "inputAndWait";
         const conditions: unknown[] = [];
@@ -318,24 +454,53 @@ async function main(): Promise<void> {
         };
         break;
       }
-      case "replay": params = { path: id, speed: Number(values.speed ?? 0), allowTruncated: values["allow-truncated"] ?? false }; break;
-      case "metrics": case "close": params = { id }; break;
+      case "replay":
+        params = { path: id, speed: Number(values.speed ?? 0), allowTruncated: values["allow-truncated"] ?? false };
+        break;
+      case "metrics":
+      case "close":
+        params = { id };
+        break;
       case "wait": {
         const conditions: unknown[] = [];
-        if (values.text) conditions.push({ kind: "text", text: values.text, ...(region ? { region } : {}), ...(values.absent ? { absent: true } : {}) });
-        if (values.stable) conditions.push({ kind: "stable", durationMs: Number(values.stable), ...(region ? { region } : {}) });
+        if (values.text)
+          conditions.push({
+            kind: "text",
+            text: values.text,
+            ...(region ? { region } : {}),
+            ...(values.absent ? { absent: true } : {}),
+          });
+        if (values.stable)
+          conditions.push({ kind: "stable", durationMs: Number(values.stable), ...(region ? { region } : {}) });
         if (values.exited) conditions.push({ kind: "exited" });
-        params = { id, conditions, timeoutMs: Number(values.timeout ?? 10000),
-          ...(values["after-frame"] === undefined ? {} : { afterFrameId: Number(values["after-frame"]) }) };
+        params = {
+          id,
+          conditions,
+          timeoutMs: Number(values.timeout ?? 10000),
+          ...(values["after-frame"] === undefined ? {} : { afterFrameId: Number(values["after-frame"]) }),
+        };
         break;
       }
       case "perf": {
-        throw new TuiLensError("INVALID_ARGUMENT", "perf 需要 --file 或 --json 提供性能场景",
-          undefined, "perf requires a performance scenario via --file or --json.");
+        throw new TuiLensError(
+          "INVALID_ARGUMENT",
+          "perf 需要 --file 或 --json 提供性能场景",
+          undefined,
+          "perf requires a performance scenario via --file or --json."
+        );
       }
-      case "list": case "ping": case "shutdown": params = {}; break;
-      default: throw new TuiLensError("UNKNOWN_METHOD", "未知命令；使用 --help 查看帮助",
-        undefined, "Unknown command; use --help for usage.");
+      case "list":
+      case "ping":
+      case "shutdown":
+        params = {};
+        break;
+      default:
+        throw new TuiLensError(
+          "UNKNOWN_METHOD",
+          "未知命令；使用 --help 查看帮助",
+          undefined,
+          "Unknown command; use --help for usage."
+        );
     }
   }
   if ((method === "input" || method === "inputAndWait") && values.frame !== undefined) {
@@ -376,7 +541,10 @@ async function writeJunit(path: string, method: string, data: unknown): Promise<
   const suites: Parameters<typeof renderJunit>[0] = [];
   if (method === "scenario") {
     const result = data as {
-      pass: boolean; matrix?: boolean; runs?: unknown[]; terminalProfile?: string;
+      pass: boolean;
+      matrix?: boolean;
+      runs?: unknown[];
+      terminalProfile?: string;
       steps: { index: number; type: string; name?: string; elapsedMs: number; error?: unknown }[];
     };
     const appendScenario = (run: typeof result, suffix = ""): void => {
@@ -398,36 +566,48 @@ async function writeJunit(path: string, method: string, data: unknown): Promise<
     } else appendScenario(result);
   } else if (method === "perf") {
     const result = data as {
-      pass: boolean; matrix?: boolean; runs?: unknown[]; profile?: string; error?: unknown;
-      metrics: { phase: string; name: string;
-        elapsedMs: { p50: number; p95: number; count: number } }[];
-      regressions: string[]; errors: { round: number; error: unknown }[];
+      pass: boolean;
+      matrix?: boolean;
+      runs?: unknown[];
+      profile?: string;
+      error?: unknown;
+      metrics: { phase: string; name: string; elapsedMs: { p50: number; p95: number; count: number } }[];
+      regressions: string[];
+      errors: { round: number; error: unknown }[];
     };
     const appendPerf = (run: typeof result, suffix = ""): void => {
       suites.push({
         name: `tuilens-perf${suffix}`,
-        cases: run.error !== undefined
-          ? [{ name: `profile ${run.profile ?? suffix}`, className: "perf", timeMs: 0, failure: failureOf(run.error) }]
-          : [
-            ...run.metrics.map((metric) => ({
-              name: `${metric.phase}/${metric.name} p50=${metric.elapsedMs.p50}ms`,
-              className: "perf",
-              timeMs: metric.elapsedMs.p50,
-              output: `samples=${metric.elapsedMs.count} p50=${metric.elapsedMs.p50}ms p95=${metric.elapsedMs.p95}ms`,
-            })),
-            ...run.errors.map((item) => ({
-              name: `round ${item.round}`,
-              className: "perf",
-              timeMs: 0,
-              failure: failureOf(item.error),
-            })),
-            ...run.regressions.map((text) => ({
-              name: `regression: ${text}`,
-              className: "perf",
-              timeMs: 0,
-              failure: { message: text, type: "PerfRegression" },
-            })),
-          ],
+        cases:
+          run.error !== undefined
+            ? [
+                {
+                  name: `profile ${run.profile ?? suffix}`,
+                  className: "perf",
+                  timeMs: 0,
+                  failure: failureOf(run.error),
+                },
+              ]
+            : [
+                ...run.metrics.map((metric) => ({
+                  name: `${metric.phase}/${metric.name} p50=${metric.elapsedMs.p50}ms`,
+                  className: "perf",
+                  timeMs: metric.elapsedMs.p50,
+                  output: `samples=${metric.elapsedMs.count} p50=${metric.elapsedMs.p50}ms p95=${metric.elapsedMs.p95}ms`,
+                })),
+                ...run.errors.map((item) => ({
+                  name: `round ${item.round}`,
+                  className: "perf",
+                  timeMs: 0,
+                  failure: failureOf(item.error),
+                })),
+                ...run.regressions.map((text) => ({
+                  name: `regression: ${text}`,
+                  className: "perf",
+                  timeMs: 0,
+                  failure: { message: text, type: "PerfRegression" },
+                })),
+              ],
       });
     };
     if (result.matrix === true && Array.isArray(result.runs)) {
@@ -446,25 +626,40 @@ async function writeJunit(path: string, method: string, data: unknown): Promise<
 }
 
 /** 只读实时观察：每个变化帧输出一行 JSONL，不发送输入，也不会自动关闭会话。 */
-async function runWatch(id: string | undefined, intervalValue: string | undefined,
-  timeoutValue: string | undefined, control: boolean): Promise<void> {
+async function runWatch(
+  id: string | undefined,
+  intervalValue: string | undefined,
+  timeoutValue: string | undefined,
+  control: boolean
+): Promise<void> {
   if (!id) {
-    throw new TuiLensError("INVALID_ARGUMENT", "watch 需要会话 ID",
-      undefined, "watch requires a session ID.");
+    throw new TuiLensError("INVALID_ARGUMENT", "watch 需要会话 ID", undefined, "watch requires a session ID.");
   }
   const interval = Number(intervalValue ?? 250);
   const timeout = Number(timeoutValue ?? 0);
   if (!Number.isFinite(interval) || interval < 50 || interval > 60_000) {
-    throw new TuiLensError("INVALID_ARGUMENT", "watch interval 必须在 50～60000 ms 之间",
-      undefined, "watch interval must be between 50 and 60000 ms.");
+    throw new TuiLensError(
+      "INVALID_ARGUMENT",
+      "watch interval 必须在 50～60000 ms 之间",
+      undefined,
+      "watch interval must be between 50 and 60000 ms."
+    );
   }
   if (!Number.isFinite(timeout) || timeout < 0 || timeout > 86_400_000) {
-    throw new TuiLensError("INVALID_ARGUMENT", "watch timeout 必须在 0～86400000 ms 之间",
-      undefined, "watch timeout must be between 0 and 86400000 ms.");
+    throw new TuiLensError(
+      "INVALID_ARGUMENT",
+      "watch timeout 必须在 0～86400000 ms 之间",
+      undefined,
+      "watch timeout must be between 0 and 86400000 ms."
+    );
   }
   if (control && !process.stdin.isTTY) {
-    throw new TuiLensError("INVALID_ARGUMENT", "watch --control 需要交互式 TTY",
-      undefined, "watch --control requires an interactive TTY.");
+    throw new TuiLensError(
+      "INVALID_ARGUMENT",
+      "watch --control 需要交互式 TTY",
+      undefined,
+      "watch --control requires an interactive TTY."
+    );
   }
   const abort = new AbortController();
   const stop = (): void => abort.abort();
@@ -480,8 +675,7 @@ async function runWatch(id: string | undefined, intervalValue: string | undefine
         abort.abort();
         return;
       }
-      void request("input", { id, action: { type: "raw", data } }, { signal: abort.signal })
-        .catch(() => undefined);
+      void request("input", { id, action: { type: "raw", data } }, { signal: abort.signal }).catch(() => undefined);
     };
     process.stdin.on("data", forward);
     detachInput = () => {
@@ -499,9 +693,15 @@ async function runWatch(id: string | undefined, intervalValue: string | undefine
   try {
     while (!abort.signal.aborted) {
       if (timeout > 0 && performance.now() - started >= timeout) break;
-      const data = await request("observe", {
-        id, screenshot: false, compact: true,
-      }, { signal: abort.signal });
+      const data = await request(
+        "observe",
+        {
+          id,
+          screenshot: false,
+          compact: true,
+        },
+        { signal: abort.signal }
+      );
       const observation = data as { snapshot: { frameId: number } };
       if (observation.snapshot.frameId !== lastFrame) {
         lastFrame = observation.snapshot.frameId;
@@ -528,8 +728,12 @@ async function runWatch(id: string | undefined, intervalValue: string | undefine
 function parseRegion(value: string) {
   const parts = value.split(",").map(Number);
   if (parts.length !== 4) {
-    throw new TuiLensError("INVALID_ARGUMENT", "区域格式为 x,y,width,height",
-      undefined, "Region format is x,y,width,height.");
+    throw new TuiLensError(
+      "INVALID_ARGUMENT",
+      "区域格式为 x,y,width,height",
+      undefined,
+      "Region format is x,y,width,height."
+    );
   }
   return { x: parts[0], y: parts[1], width: parts[2], height: parts[3] };
 }

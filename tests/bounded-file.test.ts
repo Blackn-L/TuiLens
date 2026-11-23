@@ -9,10 +9,14 @@ import { readBoundedFile } from "../src/core/bounded-file.js";
 
 async function withDirectory(run: (directory: string) => Promise<void>): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), "tuilens-bounded-"));
-  try { await run(directory); }
-  finally {
-    if (!resolve(directory).startsWith(resolve(tmpdir()) + "/") &&
-        !resolve(directory).startsWith(resolve(tmpdir()) + "\\")) throw new Error("临时目录超出预期范围");
+  if (
+    !resolve(directory).startsWith(resolve(tmpdir()) + "/") &&
+    !resolve(directory).startsWith(resolve(tmpdir()) + "\\")
+  )
+    throw new Error("临时目录超出预期范围");
+  try {
+    await run(directory);
+  } finally {
     await rm(directory, { recursive: true, force: true });
   }
 }
@@ -68,24 +72,33 @@ test("初次 fstat 后增长的文件仍按 limit+1 拒绝，并释放描述符"
     const sample = await open(path, "r");
     const prototype = Object.getPrototypeOf(sample) as { read: FileHandle["read"] };
     await sample.close();
-    type Read = (this: FileHandle, buffer: Buffer, offset: number, length: number,
-      position: number) => Promise<{ bytesRead: number; buffer: Buffer }>;
+    type Read = (
+      this: FileHandle,
+      buffer: Buffer,
+      offset: number,
+      length: number,
+      position: number
+    ) => Promise<{ bytesRead: number; buffer: Buffer }>;
     const original = prototype.read as Read;
     let changed = false;
-    context.mock.method(prototype, "read", async function (
-      this: FileHandle, buffer: Buffer, offset: number, length: number, position: number,
-    ) {
-      if (!changed) {
-        changed = true;
-        // 首次 read 必然晚于读取函数内部的 fstat，确定性模拟文件增长。
-        await appendFile(path, Buffer.alloc(65));
+    context.mock.method(
+      prototype,
+      "read",
+      async function (this: FileHandle, buffer: Buffer, offset: number, length: number, position: number) {
+        if (!changed) {
+          changed = true;
+          // 首次 read 必然晚于读取函数内部的 fstat，确定性模拟文件增长。
+          await appendFile(path, Buffer.alloc(65));
+        }
+        return original.call(this, buffer, offset, length, position);
       }
-      return original.call(this, buffer, offset, length, position);
-    });
+    );
     try {
       await assert.rejects(readBoundedFile(path, 128), { code: "FILE_LIMIT" });
       assert.equal(changed, true);
-    } finally { context.mock.restoreAll(); }
+    } finally {
+      context.mock.restoreAll();
+    }
     await rm(path);
   });
 });

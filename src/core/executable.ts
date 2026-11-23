@@ -24,8 +24,11 @@ function environmentValue(env: Record<string, string | undefined>, name: string)
 }
 
 function extensionCandidates(pathext: string): string[] {
-  const configured = pathext.split(";").map((value) => value.trim()).filter(Boolean)
-    .map((value) => value.startsWith(".") ? value : `.${value}`)
+  const configured = pathext
+    .split(";")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => (value.startsWith(".") ? value : `.${value}`))
     .map((value) => value.toUpperCase());
   const ordered = [".EXE", ".COM", ...configured.filter((value) => value !== ".EXE" && value !== ".COM")];
   return [...new Set(ordered)];
@@ -45,8 +48,10 @@ function assertDirectExecutable(file: string, command: string): void {
     throw new TuiLensError("EXECUTABLE_REQUIRES_SHELL", "Windows 批处理脚本不能直接作为 PTY 可执行文件启动", {
       command,
       resolved: file,
-      hint: pick("Use a native .exe/.com program, or launch a shell explicitly.",
-        "请改用原生 .exe/.com，或显式启动 shell"),
+      hint: pick(
+        "Use a native .exe/.com program, or launch a shell explicitly.",
+        "请改用原生 .exe/.com，或显式启动 shell"
+      ),
     });
   }
 }
@@ -57,7 +62,7 @@ function assertDirectExecutable(file: string, command: string): void {
  */
 export async function resolveExecutable(
   command: string,
-  options: ResolveExecutableOptions,
+  options: ResolveExecutableOptions
 ): Promise<ResolvedExecutable> {
   const platform = options.platform ?? process.platform;
   if (platform !== "win32") return { file: command };
@@ -66,8 +71,8 @@ export async function resolveExecutable(
   const pathext = environmentValue(options.env, "PATHEXT") ?? DEFAULT_PATHEXT;
   const extensions = extensionCandidates(pathext);
   const commandExtension = win.extname(command).toLowerCase();
-  const hasExtension = commandExtension.length > 0
-    && extensions.some((extension) => extension.toLowerCase() === commandExtension);
+  const hasExtension =
+    commandExtension.length > 0 && extensions.some((extension) => extension.toLowerCase() === commandExtension);
   const explicitPath = win.isAbsolute(command) || WINDOWS_PATH_SEPARATOR.test(command);
   const candidates: string[] = [];
 
@@ -85,11 +90,14 @@ export async function resolveExecutable(
       .map((directory) => directory.trim().replace(/^"(.*)"$/u, "$1"))
       .filter((directory) => directory.length > 0);
     for (const directory of searchDirectories) {
-      const absoluteDirectory = win.isAbsolute(directory) ? win.normalize(directory) : win.resolve(options.cwd, directory);
+      const absoluteDirectory = win.isAbsolute(directory)
+        ? win.normalize(directory)
+        : win.resolve(options.cwd, directory);
       if (hasExtension) {
         candidates.push(win.join(absoluteDirectory, command));
       } else {
-        for (const extension of extensions) candidates.push(win.join(absoluteDirectory, `${command}${extension.toLowerCase()}`));
+        for (const extension of extensions)
+          candidates.push(win.join(absoluteDirectory, `${command}${extension.toLowerCase()}`));
         candidates.push(win.join(absoluteDirectory, command));
       }
     }

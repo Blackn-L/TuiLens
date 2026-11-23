@@ -4,8 +4,12 @@ import { z } from "zod";
 import { readBoundedFile } from "../core/bounded-file.js";
 import { TuiLensError } from "../core/errors.js";
 import type {
-  ImageProfile, ResolvedTerminalProfile, TerminalCapabilities, TerminalGraphicsCapabilities,
-  TerminalProfileSource, TerminalReplies,
+  ImageProfile,
+  ResolvedTerminalProfile,
+  TerminalCapabilities,
+  TerminalGraphicsCapabilities,
+  TerminalProfileSource,
+  TerminalReplies,
 } from "../core/types.js";
 import { findTerminalPreset, listTerminalProfiles } from "./registry.js";
 import type { TerminalPresetDefinition } from "./presets/types.js";
@@ -16,50 +20,79 @@ const MAX_EXTENDS_DEPTH = 16;
 
 const profileReference = z.string().trim().min(1).max(8192);
 const profileName = z.string().trim().min(1).max(160);
-const environmentKey = z.string().min(1).max(256)
-  .refine((value) => !value.includes("=") && !value.includes("\0"),
-    pick("Environment variable names cannot contain = or NUL.",
-      "环境变量名不能包含 = 或 NUL"));
-const environmentValue = z.string().max(32 * 1024)
-  .refine((value) => !value.includes("\0"),
-    pick("Environment variable values cannot contain NUL.",
-      "环境变量值不能包含 NUL"));
-const terminalReply = z.string().max(4096)
-  .refine((value) => !value.includes("\0") && !/[\r\n]/u.test(value)
-    && (value === "" || value.startsWith("\x1b")),
-  pick("Terminal replies must be empty or a single ESC sequence.",
-    "终端应答必须是空串或单个 ESC 序列"));
+const environmentKey = z
+  .string()
+  .min(1)
+  .max(256)
+  .refine(
+    (value) => !value.includes("=") && !value.includes("\0"),
+    pick("Environment variable names cannot contain = or NUL.", "环境变量名不能包含 = 或 NUL")
+  );
+const environmentValue = z
+  .string()
+  .max(32 * 1024)
+  .refine(
+    (value) => !value.includes("\0"),
+    pick("Environment variable values cannot contain NUL.", "环境变量值不能包含 NUL")
+  );
+const terminalReply = z
+  .string()
+  .max(4096)
+  .refine(
+    (value) => !value.includes("\0") && !/[\r\n]/u.test(value) && (value === "" || value.startsWith("\x1b")),
+    pick("Terminal replies must be empty or a single ESC sequence.", "终端应答必须是空串或单个 ESC 序列")
+  );
 
-export const profileFileSchema = z.object({
-  name: profileName.optional(),
-  extends: profileReference.optional(),
-  versionRange: z.string().trim().min(1).max(160).optional(),
-  env: z.record(environmentKey, environmentValue).optional(),
-  replies: z.object({
-    da1: terminalReply.optional(),
-    da2: terminalReply.optional(),
-    xtversion: terminalReply.optional(),
-  }).strict().optional(),
-  capabilities: z.object({
-    color: z.enum(["none", "ansi16", "ansi256", "truecolor"]).optional(),
-    keyboard: z.object({
-      kitty: z.number().int().min(0).max(0x7fffffff).optional(),
-      modifyOtherKeys: z.number().int().min(0).max(2).optional(),
-    }).strict().optional(),
-    mouse: z.array(z.string().regex(/^\d{3,4}$/u)).max(64).optional(),
-    graphics: z.object({
-      sixel: z.boolean().optional(),
-      kitty: z.boolean().optional(),
-      iterm: z.boolean().optional(),
-    }).strict().optional(),
-    underlineStyles: z.array(z.enum(["single", "double", "curly", "dotted", "dashed"])).max(16).optional(),
-    synchronizedOutput: z.boolean().optional(),
-    focusEvents: z.boolean().optional(),
-    hyperlink: z.boolean().optional(),
-    unicodeVersion: z.string().trim().min(1).max(32).optional(),
-    scrollback: z.number().int().min(0).max(5000).optional(),
-  }).strict().optional(),
-}).strict();
+export const profileFileSchema = z
+  .object({
+    name: profileName.optional(),
+    extends: profileReference.optional(),
+    versionRange: z.string().trim().min(1).max(160).optional(),
+    env: z.record(environmentKey, environmentValue).optional(),
+    replies: z
+      .object({
+        da1: terminalReply.optional(),
+        da2: terminalReply.optional(),
+        xtversion: terminalReply.optional(),
+      })
+      .strict()
+      .optional(),
+    capabilities: z
+      .object({
+        color: z.enum(["none", "ansi16", "ansi256", "truecolor"]).optional(),
+        keyboard: z
+          .object({
+            kitty: z.number().int().min(0).max(0x7fffffff).optional(),
+            modifyOtherKeys: z.number().int().min(0).max(2).optional(),
+          })
+          .strict()
+          .optional(),
+        mouse: z
+          .array(z.string().regex(/^\d{3,4}$/u))
+          .max(64)
+          .optional(),
+        graphics: z
+          .object({
+            sixel: z.boolean().optional(),
+            kitty: z.boolean().optional(),
+            iterm: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
+        underlineStyles: z
+          .array(z.enum(["single", "double", "curly", "dotted", "dashed"]))
+          .max(16)
+          .optional(),
+        synchronizedOutput: z.boolean().optional(),
+        focusEvents: z.boolean().optional(),
+        hyperlink: z.boolean().optional(),
+        unicodeVersion: z.string().trim().min(1).max(32).optional(),
+        scrollback: z.number().int().min(0).max(5000).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 interface ProfileFile {
   name?: string;
@@ -93,12 +126,19 @@ function cloneCapabilities(value: TerminalCapabilities): TerminalCapabilities {
 
 function mergeCapabilities(
   base: TerminalCapabilities | undefined,
-  overlay: TerminalCapabilities | undefined,
+  overlay: TerminalCapabilities | undefined
 ): TerminalCapabilities {
   if (!base && !overlay) return {};
   const merged = cloneCapabilities(base ?? {});
   if (!overlay) return merged;
-  for (const key of ["color", "synchronizedOutput", "focusEvents", "hyperlink", "unicodeVersion", "scrollback"] as const) {
+  for (const key of [
+    "color",
+    "synchronizedOutput",
+    "focusEvents",
+    "hyperlink",
+    "unicodeVersion",
+    "scrollback",
+  ] as const) {
     if (overlay[key] !== undefined) {
       Object.assign(merged, { [key]: overlay[key] });
     }
@@ -121,7 +161,10 @@ function synthesizeDa1(capabilities: TerminalCapabilities): string {
 function alignDa1Sixel(reply: string, enabled: boolean): string {
   const match = /^\x1b\[\?(\d+(?:;\d+)*)c$/u.exec(reply);
   if (!match) return reply;
-  const features = match[1]!.split(";").map(Number).filter((value) => value !== 4);
+  const features = match[1]!
+    .split(";")
+    .map(Number)
+    .filter((value) => value !== 4);
   if (enabled) {
     const insertAt = features[0] === 62 ? 1 : features.length;
     features.splice(insertAt, 0, 4);
@@ -130,9 +173,10 @@ function alignDa1Sixel(reply: string, enabled: boolean): string {
 }
 
 function completeReplies(replies: TerminalReplies, capabilities: TerminalCapabilities): TerminalReplies {
-  const da1 = replies.da1 === undefined
-    ? synthesizeDa1(capabilities)
-    : alignDa1Sixel(replies.da1, capabilities.graphics?.sixel === true);
+  const da1 =
+    replies.da1 === undefined
+      ? synthesizeDa1(capabilities)
+      : alignDa1Sixel(replies.da1, capabilities.graphics?.sixel === true);
   return {
     ...replies,
     da1,
@@ -154,7 +198,7 @@ function fromPreset(preset: TerminalPresetDefinition, reference: string): Resolv
 function mergeProfileFile(
   base: ResolvedTerminalProfile | undefined,
   file: ProfileFile,
-  source: TerminalProfileSource,
+  source: TerminalProfileSource
 ): ResolvedTerminalProfile {
   const name = file.name ?? base?.name;
   if (!name) throw new TuiLensError("INVALID_PROFILE", "profile 必须声明 name，或通过 extends 继承名称");
@@ -193,7 +237,11 @@ async function canonicalPath(path: string): Promise<string> {
   }
 }
 
-async function resolveFromFile(path: string, reference: string, context: ResolveContext): Promise<ResolvedTerminalProfile> {
+async function resolveFromFile(
+  path: string,
+  reference: string,
+  context: ResolveContext
+): Promise<ResolvedTerminalProfile> {
   if (context.depth >= MAX_EXTENDS_DEPTH) {
     throw new TuiLensError("PROFILE_DEPTH", `terminal profile 继承层级不能超过 ${MAX_EXTENDS_DEPTH} 层`);
   }
@@ -235,7 +283,7 @@ async function resolveFromFile(path: string, reference: string, context: Resolve
 async function resolveReference(
   reference: string,
   baseDirectory: string,
-  context: ResolveContext,
+  context: ResolveContext
 ): Promise<ResolvedTerminalProfile> {
   const preset = findTerminalPreset(reference);
   if (preset) return fromPreset(preset, reference);
@@ -245,7 +293,7 @@ async function resolveReference(
 
 export async function resolveTerminalProfile(
   reference = "xterm-256color",
-  options: ResolveTerminalProfileOptions = {},
+  options: ResolveTerminalProfileOptions = {}
 ): Promise<ResolvedTerminalProfile> {
   const parsed = profileReference.safeParse(reference);
   if (!parsed.success) {
@@ -262,16 +310,20 @@ export async function resolveTerminalProfile(
 
 export function imageProfileGraphics(images: ImageProfile): TerminalGraphicsCapabilities {
   switch (images) {
-    case "off": return { sixel: false, kitty: false, iterm: false };
-    case "sixel": return { sixel: true, kitty: false, iterm: false };
-    case "iterm": return { sixel: false, kitty: false, iterm: true };
-    case "all": return { sixel: true, kitty: true, iterm: true };
+    case "off":
+      return { sixel: false, kitty: false, iterm: false };
+    case "sixel":
+      return { sixel: true, kitty: false, iterm: false };
+    case "iterm":
+      return { sixel: false, kitty: false, iterm: true };
+    case "all":
+      return { sixel: true, kitty: true, iterm: true };
   }
 }
 
 function applyCapabilityOverrides(
   capabilities: TerminalCapabilities,
-  overrides: TerminalProfileOverrides,
+  overrides: TerminalProfileOverrides
 ): TerminalCapabilities {
   const result = cloneCapabilities(capabilities);
   if (overrides.colorMode !== undefined) {
@@ -290,7 +342,7 @@ function applyCapabilityOverrides(
 /** 在保持来源信息不变的前提下合并正交覆盖，并让 DA1 与最终 graphics 对齐。 */
 export function applyTerminalProfileOverrides(
   profile: ResolvedTerminalProfile,
-  overrides: TerminalProfileOverrides = {},
+  overrides: TerminalProfileOverrides = {}
 ): ResolvedTerminalProfile {
   const capabilities = applyCapabilityOverrides(profile.capabilities, overrides);
   return {
@@ -303,7 +355,7 @@ export function applyTerminalProfileOverrides(
 
 export function defaultTerminalProfile(
   graphics?: TerminalGraphicsCapabilities,
-  scrollback?: number,
+  scrollback?: number
 ): ResolvedTerminalProfile {
   const preset = findTerminalPreset("xterm-256color");
   if (!preset) throw new TuiLensError("INVALID_PROFILE", "缺少内置 xterm-256color profile");

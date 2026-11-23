@@ -23,7 +23,10 @@ test("真实 PTY 未提交同步帧允许显式点击并保留默认保护", { t
         await new Promise<void>((resolve) => setTimeout(resolve, 25));
       }
     }
-    const clicked = await manager.wait(session.id, { conditions: [{ kind: "text", text: "CLICKED" }], timeoutMs: 5000 });
+    const clicked = await manager.wait(session.id, {
+      conditions: [{ kind: "text", text: "CLICKED" }],
+      timeoutMs: 5000,
+    });
     assert.match(clicked.observation.snapshot.text, /CLICKED/u);
     await manager.input(session.id, { type: "key", key: "Ctrl+q" });
     await manager.wait(session.id, { conditions: [{ kind: "exited" }], timeoutMs: 5000 });

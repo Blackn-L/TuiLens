@@ -60,9 +60,12 @@ function range(values: number[]): MetricRange {
 function summarizeGlyphScale(metrics: GlyphMetric[]): GlyphScaleProbe {
   const advance = range(metrics.map((metric) => metric.advance));
   const height = range(metrics.map((metric) => metric.ascent + metric.descent));
-  const pass = metrics.length === FONT_SCALE_SAMPLE.length
-    && advance.ratio > 0 && advance.ratio <= FONT_SCALE_TOLERANCE
-    && height.ratio > 0 && height.ratio <= FONT_SCALE_TOLERANCE;
+  const pass =
+    metrics.length === FONT_SCALE_SAMPLE.length &&
+    advance.ratio > 0 &&
+    advance.ratio <= FONT_SCALE_TOLERANCE &&
+    height.ratio > 0 &&
+    height.ratio <= FONT_SCALE_TOLERANCE;
   return { pass, texts: [...FONT_SCALE_SAMPLE], advance, height };
 }
 
@@ -71,13 +74,15 @@ function summarizeGlyphScale(metrics: GlyphMetric[]): GlyphScaleProbe {
  * 而是把当前运行环境的缺失/宽度差异显式化成可比较的诊断结果。
  * `strictFont` 还会把圈码字阶不一致（常见于逐字 fallback）视为失败。
  */
-export async function runProbe(options: {
-  fontFamily?: string;
-  fontFile?: string;
-  fontSize?: number;
-  renderer?: RendererKind;
-  strictFont?: boolean;
-} = {}): Promise<ProbeReport> {
+export async function runProbe(
+  options: {
+    fontFamily?: string;
+    fontFile?: string;
+    fontSize?: number;
+    renderer?: RendererKind;
+    strictFont?: boolean;
+  } = {}
+): Promise<ProbeReport> {
   const engine = await createBrowserEngine({
     cols: 80,
     rows: 8,
@@ -104,8 +109,10 @@ export async function runProbe(options: {
     const metrics = await engine.glyphMetrics?.(FONT_SCALE_SAMPLE);
     const fontScale = metrics === undefined ? undefined : summarizeGlyphScale(metrics);
     return {
-      ok: glyphs.every((glyph) => glyph.pass) && snapshot.render !== undefined
-        && (!options.strictFont || fontScale?.pass === true),
+      ok:
+        glyphs.every((glyph) => glyph.pass) &&
+        snapshot.render !== undefined &&
+        (!options.strictFont || fontScale?.pass === true),
       version: VERSION,
       render: snapshot.render,
       glyphs,

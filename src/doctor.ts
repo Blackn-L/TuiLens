@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { chromium } from "playwright";
+import { chromium } from "playwright-core";
 import { errorRecord } from "./core/errors.js";
 import { pick } from "./core/i18n.js";
 import { resolveBrowserExecutable } from "./engine/browser-engine.js";
@@ -29,8 +29,7 @@ export interface DoctorReport {
   checks: DoctorCheck[];
 }
 
-function check(code: string, status: DoctorStatus, message: string,
-  details?: Record<string, unknown>): DoctorCheck {
+function check(code: string, status: DoctorStatus, message: string, details?: Record<string, unknown>): DoctorCheck {
   return { code, status, message, ...(details === undefined ? {} : { details }) };
 }
 
@@ -38,28 +37,42 @@ function nodeCheck(): DoctorCheck {
   const major = Number.parseInt(process.versions.node, 10);
   return major >= 22
     ? check("runtime.node", "ok", pick("Node.js meets the minimum version.", "Node.js 版本满足要求。"), {
-      node: process.versions.node,
-    })
-    : check("runtime.node", "error", pick("TuiLens requires Node.js 22 or newer.", "TuiLens 需要 Node.js 22 或更高版本。"), {
-      node: process.versions.node,
-    });
+        node: process.versions.node,
+      })
+    : check(
+        "runtime.node",
+        "error",
+        pick("TuiLens requires Node.js 22 or newer.", "TuiLens 需要 Node.js 22 或更高版本。"),
+        {
+          node: process.versions.node,
+        }
+      );
 }
 
 function platformCheck(): DoctorCheck {
   const supported = process.platform === "win32" || process.platform === "linux";
   if (supported) {
-    return check("runtime.platform", "ok", pick("This platform is supported and covered by CI.", "当前平台受支持，并且有 CI 覆盖。"), {
-      platform: process.platform,
-      arch: process.arch,
-    });
+    return check(
+      "runtime.platform",
+      "ok",
+      pick("This platform is supported and covered by CI.", "当前平台受支持，并且有 CI 覆盖。"),
+      {
+        platform: process.platform,
+        arch: process.arch,
+      }
+    );
   }
-  return check("runtime.platform", process.platform === "darwin" ? "warn" : "error",
+  return check(
+    "runtime.platform",
+    process.platform === "darwin" ? "warn" : "error",
     process.platform === "darwin"
       ? pick("macOS is covered by CI but remains experimental.", "macOS 已有 CI 覆盖，但仍属实验性支持。")
-      : pick("This platform is not currently supported.", "当前平台暂不受支持。"), {
-    platform: process.platform,
-    arch: process.arch,
-  });
+      : pick("This platform is not currently supported.", "当前平台暂不受支持。"),
+    {
+      platform: process.platform,
+      arch: process.arch,
+    }
+  );
 }
 
 async function browserCheck(): Promise<DoctorCheck> {
@@ -67,22 +80,32 @@ async function browserCheck(): Promise<DoctorCheck> {
   if (configured) {
     return existsSync(configured)
       ? check("browser", "ok", pick("The configured browser exists.", "已配置的浏览器文件存在。"), {
-        path: configured,
-        source: "environment",
-      })
-      : check("browser", "error", pick("TUILENS_BROWSER_PATH points to a missing file.", "TUILENS_BROWSER_PATH 指向的文件不存在。"), {
-        path: configured,
-        source: "environment",
-      });
+          path: configured,
+          source: "environment",
+        })
+      : check(
+          "browser",
+          "error",
+          pick("TUILENS_BROWSER_PATH points to a missing file.", "TUILENS_BROWSER_PATH 指向的文件不存在。"),
+          {
+            path: configured,
+            source: "environment",
+          }
+        );
   }
 
   try {
     const system = resolveBrowserExecutable();
     if (system) {
-      return check("browser", "ok", pick("A system Chrome or Edge installation was found.", "已找到系统 Chrome 或 Edge。"), {
-        path: system,
-        source: "system",
-      });
+      return check(
+        "browser",
+        "ok",
+        pick("A system Chrome or Edge installation was found.", "已找到系统 Chrome 或 Edge。"),
+        {
+          path: system,
+          source: "system",
+        }
+      );
     }
   } catch (error) {
     return check("browser", "error", pick("The system browser could not be resolved.", "无法解析系统浏览器。"), {
@@ -93,23 +116,40 @@ async function browserCheck(): Promise<DoctorCheck> {
   try {
     const bundled = chromium.executablePath();
     if (existsSync(bundled)) {
-      return check("browser", "ok", pick("Playwright's Chromium installation was found.", "已找到 Playwright Chromium。"), {
-        path: bundled,
-        source: "playwright",
-      });
+      return check(
+        "browser",
+        "ok",
+        pick("Playwright's Chromium installation was found.", "已找到 Playwright Chromium。"),
+        {
+          path: bundled,
+          source: "playwright",
+        }
+      );
     }
-    return check("browser", "error",
-      pick("No browser was found. Install Chrome/Edge or run npx playwright install chromium.",
-        "未找到浏览器。请安装 Chrome/Edge，或运行 npx playwright install chromium。"), {
+    return check(
+      "browser",
+      "error",
+      pick(
+        "No browser was found. Install Chrome/Edge or run npx playwright-core install chromium.",
+        "未找到浏览器。请安装 Chrome/Edge，或运行 npx playwright-core install chromium。"
+      ),
+      {
         path: bundled,
         source: "playwright",
-      });
+      }
+    );
   } catch (error) {
-    return check("browser", "error",
-      pick("No browser was found. Install Chrome/Edge or run npx playwright install chromium.",
-        "未找到浏览器。请安装 Chrome/Edge，或运行 npx playwright install chromium。"), {
+    return check(
+      "browser",
+      "error",
+      pick(
+        "No browser was found. Install Chrome/Edge or run npx playwright-core install chromium.",
+        "未找到浏览器。请安装 Chrome/Edge，或运行 npx playwright-core install chromium。"
+      ),
+      {
         reason: error instanceof Error ? error.message : String(error),
-      });
+      }
+    );
   }
 }
 
@@ -118,12 +158,18 @@ async function ptyCheck(): Promise<DoctorCheck> {
     // 只验证原生模块能否加载；真实进程生命周期由 npm test 的 PTY 用例覆盖。
     const pty = await import("node-pty");
     if (typeof pty.spawn !== "function") throw new Error("node-pty does not expose spawn()");
-    return check("pty", "ok", pick("node-pty loaded and exposes the PTY spawn API.", "node-pty 已加载，并提供 PTY spawn 接口。"));
+    return check(
+      "pty",
+      "ok",
+      pick("node-pty loaded and exposes the PTY spawn API.", "node-pty 已加载，并提供 PTY spawn 接口。")
+    );
   } catch (error) {
     return check("pty", "error", pick("node-pty could not be loaded.", "node-pty 无法加载。"), {
       reason: error instanceof Error ? error.message : String(error),
-      hint: pick("Run npm ci and install the platform C++ build tools if needed.",
-        "请运行 npm ci；必要时安装平台 C++ 构建工具。"),
+      hint: pick(
+        "Run npm ci and install the platform C++ build tools if needed.",
+        "请运行 npm ci；必要时安装平台 C++ 构建工具。"
+      ),
     });
   }
 }
@@ -141,23 +187,33 @@ async function storageCheck(paths: ReturnType<typeof runtimePaths>): Promise<Doc
     });
   } catch (error) {
     await rm(probe, { force: true }).catch(() => undefined);
-    return check("storage", "error", pick("Runtime or artifact storage is not writable.", "运行目录或证据目录不可写。"), {
-      home: paths.home,
-      artifactDir: paths.artifactDir,
-      reason: error instanceof Error ? error.message : String(error),
-    });
+    return check(
+      "storage",
+      "error",
+      pick("Runtime or artifact storage is not writable.", "运行目录或证据目录不可写。"),
+      {
+        home: paths.home,
+        artifactDir: paths.artifactDir,
+        reason: error instanceof Error ? error.message : String(error),
+      }
+    );
   }
 }
 
 async function daemonCheck(paths: ReturnType<typeof runtimePaths>): Promise<DoctorCheck> {
   if (!existsSync(paths.state)) {
-    return check("daemon", "ok", pick("The daemon is not running; it will start on demand.", "daemon 当前未运行，将在需要时自动启动。"), {
-      running: false,
-      state: paths.state,
-    });
+    return check(
+      "daemon",
+      "ok",
+      pick("The daemon is not running; it will start on demand.", "daemon 当前未运行，将在需要时自动启动。"),
+      {
+        running: false,
+        state: paths.state,
+      }
+    );
   }
   try {
-    const ping = await request("ping", {}, { autoStart: false, timeoutMs: 1500 }) as Record<string, unknown>;
+    const ping = (await request("ping", {}, { autoStart: false, timeoutMs: 1500 })) as Record<string, unknown>;
     return check("daemon", "ok", pick("The daemon is running and responding.", "daemon 正在运行并能正常响应。"), {
       running: true,
       state: paths.state,
@@ -165,13 +221,19 @@ async function daemonCheck(paths: ReturnType<typeof runtimePaths>): Promise<Doct
     });
   } catch (error) {
     const record = errorRecord(error);
-    return check("daemon", "warn",
-      pick("Daemon state exists, but the endpoint is unavailable; the next request will start a new daemon.",
-        "daemon 状态文件存在，但端点不可用；下一次请求会启动新的 daemon。"), {
+    return check(
+      "daemon",
+      "warn",
+      pick(
+        "Daemon state exists, but the endpoint is unavailable; the next request will start a new daemon.",
+        "daemon 状态文件存在，但端点不可用；下一次请求会启动新的 daemon。"
+      ),
+      {
         running: false,
         state: paths.state,
         reason: record.code,
-      });
+      }
+    );
   }
 }
 

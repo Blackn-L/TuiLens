@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { open } from "node:fs/promises";
+import { open, type FileHandle } from "node:fs/promises";
 import { TuiLensError } from "./errors.js";
 
 const MAX_READ_LIMIT = 64 * 1024 * 1024;
@@ -17,7 +17,7 @@ export async function readBoundedFile(path: string, maxBytes: number): Promise<B
     throw new TuiLensError("INVALID_ARGUMENT", "文件读取上限必须是 1～67108864 字节的整数");
   }
   const flags = constants.O_RDONLY | (process.platform === "win32" ? 0 : constants.O_NONBLOCK);
-  let handle;
+  let handle: FileHandle;
   try {
     handle = await open(path, flags);
   } catch (error) {

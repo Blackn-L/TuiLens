@@ -32,7 +32,7 @@ export function escapeXml(value: string): string {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll("\"", "&quot;")
+    .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;");
 }
 
@@ -41,34 +41,39 @@ function seconds(ms: number): string {
 }
 
 export function renderJunit(suites: JunitSuite[]): string {
-  const lines: string[] = ["<?xml version=\"1.0\" encoding=\"UTF-8\"?>"];
+  const lines: string[] = ['<?xml version="1.0" encoding="UTF-8"?>'];
   const totalTests = suites.reduce((sum, suite) => sum + suite.cases.length, 0);
-  const totalFailures = suites.reduce(
-    (sum, suite) => sum + suite.cases.filter((item) => item.failure).length, 0);
-  const totalSkipped = suites.reduce(
-    (sum, suite) => sum + suite.cases.filter((item) => item.skipped).length, 0);
-  const totalTime = suites.reduce(
-    (sum, suite) => sum + suite.cases.reduce((inner, item) => inner + item.timeMs, 0), 0);
-  lines.push(`<testsuites name="tuilens" tests="${totalTests}" failures="${totalFailures}"`
-    + ` skipped="${totalSkipped}" time="${seconds(totalTime)}">`);
+  const totalFailures = suites.reduce((sum, suite) => sum + suite.cases.filter((item) => item.failure).length, 0);
+  const totalSkipped = suites.reduce((sum, suite) => sum + suite.cases.filter((item) => item.skipped).length, 0);
+  const totalTime = suites.reduce((sum, suite) => sum + suite.cases.reduce((inner, item) => inner + item.timeMs, 0), 0);
+  lines.push(
+    `<testsuites name="tuilens" tests="${totalTests}" failures="${totalFailures}"` +
+      ` skipped="${totalSkipped}" time="${seconds(totalTime)}">`
+  );
   for (const suite of suites) {
     const failures = suite.cases.filter((item) => item.failure).length;
     const skipped = suite.cases.filter((item) => item.skipped).length;
     const time = suite.cases.reduce((sum, item) => sum + item.timeMs, 0);
-    lines.push(`  <testsuite name="${escapeXml(suite.name)}" tests="${suite.cases.length}"`
-      + ` failures="${failures}" skipped="${skipped}" time="${seconds(time)}"`
-      + `${suite.error ? ` errors="1"` : ""}>`);
+    lines.push(
+      `  <testsuite name="${escapeXml(suite.name)}" tests="${suite.cases.length}"` +
+        ` failures="${failures}" skipped="${skipped}" time="${seconds(time)}"` +
+        `${suite.error ? ` errors="1"` : ""}>`
+    );
     if (suite.error) {
-      lines.push(`    <error message="${escapeXml(suite.error.message)}"`
-        + `${suite.error.type ? ` type="${escapeXml(suite.error.type)}"` : ""}/>`);
+      lines.push(
+        `    <error message="${escapeXml(suite.error.message)}"` +
+          `${suite.error.type ? ` type="${escapeXml(suite.error.type)}"` : ""}/>`
+      );
     }
     for (const item of suite.cases) {
       const className = item.className ? ` classname="${escapeXml(item.className)}"` : "";
       lines.push(`    <testcase name="${escapeXml(item.name)}"${className} time="${seconds(item.timeMs)}">`);
       if (item.failure) {
-        lines.push(`      <failure message="${escapeXml(item.failure.message)}"`
-          + `${item.failure.type ? ` type="${escapeXml(item.failure.type)}"` : ""}>`
-          + `${escapeXml(item.failure.details ?? "")}</failure>`);
+        lines.push(
+          `      <failure message="${escapeXml(item.failure.message)}"` +
+            `${item.failure.type ? ` type="${escapeXml(item.failure.type)}"` : ""}>` +
+            `${escapeXml(item.failure.details ?? "")}</failure>`
+        );
       }
       if (item.skipped) {
         lines.push(`      <skipped${item.skipped.message ? ` message="${escapeXml(item.skipped.message)}"` : ""}/>`);
@@ -91,7 +96,10 @@ export function renderJunit(suites: JunitSuite[]): string {
 export function failureOf(error: unknown): { message: string; type?: string; details?: string } {
   if (error && typeof error === "object") {
     const value = error as {
-      name?: unknown; code?: unknown; message?: unknown; stack?: unknown;
+      name?: unknown;
+      code?: unknown;
+      message?: unknown;
+      stack?: unknown;
       assertion?: { expected?: unknown; actual?: unknown; artifact?: unknown; screen?: unknown };
     };
     const message = typeof value.message === "string" ? value.message : String(error);

@@ -7,7 +7,9 @@ import { SessionManager } from "../src/session/manager.js";
 import { terminal, TuiLensAssertionError } from "../src/testing/assertions.js";
 import { escapeXml, failureOf, renderJunit } from "../src/testing/junit.js";
 
-const fixture = ["-e", String.raw`
+const fixture = [
+  "-e",
+  String.raw`
 process.stdin.setRawMode(true);
 process.stdout.write("\x1b[2J\x1b[HREADY\r\n");
 process.stdin.on("data", (chunk) => {
@@ -16,7 +18,8 @@ process.stdin.on("data", (chunk) => {
   if (text.includes("Q")) process.exit(0);
 });
 process.stdin.resume();
-`];
+`,
+];
 
 test("断言句柄提供可读期望与实际，并附失败截图", { timeout: 60_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), "tuilens-assert-"));
@@ -44,25 +47,35 @@ test("断言句柄提供可读期望与实际，并附失败截图", { timeout: 
 
     // 否定断言必须等满窗口：刚发出输入时 ERROR 还没渲染，不能立刻判定通过。
     await tui.type("E");
-    await assert.rejects(tui.expectNoText("ERROR_STATE", { timeoutMs: 2000 }),
-      (error: unknown) => error instanceof TuiLensAssertionError && error.code === "EXPECT_NO_TEXT_FAILED");
+    await assert.rejects(
+      tui.expectNoText("ERROR_STATE", { timeoutMs: 2000 }),
+      (error: unknown) => error instanceof TuiLensAssertionError && error.code === "EXPECT_NO_TEXT_FAILED"
+    );
     await tui.key("Q");
-  } finally { await manager.closeAll(); await rm(directory, { recursive: true, force: true, maxRetries: 5 }); }
+  } finally {
+    await manager.closeAll();
+    await rm(directory, { recursive: true, force: true, maxRetries: 5 });
+  }
 });
 
 test("JUnit 输出转义 XML 并去掉非法控制字符", () => {
   assert.equal(escapeXml("a<b>&\"'"), "a&lt;b&gt;&amp;&quot;&apos;");
   // ESC 等控制字符会让解析器拒绝整份报告。
   assert.equal(escapeXml("a\u001b[31mb\u0001"), "a[31mb");
-  const xml = renderJunit([{
-    name: "suite&1",
-    cases: [
-      { name: "passes", timeMs: 12, output: "screenshot: <path>" },
-      { name: "fails", timeMs: 34, failure: { message: "期望 <READY>", type: "TuiLensAssertionError",
-        details: "expected: A\nactual:   B" } },
-      { name: "skips", timeMs: 0, skipped: { message: "not on this platform" } },
-    ],
-  }]);
+  const xml = renderJunit([
+    {
+      name: "suite&1",
+      cases: [
+        { name: "passes", timeMs: 12, output: "screenshot: <path>" },
+        {
+          name: "fails",
+          timeMs: 34,
+          failure: { message: "期望 <READY>", type: "TuiLensAssertionError", details: "expected: A\nactual:   B" },
+        },
+        { name: "skips", timeMs: 0, skipped: { message: "not on this platform" } },
+      ],
+    },
+  ]);
   assert.match(xml, /<testsuites name="tuilens" tests="3" failures="1" skipped="1"/u);
   assert.match(xml, /<testsuite name="suite&amp;1"/u);
   assert.match(xml, /<failure message="期望 &lt;READY&gt;"/u);
@@ -73,7 +86,10 @@ test("JUnit 输出转义 XML 并去掉非法控制字符", () => {
 
 test("失败信息包含期望、实际与截图路径", () => {
   const error = new TuiLensAssertionError("EXPECT_TEXT_FAILED", "未找到", {
-    expected: "READY", actual: "未找到", artifact: "/tmp/a.png", screen: "line1\nline2",
+    expected: "READY",
+    actual: "未找到",
+    artifact: "/tmp/a.png",
+    screen: "line1\nline2",
   });
   const failure = failureOf(error);
   assert.equal(failure.type, "TuiLensAssertionError");

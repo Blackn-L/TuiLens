@@ -16,7 +16,8 @@ function count(png: Buffer, color: [number, number, number]): number {
   const decoded = PNG.sync.read(png);
   let pixels = 0;
   for (let i = 0; i < decoded.data.length; i += 4) {
-    if (decoded.data[i] === color[0] && decoded.data[i + 1] === color[1] && decoded.data[i + 2] === color[2]) pixels += 1;
+    if (decoded.data[i] === color[0] && decoded.data[i + 1] === color[1] && decoded.data[i + 2] === color[2])
+      pixels += 1;
   }
   return pixels;
 }
@@ -28,7 +29,7 @@ function chunk(type: string, bytes: Buffer): Buffer {
   let crc = 0xffffffff;
   for (const byte of result.subarray(4, -4)) {
     crc ^= byte;
-    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
   }
   result.writeUInt32BE((crc ^ 0xffffffff) >>> 0, result.length - 4);
   return result;
@@ -39,20 +40,35 @@ test("SIXEL 只在启用时声明能力，首图与擦除均进入截图", { tim
   const off = await createBrowserEngine({ cols: 20, rows: 8, onData: (data) => responses.push(data) });
   try {
     await off.write(`${ESC}[c${ESC}[?25l` + redSixel);
-    assert.equal(responses.some((data) => data.startsWith(`${ESC}[?`) && data.split(";").includes("4")), false);
+    assert.equal(
+      responses.some((data) => data.startsWith(`${ESC}[?`) && data.split(";").includes("4")),
+      false
+    );
     assert.equal(count((await off.screenshot()).png, [255, 0, 0]), 0);
-  } finally { await off.close(); }
-  const engine = await createBrowserEngine({ cols: 20, rows: 8, images: "sixel", onData: (data) => responses.push(data) });
+  } finally {
+    await off.close();
+  }
+  const engine = await createBrowserEngine({
+    cols: 20,
+    rows: 8,
+    images: "sixel",
+    onData: (data) => responses.push(data),
+  });
   try {
     await engine.write(`${ESC}[c${ESC}[?25l${ESC}[2;3H` + redSixel);
-    assert.ok(responses.some((data) => /^\x1b\[\?[^c]*;4(?:;|c)/.test(data)), "启用 SIXEL 后应声明 DA1 属性 4");
+    assert.ok(
+      responses.some((data) => /^\x1b\[\?[^c]*;4(?:;|c)/.test(data)),
+      "启用 SIXEL 后应声明 DA1 属性 4"
+    );
     const image = await engine.screenshot();
     assert.equal(count(image.png, [255, 0, 0]), 192);
     await mkdir("artifacts/images", { recursive: true });
     await writeFile("artifacts/images/sixel.png", image.png);
     await engine.write(`${ESC}[2J${ESC}[H`);
     assert.equal(count((await engine.screenshot()).png, [255, 0, 0]), 0);
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });
 
 test("WebGL renderer 与 SIXEL 图片层共存", { timeout: 30000 }, async () => {
@@ -62,12 +78,19 @@ test("WebGL renderer 与 SIXEL 图片层共存", { timeout: 30000 }, async () =>
     const image = await engine.screenshot();
     assert.equal(engine.renderer, "webgl");
     assert.equal(count(image.png, [255, 0, 0]), 192);
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });
 
 test("Kitty PNG 内联分块传输、替换和删除不依赖额外观察轮次", { timeout: 30000 }, async () => {
   const responses: string[] = [];
-  const engine = await createBrowserEngine({ cols: 20, rows: 8, images: "all", onData: (data) => responses.push(data) });
+  const engine = await createBrowserEngine({
+    cols: 20,
+    rows: 8,
+    images: "all",
+    onData: (data) => responses.push(data),
+  });
   try {
     await engine.write(`${ESC}[?25l${ESC}[2;3H`);
     const red = bitmap(255, 0, 0);
@@ -85,7 +108,9 @@ test("Kitty PNG 内联分块传输、替换和删除不依赖额外观察轮次"
     assert.ok(responses.includes(apc("i=8;OK")));
     await engine.write(apc("a=q,i=9,f=32,s=4096,v=4096;AAAA"));
     assert.ok(responses.some((response) => response.includes("i=9;E2BIG")));
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });
 
 test("Kitty 虚拟占位符跟随正文覆盖、滚动、resize 和清屏", { timeout: 30000 }, async () => {
@@ -98,7 +123,9 @@ test("Kitty 虚拟占位符跟随正文覆盖、滚动、resize 和清屏", { ti
     await engine.write(sequence.slice(1, -1));
     await engine.write(sequence.slice(-1));
     const p = String.fromCodePoint(0x10eeee);
-    await engine.write(`${ESC}[2;3H${ESC}[38;5;42m${p}\u0305\u0305${p}\u0305\u030d${ESC}[3;3H${p}\u030d\u0305${p}\u030d\u030d${ESC}[0m`);
+    await engine.write(
+      `${ESC}[2;3H${ESC}[38;5;42m${p}\u0305\u0305${p}\u0305\u030d${ESC}[3;3H${p}\u030d\u0305${p}\u030d\u030d${ESC}[0m`
+    );
     const first = await engine.screenshot();
     const firstPixels = count(first.png, [255, 0, 0]);
     assert.ok(firstPixels > 500, "占位符应绘制两个字符行的真实图像像素");
@@ -113,17 +140,23 @@ test("Kitty 虚拟占位符跟随正文覆盖、滚动、resize 和清屏", { ti
     assert.ok(count((await engine.screenshot()).png, [255, 0, 0]) > 0);
     await engine.write(`${ESC}[2J`);
     assert.equal(count((await engine.screenshot()).png, [255, 0, 0]), 0);
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });
 
 test("Kitty 图像数量有上限，拒绝外部介质和不支持的放置", { timeout: 30000 }, async () => {
   const responses: string[] = [];
   const engine = await createBrowserEngine({ cols: 8, rows: 4, images: "all", onData: (data) => responses.push(data) });
   try {
-    await engine.write(Array.from({ length: 129 }, (_, index) =>
-      apc(`a=t,f=24,s=1,v=1,i=${index + 1},q=2;/wAA`)).join(""));
+    await engine.write(
+      Array.from({ length: 129 }, (_, index) => apc(`a=t,f=24,s=1,v=1,i=${index + 1},q=2;/wAA`)).join("")
+    );
     await engine.write(apc("a=p,i=1,C=1"));
-    assert.ok(responses.some((data) => data.includes("i=1;ENOENT")), "最旧图像应已逐出缓存");
+    assert.ok(
+      responses.some((data) => data.includes("i=1;ENOENT")),
+      "最旧图像应已逐出缓存"
+    );
     await engine.write(apc("a=q,i=999,t=f,f=100;L2ZpbGU="));
     assert.ok(responses.some((data) => data.includes("i=999;ENOTSUP:transmission medium")));
     await engine.write(apc("a=p,i=129,U=1,c=1,r=1,p=3"));
@@ -131,12 +164,19 @@ test("Kitty 图像数量有上限，拒绝外部介质和不支持的放置", { 
     await engine.write(apc("a=d,d=A"));
     await engine.write(apc("a=p,i=129,C=1"));
     assert.ok(responses.some((data) => data.includes("i=129;ENOENT")));
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });
 
 test("Kitty 放置面积预算包含视口外格子，删除释放预算", { timeout: 30000 }, async () => {
   const responses: string[] = [];
-  const engine = await createBrowserEngine({ cols: 20, rows: 8, images: "all", onData: (data) => responses.push(data) });
+  const engine = await createBrowserEngine({
+    cols: 20,
+    rows: 8,
+    images: "all",
+    onData: (data) => responses.push(data),
+  });
   try {
     await engine.write(apc("a=t,f=24,s=1,v=1,i=41,q=2;/wAA"));
     await engine.write(apc("a=p,i=41,p=1,c=500,r=250,C=1"));
@@ -150,7 +190,9 @@ test("Kitty 放置面积预算包含视口外格子，删除释放预算", { tim
     await engine.write(apc("a=d,d=i,i=41,p=1"));
     await engine.write(apc("a=p,i=41,p=3,c=1,r=1,C=1"));
     assert.equal(responses.at(-1), apc("i=41,p=3;OK"));
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });
 
 test("Kitty 普通放置的行擦除只移除水平交集", { timeout: 30000 }, async () => {
@@ -168,7 +210,9 @@ test("Kitty 普通放置的行擦除只移除水平交集", { timeout: 30000 }, 
     await engine.write(`${ESC}[3;1H${ESC}[2K`);
     const bottomErased = count((await engine.screenshot()).png, [255, 0, 0]);
     assert.ok(bottomErased > 0 && bottomErased < partial, "整行擦除不影响图像的另一行");
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });
 
 test("Kitty PNG 容器检查拒绝动画、坏 CRC 与尾随数据", { timeout: 30000 }, async () => {
@@ -187,7 +231,9 @@ test("Kitty PNG 容器检查拒绝动画、坏 CRC 与尾随数据", { timeout: 
     assert.ok(responses.at(-1)?.includes("EINVAL:PNG CRC"));
     await engine.write(apc(`a=q,i=23,f=100;${Buffer.concat([raw, Buffer.from("trailing")]).toString("base64")}`));
     assert.ok(responses.at(-1)?.includes("EINVAL:PNG end"));
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });
 
 test("字符格截图区域按真实像素裁剪并拒绝越界", { timeout: 30000 }, async () => {
@@ -200,5 +246,7 @@ test("字符格截图区域按真实像素裁剪并拒绝越界", { timeout: 300
     assert.ok(Math.abs(crop.height - full.height / 4) < 2);
     assert.equal(count(crop.png, [0, 255, 0]), crop.width * crop.height);
     await assert.rejects(engine.screenshot({ x: 19, y: 0, width: 2, height: 1 }), { code: "INVALID_REGION" });
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });

@@ -8,14 +8,26 @@ import { findText, regionFingerprint } from "../core/locator.js";
 import { clickTarget } from "../core/click-target.js";
 import { resolveExecutable } from "../core/executable.js";
 import type {
-  ClickTextOptions, EngineFactory, InputAction, InputAndWaitResult, InputGuard, InputWaitOptions, LaunchOptions,
-  ManagerOptions, MatchOptions, Observation, ObserveOptions, Region, SessionInfo, TextMatch, WaitOptions, WaitResult,
+  ClickTextOptions,
+  EngineFactory,
+  InputAction,
+  InputAndWaitResult,
+  InputGuard,
+  InputWaitOptions,
+  LaunchOptions,
+  ManagerOptions,
+  MatchOptions,
+  Observation,
+  ObserveOptions,
+  Region,
+  SessionInfo,
+  TextMatch,
+  WaitOptions,
+  WaitResult,
 } from "../core/types.js";
 import { clickTextOptions, integer, launchOptions, waitOptions } from "../core/validation.js";
 import { createBrowserEngine, createBrowserEngineFactory } from "../engine/browser-engine.js";
-import {
-  ManagedSession, type OperationControl, type SessionMetrics,
-} from "./session.js";
+import { ManagedSession, type OperationControl, type SessionMetrics } from "./session.js";
 import { directPty, installWindowsConptyCleanup, type PtyHandle } from "./pty-runtime.js";
 import { spawnIsolatedPty } from "./pty-worker-client.js";
 import { RecordingWriter } from "../recording/writer.js";
@@ -27,11 +39,29 @@ import { applyTerminalProfileOverrides, resolveTerminalProfile } from "../profil
 
 const MIN_SCREENSHOT_TIMEOUT_MS = 5_000;
 const HOST_TERMINAL_ENV = new Set([
-  "TERM", "COLORTERM", "FORCE_COLOR", "NO_COLOR", "TERM_PROGRAM", "TERM_PROGRAM_VERSION",
-  "TERM_SESSION_ID", "KITTY_WINDOW_ID", "KITTY_PID", "KITTY_LISTEN_ON",
-  "WEZTERM_PANE", "WEZTERM_EXECUTABLE", "ITERM_SESSION_ID", "LC_TERMINAL", "LC_TERMINAL_VERSION",
-  "WT_SESSION", "WT_PROFILE_ID", "ALACRITTY_WINDOW_ID", "ALACRITTY_SOCKET",
-  "VSCODE_IPC_HOOK_CLI", "TMUX", "TMUX_PANE", "VTE_VERSION",
+  "TERM",
+  "COLORTERM",
+  "FORCE_COLOR",
+  "NO_COLOR",
+  "TERM_PROGRAM",
+  "TERM_PROGRAM_VERSION",
+  "TERM_SESSION_ID",
+  "KITTY_WINDOW_ID",
+  "KITTY_PID",
+  "KITTY_LISTEN_ON",
+  "WEZTERM_PANE",
+  "WEZTERM_EXECUTABLE",
+  "ITERM_SESSION_ID",
+  "LC_TERMINAL",
+  "LC_TERMINAL_VERSION",
+  "WT_SESSION",
+  "WT_PROFILE_ID",
+  "ALACRITTY_WINDOW_ID",
+  "ALACRITTY_SOCKET",
+  "VSCODE_IPC_HOOK_CLI",
+  "TMUX",
+  "TMUX_PANE",
+  "VTE_VERSION",
 ]);
 
 function removeEnv(env: Record<string, string>, key: string): void {
@@ -85,11 +115,17 @@ export class SessionManager {
   async launch(options: LaunchOptions): Promise<SessionInfo> {
     launchOptions(options);
     if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
-    const { pending } = await this.admitLaunch(options);
+    const release = await this.reserveSlot(`最多同时保留 ${this.maxSessions} 个会话，请先关闭不再使用的会话`);
     try {
-      return await pending;
+      const pending = this.launchProcess(options);
+      this.pendingLaunches.add(pending);
+      try {
+        return await pending;
+      } finally {
+        this.pendingLaunches.delete(pending);
+      }
     } finally {
-      this.pendingLaunches.delete(pending);
+      release();
     }
   }
 
@@ -97,26 +133,33 @@ export class SessionManager {
    * 启动槽位先按顺序分配，再创建引擎。满载时优先回收最旧的已退出会话；
    * 已退出会话在真正需要槽位前仍保留最后画面，运行中的会话不会被自动关闭。
    */
-  private async admitLaunch(options: LaunchOptions): Promise<{ pending: Promise<SessionInfo> }> {
+  private async reserveSlot(limitMessage: string): Promise<() => void> {
     const prior = this.launchAdmission;
-    let release: () => void = () => {};
-    const current = new Promise<void>((resolve) => { release = resolve; });
+    let releaseAdmission: () => void = () => {};
+    const current = new Promise<void>((resolve) => {
+      releaseAdmission = resolve;
+    });
     this.launchAdmission = prior.then(() => current);
     await prior;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      releaseAdmission();
+    };
     try {
       if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
       await this.reclaimExitedSessions();
       if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
       if (this.slotsUsed() >= this.maxSessions) {
-        throw new TuiLensError("SESSION_LIMIT", `最多同时保留 ${this.maxSessions} 个会话，请先关闭不再使用的会话`, {
+        throw new TuiLensError("SESSION_LIMIT", limitMessage, {
           maxSessions: this.maxSessions,
         });
       }
-      const pending = this.launchProcess(options);
-      this.pendingLaunches.add(pending);
-      return { pending };
-    } finally {
+      return release;
+    } catch (error) {
       release();
+      throw error;
     }
   }
 
@@ -144,21 +187,21 @@ export class SessionManager {
     }
     const cols = options.cols ?? 160;
     const rows = options.rows ?? 50;
-    const profile = applyTerminalProfileOverrides(
-      await resolveTerminalProfile(options.terminalProfile, { cwd }),
-      {
-        ...(options.images === undefined ? {} : { images: options.images }),
-        ...(options.graphics === undefined ? {} : { graphics: options.graphics }),
-        ...(options.colorMode === undefined ? {} : { colorMode: options.colorMode }),
-      },
-    );
+    const profile = applyTerminalProfileOverrides(await resolveTerminalProfile(options.terminalProfile, { cwd }), {
+      ...(options.images === undefined ? {} : { images: options.images }),
+      ...(options.graphics === undefined ? {} : { graphics: options.graphics }),
+      ...(options.colorMode === undefined ? {} : { colorMode: options.colorMode }),
+    });
     let pty: PtyHandle | undefined;
     let session: ManagedSession | undefined;
     let recorder: RecordingWriter | undefined;
     const engine = await this.engineFactory({
-      cols, rows,
+      cols,
+      rows,
       profile,
-      onData: (data) => { session?.protocolResponse(data); },
+      onData: (data) => {
+        session?.protocolResponse(data);
+      },
       ...(this.options.executablePath ? { executablePath: this.options.executablePath } : {}),
       ...(this.options.fontFamily ? { fontFamily: this.options.fontFamily } : {}),
       ...(this.options.fontFile ? { fontFile: this.options.fontFile } : {}),
@@ -169,15 +212,25 @@ export class SessionManager {
       const sessionId = randomUUID();
       if (options.recording) {
         const { env: _env, source: _source, ...renderProfile } = profile;
-        recorder = await RecordingWriter.create(resolve(this.options.artifactDir), sessionId,
-          { type: "header", version: 1, cols, rows, images: "off",
-            ...(engine.renderer ? { renderer: engine.renderer } : {}), profile: renderProfile },
-          options.recording.maxBytes);
+        recorder = await RecordingWriter.create(
+          resolve(this.options.artifactDir),
+          sessionId,
+          {
+            type: "header",
+            version: 1,
+            cols,
+            rows,
+            images: "off",
+            ...(engine.renderer ? { renderer: engine.renderer } : {}),
+            profile: renderProfile,
+          },
+          options.recording.maxBytes
+        );
       }
       if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "管理器在启动期间已关闭");
-      const env = Object.fromEntries(Object.entries(process.env).filter(
-        (entry): entry is [string, string] => entry[1] !== undefined,
-      ));
+      const env = Object.fromEntries(
+        Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
+      );
       // 模拟终端不能继承宿主终端身份，否则应用会看到两套互相矛盾的 TERM 声明。
       for (const key of Object.keys(env)) {
         if (HOST_TERMINAL_ENV.has(key.toUpperCase())) delete env[key];
@@ -197,45 +250,86 @@ export class SessionManager {
         setEnv(env, "COLORTERM", "truecolor");
         setEnv(env, "FORCE_COLOR", "3");
       }
-      const requested = process.platform === "win32" && ["node", "nodejs", "node.exe"].includes(options.command.toLowerCase())
-        ? process.execPath : options.command;
+      const requested =
+        process.platform === "win32" && ["node", "nodejs", "node.exe"].includes(options.command.toLowerCase())
+          ? process.execPath
+          : options.command;
       const resolved = await resolveExecutable(requested, { cwd, env });
       const name = getEnv(env, "TERM") ?? "xterm-256color";
-      const useConptyDll = process.platform === "win32"
-        && (options.terminalProfile !== undefined || options.graphics !== undefined
-          || (options.images !== undefined && options.images !== "off"));
+      const useConptyDll =
+        process.platform === "win32" &&
+        (options.terminalProfile !== undefined ||
+          options.graphics !== undefined ||
+          (options.images !== undefined && options.images !== "off"));
       if (this.ptyWorker) {
         pty = await spawnIsolatedPty({
-          command: resolved.file, args: options.args ?? [], name, cols, rows, cwd, env,
+          command: resolved.file,
+          args: options.args ?? [],
+          name,
+          cols,
+          rows,
+          cwd,
+          env,
           ...(useConptyDll ? { useConptyDll: true } : {}),
         });
       } else {
         const spawned = nodePty.spawn(resolved.file, options.args ?? [], {
-          name, cols, rows, cwd, env,
+          name,
+          cols,
+          rows,
+          cwd,
+          env,
           ...(useConptyDll ? { useConptyDll: true } : {}),
         });
         installWindowsConptyCleanup(spawned);
         pty = directPty(spawned);
       }
       const info: SessionInfo = {
-        id: sessionId, pid: pty.pid, cols, rows, status: "running",
-        exitCode: null, createdAt: new Date().toISOString(),
+        id: sessionId,
+        pid: pty.pid,
+        cols,
+        rows,
+        status: "running",
+        exitCode: null,
+        createdAt: new Date().toISOString(),
         terminalProfile: profile.name,
         ...(engine.renderer ? { renderer: engine.renderer } : {}),
         ...(recorder ? { recordingPath: recorder.path } : {}),
         ...(resolved.resolved ? { resolvedCommand: resolved.resolved } : {}),
       };
       session = new ManagedSession(
-        info, engine, pty, resolve(this.options.artifactDir), recorder, options.protocolReplies, profile,
+        info,
+        engine,
+        pty,
+        resolve(this.options.artifactDir),
+        recorder,
+        options.protocolReplies,
+        profile
       );
       this.sessions.set(info.id, session);
       return session.info();
     } catch (error) {
       const cleanupErrors: unknown[] = [];
-      try { pty?.kill(); } catch (cleanupError) { cleanupErrors.push(cleanupError); }
-      try { pty?.dispose?.(); } catch (cleanupError) { cleanupErrors.push(cleanupError); }
-      try { await engine.close(); } catch (cleanupError) { cleanupErrors.push(cleanupError); }
-      try { await recorder?.close(); } catch (cleanupError) { cleanupErrors.push(cleanupError); }
+      try {
+        pty?.kill();
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+      try {
+        pty?.dispose?.();
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+      try {
+        await engine.close();
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+      try {
+        await recorder?.close();
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
       if (cleanupErrors.length) {
         this.launchCleanupErrors.push(...cleanupErrors);
         throw new AggregateError([error, ...cleanupErrors], "启动失败且部分资源清理失败");
@@ -279,31 +373,50 @@ export class SessionManager {
 
   async replay(path: string, options: ReplayOptions = {}) {
     if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
-    if (this.slotsUsed() >= this.maxSessions) {
-      throw new TuiLensError("SESSION_LIMIT", `会话和回放任务总数不能超过 ${this.maxSessions}`, {
-        maxSessions: this.maxSessions,
-      });
+    const release = await this.reserveSlot(`会话和回放任务总数不能超过 ${this.maxSessions}`);
+    try {
+      const controller = new AbortController();
+      const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+      // 回放与实时会话共享同一浏览器宿主，避免额外进程干扰性能测量。
+      const task = replayRecording(
+        path,
+        { ...this.options, engineFactory: this.engineFactory },
+        { ...options, signal }
+      );
+      this.offline.set(task, controller);
+      release();
+      try {
+        return await task;
+      } finally {
+        this.offline.delete(task);
+      }
+    } finally {
+      release();
     }
-    const controller = new AbortController();
-    const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
-    // 回放与实时会话共享同一浏览器宿主，避免额外进程干扰性能测量。
-    const task = replayRecording(path, { ...this.options, engineFactory: this.engineFactory }, { ...options, signal });
-    this.offline.set(task, controller);
-    try { return await task; } finally { this.offline.delete(task); }
   }
-  scenario(specification: unknown, signal?: AbortSignal) { return runScenario(this, specification, this.options.artifactDir, signal); }
+  scenario(specification: unknown, signal?: AbortSignal) {
+    return runScenario(this, specification, this.options.artifactDir, signal);
+  }
   perf(options: Omit<PerfRunOptions, "directory"> & { directory?: string }) {
     return runPerf(this, { ...options, directory: options.directory ?? this.options.artifactDir });
   }
   async compare(id: string, options: VisualOptions, control?: OperationControl) {
     // 视觉比较只需要 PNG；不为一次图像比对传输整屏字符格。
-    const observation = await this.observe(id, {
-      cells: false,
-      ...(options.region ? { region: options.region } : {}),
-      ...(options.cursor ? { cursor: options.cursor } : {}),
-    }, control);
-    return compareArtifact(observation.screenshot!.path, options, this.options.artifactDir,
-      observation.session.renderer);
+    const observation = await this.observe(
+      id,
+      {
+        cells: false,
+        ...(options.region ? { region: options.region } : {}),
+        ...(options.cursor ? { cursor: options.cursor } : {}),
+      },
+      control
+    );
+    return compareArtifact(
+      observation.screenshot!.path,
+      options,
+      this.options.artifactDir,
+      observation.session.renderer
+    );
   }
 
   observe(id: string, options?: ObserveOptions, control?: OperationControl): Promise<Observation> {
@@ -324,7 +437,7 @@ export class SessionManager {
     guard?: InputGuard,
     options: InputWaitOptions = {},
     control?: OperationControl,
-    screenshot = false,
+    screenshot = false
   ): Promise<InputAndWaitResult> {
     const session = this.session(id);
     if (options.timeoutMs !== undefined) integer(options.timeoutMs, "wait.timeoutMs", 1, 300_000);
@@ -339,17 +452,24 @@ export class SessionManager {
     const timeout = options.timeoutMs ?? 10_000;
     const remaining = () => Math.max(1, timeout - (performance.now() - started));
     try {
-      const waited = await this.wait(id, {
-        conditions: options.conditions ?? [],
-        timeoutMs: remaining(),
-        afterFrameId: accepted.frameId,
-        ...(control?.signal ? { signal: control.signal } : {}),
-      }, true);
-      const observation = screenshot
-        ? await session.observe({ screenshot: true, cells: false }, {
-          timeoutMs: Math.max(MIN_SCREENSHOT_TIMEOUT_MS, remaining()),
+      const waited = await this.wait(
+        id,
+        {
+          conditions: options.conditions ?? [],
+          timeoutMs: remaining(),
+          afterFrameId: accepted.frameId,
           ...(control?.signal ? { signal: control.signal } : {}),
-        })
+        },
+        true
+      );
+      const observation = screenshot
+        ? await session.observe(
+            { screenshot: true, cells: false },
+            {
+              timeoutMs: Math.max(MIN_SCREENSHOT_TIMEOUT_MS, remaining()),
+              ...(control?.signal ? { signal: control.signal } : {}),
+            }
+          )
         : waited.observation;
       return {
         session: observation.session,
@@ -360,10 +480,14 @@ export class SessionManager {
       };
     } catch (error) {
       if (error instanceof TuiLensError) {
-        const details = error.details && typeof error.details === "object" && !Array.isArray(error.details)
-          ? error.details as Record<string, unknown> : {};
+        const details =
+          error.details && typeof error.details === "object" && !Array.isArray(error.details)
+            ? (error.details as Record<string, unknown>)
+            : {};
         throw new TuiLensError(error.code, error.message, {
-          ...details, accepted: true, inputFrameId: accepted.frameId,
+          ...details,
+          accepted: true,
+          inputFrameId: accepted.frameId,
         });
       }
       throw error;
@@ -374,31 +498,65 @@ export class SessionManager {
     return this.session(id).resize(cols, rows, control);
   }
 
-  async find(id: string, text: string, region?: Region, control?: OperationControl, options?: MatchOptions): Promise<TextMatch[]> {
+  async find(
+    id: string,
+    text: string,
+    region?: Region,
+    control?: OperationControl,
+    options?: MatchOptions
+  ): Promise<TextMatch[]> {
     const observation = await this.observe(id, { screenshot: false, cells: true }, control);
     return findText(observation.snapshot, text, region, options).map((match) => ({
-      ...match, frameId: observation.snapshot.frameId,
+      ...match,
+      frameId: observation.snapshot.frameId,
       fingerprint: regionFingerprint(observation.snapshot, match.region),
     }));
   }
 
   /** 原子点击使用已观察目标区域的指纹，动画改变其他区域不使它失效。 */
-  async clickText(id: string, text: string, region?: Region, options: ClickTextOptions = {}, control?: OperationControl): Promise<SessionInfo> {
+  async clickText(
+    id: string,
+    text: string,
+    region?: Region,
+    options: ClickTextOptions = {},
+    control?: OperationControl
+  ): Promise<SessionInfo> {
     clickTextOptions(options);
-    const observation = await this.session(id).observe({ screenshot: false }, control,
-      { allowPendingFrame: options.allowPendingFrame ?? false });
-    const { allowPendingFrame, hitbox: _hitbox, point: _point, offset: _offset, button, modifiers, ...matching } = options;
-    const matches = findText(observation.snapshot, text, region,
-      matching.nth === undefined ? { selection: "unique", ...matching } : matching);
+    const observation = await this.session(id).observe({ screenshot: false }, control, {
+      allowPendingFrame: options.allowPendingFrame ?? false,
+    });
+    const {
+      allowPendingFrame,
+      hitbox: _hitbox,
+      point: _point,
+      offset: _offset,
+      button,
+      modifiers,
+      ...matching
+    } = options;
+    const matches = findText(
+      observation.snapshot,
+      text,
+      region,
+      matching.nth === undefined ? { selection: "unique", ...matching } : matching
+    );
     if (matches.length !== 1) throw new TuiLensError("AMBIGUOUS_MATCH", "点击需要唯一匹配，或显式指定 nth");
     const match = matches[0]!;
     const target = clickTarget(match.region, observation.snapshot.cols, observation.snapshot.rows, options);
-    return this.session(id).inputWithFrameOptions({
-      type: "click", x: target.point.x, y: target.point.y,
-      ...(button === undefined ? {} : { button }),
-      ...(modifiers === undefined ? {} : { modifiers }),
-    }, { region: { bounds: target.hitbox, fingerprint: regionFingerprint(observation.snapshot, target.hitbox) } }, control,
-    { allowPendingFrame: allowPendingFrame ?? false }).then((result) => result.session);
+    return this.session(id)
+      .inputWithFrameOptions(
+        {
+          type: "click",
+          x: target.point.x,
+          y: target.point.y,
+          ...(button === undefined ? {} : { button }),
+          ...(modifiers === undefined ? {} : { modifiers }),
+        },
+        { region: { bounds: target.hitbox, fingerprint: regionFingerprint(observation.snapshot, target.hitbox) } },
+        control,
+        { allowPendingFrame: allowPendingFrame ?? false }
+      )
+      .then((result) => result.session);
   }
 
   async wait(id: string, options: WaitOptions, internal = false): Promise<WaitResult> {
@@ -408,8 +566,7 @@ export class SessionManager {
     const timeout = options.timeoutMs ?? 10_000;
     const stable = new Map<number, { fingerprint: string; since: number }>();
     // 文本与稳定条件需要字符网格；尺寸、光标和退出条件只看轻量状态。
-    const needsCells = options.conditions.some(
-      (condition) => condition.kind === "text" || condition.kind === "stable");
+    const needsCells = options.conditions.some((condition) => condition.kind === "text" || condition.kind === "stable");
     const remainingControl = () => ({
       timeoutMs: Math.max(1, timeout - (performance.now() - started)),
       ...(options.signal ? { signal: options.signal } : {}),
@@ -424,7 +581,11 @@ export class SessionManager {
         }
         return { observation, elapsedMs: performance.now() - started };
       } catch (error) {
-        if (!(error instanceof TuiLensError) || !["WAIT_TIMEOUT", "OPERATION_TIMEOUT", "FRAME_PENDING"].includes(error.code)) throw error;
+        if (
+          !(error instanceof TuiLensError) ||
+          !["WAIT_TIMEOUT", "OPERATION_TIMEOUT", "FRAME_PENDING"].includes(error.code)
+        )
+          throw error;
         return this.timeoutEvidence(session, timeout, options.signal);
       }
     }
@@ -432,24 +593,27 @@ export class SessionManager {
     // 固定 50 ms 间隔会成为等待精度和性能测量的主要误差来源。
     // 条件迟迟不成立时逐步放宽，避免长时间未命中时反复整屏读取。
     let pollDelay = 0;
-    while (performance.now() - started < timeout) {
+    let firstPoll = true;
+    while (true) {
       if (options.signal?.aborted) throw new TuiLensError("ABORTED", "等待已取消");
-      if (pollDelay > 0) {
+      const remaining = timeout - (performance.now() - started);
+      if (remaining <= 0) break;
+      if (!firstPoll && pollDelay > 0) {
         try {
-          await sleep(pollDelay, undefined, options.signal ? { signal: options.signal } : {});
+          // 最后一次等待按剩余时间截断，截断后仍执行一次检查。
+          await sleep(Math.min(pollDelay, remaining), undefined, options.signal ? { signal: options.signal } : {});
         } catch {
           throw new TuiLensError("ABORTED", "等待已取消");
         }
-        pollDelay = Math.min(50, Math.max(pollDelay * 2, 2));
       }
+      firstPoll = false;
       const only = options.conditions.length === 1 ? options.conditions[0] : undefined;
       if (only?.kind === "text") {
         try {
           const probe = await session.probeText(only.text, only.region, only.style, remainingControl());
           if (probe) {
-            const satisfied = only.count !== undefined
-              ? probe.count === only.count
-              : only.absent ? probe.count === 0 : probe.count > 0;
+            const satisfied =
+              only.count !== undefined ? probe.count === only.count : only.absent ? probe.count === 0 : probe.count > 0;
             const fresh = options.afterFrameId === undefined || probe.frameId > options.afterFrameId;
             if (satisfied && fresh) {
               const observation = await session.observe({ screenshot: false, cells: false }, remainingControl());
@@ -459,7 +623,6 @@ export class SessionManager {
             }
             // 条件未满足或还没有新帧：继续退避，不传输整屏字符格。
             pollDelay = Math.min(50, Math.max(2, pollDelay * 2));
-            if (performance.now() - started + pollDelay >= timeout) break;
             continue;
           }
           // 兼容没有 probeText 的自定义引擎：仅对最简单的全文条件保留轻量查询。
@@ -467,14 +630,13 @@ export class SessionManager {
             const found = await session.hasText(only.text, remainingControl());
             if (found !== undefined && (only.absent ? found : !found)) {
               pollDelay = Math.min(50, Math.max(2, pollDelay * 2));
-              if (performance.now() - started + pollDelay >= timeout) break;
               continue;
             }
           }
         } catch (error) {
           if (options.signal?.aborted) throw new TuiLensError("ABORTED", "等待已取消");
           if (error instanceof TuiLensError && error.code === "FRAME_PENDING") {
-            await sleep(8);
+            pollDelay = 8;
             continue;
           }
           if (error instanceof TuiLensError && error.code === "OPERATION_TIMEOUT") break;
@@ -486,15 +648,24 @@ export class SessionManager {
         // 只等待尺寸、光标或退出时不需要整屏字符网格。
         observation = await session.observe({ screenshot: false, cells: needsCells }, remainingControl());
       } catch (error) {
-        if (error instanceof TuiLensError && ["OPERATION_TIMEOUT", "FRAME_PENDING"].includes(error.code)) break;
+        if (options.signal?.aborted) throw new TuiLensError("ABORTED", "等待已取消");
+        if (error instanceof TuiLensError && error.code === "FRAME_PENDING") {
+          pollDelay = 8;
+          continue;
+        }
+        if (error instanceof TuiLensError && error.code === "OPERATION_TIMEOUT") break;
         throw error;
       }
       const now = performance.now();
       const matches = options.conditions.map((condition, index) => {
         switch (condition.kind) {
           case "text": {
-            const count = findText(observation.snapshot, condition.text, condition.region,
-              condition.style ? { style: condition.style } : undefined).length;
+            const count = findText(
+              observation.snapshot,
+              condition.text,
+              condition.region,
+              condition.style ? { style: condition.style } : undefined
+            ).length;
             if (condition.count !== undefined) return count === condition.count;
             return condition.absent ? count === 0 : count > 0;
           }
@@ -502,11 +673,13 @@ export class SessionManager {
             return observation.snapshot.cols === condition.cols && observation.snapshot.rows === condition.rows;
           case "cursor": {
             const cursor = observation.snapshot.cursor;
-            return (condition.x === undefined || cursor.x === condition.x)
-              && (condition.y === undefined || cursor.y === condition.y)
-              && (condition.visible === undefined || cursor.visible === condition.visible)
-              && (condition.style === undefined || cursor.style === condition.style)
-              && (condition.blink === undefined || cursor.blink === condition.blink);
+            return (
+              (condition.x === undefined || cursor.x === condition.x) &&
+              (condition.y === undefined || cursor.y === condition.y) &&
+              (condition.visible === undefined || cursor.visible === condition.visible) &&
+              (condition.style === undefined || cursor.style === condition.style) &&
+              (condition.blink === undefined || cursor.blink === condition.blink)
+            );
           }
           case "exited":
             return observation.session.status === "exited";
@@ -520,14 +693,17 @@ export class SessionManager {
             return now - previous.since >= (condition.durationMs ?? 250);
           }
         }
+        return false;
       });
-      if (matches.every(Boolean) && (options.afterFrameId === undefined || observation.snapshot.frameId > options.afterFrameId)) {
+      if (
+        matches.every(Boolean) &&
+        (options.afterFrameId === undefined || observation.snapshot.frameId > options.afterFrameId)
+      ) {
         return { observation, elapsedMs: now - started };
       }
       // 未命中时从 2 ms 起步指数退避到 50 ms：短等待保持毫秒级精度，
-      // 长等待也不会退化成高频整屏读取。
+      // 长等待也不会退化成高频整屏读取；每轮只在此更新一次退避值。
       pollDelay = Math.min(50, Math.max(2, pollDelay * 2));
-      if (performance.now() - started + pollDelay >= timeout) break;
     }
     return this.timeoutEvidence(session, timeout, options.signal);
   }
@@ -538,15 +714,22 @@ export class SessionManager {
     let artifact: string | undefined;
     let artifactError: string | undefined;
     try {
-      artifact = (await session.observe({ cells: false }, {
-        timeoutMs: 1000, ...(signal ? { signal } : {}),
-      })).screenshot?.path;
+      artifact = (
+        await session.observe(
+          { cells: false },
+          {
+            timeoutMs: MIN_SCREENSHOT_TIMEOUT_MS,
+            ...(signal ? { signal } : {}),
+          }
+        )
+      ).screenshot?.path;
     } catch (error) {
       if (signal?.aborted) throw new TuiLensError("ABORTED", "等待已取消");
       artifactError = error instanceof Error ? error.message : String(error);
     }
     throw new TuiLensError("WAIT_TIMEOUT", "等待条件未在期限内满足", {
-      timeoutMs: timeout, ...(artifact ? { artifact } : {}),
+      timeoutMs: timeout,
+      ...(artifact ? { artifact } : {}),
       ...(artifactError ? { artifactError } : {}),
     });
   }
@@ -573,12 +756,16 @@ export class SessionManager {
     // 启动中的引擎也属于本管理器；closeAll 不能在它们完成清理前返回。
     await Promise.allSettled([...this.pendingLaunches]);
     const entries = [...this.sessions.entries()];
-    const results = await Promise.allSettled(entries.map(async ([id, session]) => {
-      await session.close();
-      this.sessions.delete(id);
-    }));
+    const results = await Promise.allSettled(
+      entries.map(async ([id, session]) => {
+        await session.close();
+        this.sessions.delete(id);
+      })
+    );
     // 会话全部关闭后再释放共享浏览器；顺序反过来会让仍在关闭的页面失去宿主。
-    try { await this.shutdownEngine?.(); } catch (error) {
+    try {
+      await this.shutdownEngine?.();
+    } catch (error) {
       this.launchCleanupErrors.push(error);
     }
     const failed = results.find((result) => result.status === "rejected");

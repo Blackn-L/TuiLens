@@ -12,8 +12,14 @@ function png(width: number, height: number, pixels: number[][]): Buffer {
 }
 
 test("像素回归返回精确差异数量、比例和可检查的差异图", () => {
-  const baseline = png(2, 2, [[10, 20, 30, 255], [255, 255, 255, 255]]);
-  const actual = png(2, 2, [[10, 20, 31, 255], [255, 255, 255, 255]]);
+  const baseline = png(2, 2, [
+    [10, 20, 30, 255],
+    [255, 255, 255, 255],
+  ]);
+  const actual = png(2, 2, [
+    [10, 20, 31, 255],
+    [255, 255, 255, 255],
+  ]);
   const result = compareImages(actual, baseline);
   assert.equal(result.pass, false);
   assert.equal(result.differentPixels, 1);
@@ -32,9 +38,14 @@ test("像素回归返回精确差异数量、比例和可检查的差异图", ()
 test("遮罩只排除指定像素，重复遮罩不重复扣减分母", () => {
   const baseline = png(3, 2, []);
   const actual = png(3, 2, [
-    [255, 0, 0, 255], [255, 0, 0, 255], [255, 0, 0, 255],
+    [255, 0, 0, 255],
+    [255, 0, 0, 255],
+    [255, 0, 0, 255],
   ]);
-  const masks = [{ x: 0, y: 0, width: 2, height: 1 }, { x: 0, y: 0, width: 1, height: 1 }];
+  const masks = [
+    { x: 0, y: 0, width: 2, height: 1 },
+    { x: 0, y: 0, width: 1, height: 1 },
+  ];
   const result = compareImages(actual, baseline, { masks });
   assert.equal(result.totalPixels, 4);
   assert.equal(result.differentPixels, 1);
@@ -42,12 +53,19 @@ test("遮罩只排除指定像素，重复遮罩不重复扣减分母", () => {
   const diff = PNG.sync.read(result.diffPng);
   assert.deepEqual([...diff.data.subarray(0, 4)], [66, 133, 190, 255]);
   assert.deepEqual([...diff.data.subarray(8, 12)], [255, 32, 64, 255]);
-  assert.equal(compareImages(actual, baseline, {
-    masks: [{ x: 0, y: 0, width: 3, height: 1 }],
-  }).pass, true);
-  assert.throws(() => compareImages(actual, baseline, {
-    masks: [{ x: 0, y: 0, width: 3, height: 2 }],
-  }), { code: "EMPTY_COMPARISON" });
+  assert.equal(
+    compareImages(actual, baseline, {
+      masks: [{ x: 0, y: 0, width: 3, height: 1 }],
+    }).pass,
+    true
+  );
+  assert.throws(
+    () =>
+      compareImages(actual, baseline, {
+        masks: [{ x: 0, y: 0, width: 3, height: 2 }],
+      }),
+    { code: "EMPTY_COMPARISON" }
+  );
 });
 
 test("透明像素隐藏 RGB 不影响结果，但可见透明度变化会被捕获", () => {
@@ -97,7 +115,11 @@ test("解码前拒绝超限尺寸、动画、交错、截断与 CRC 错误", () 
   animationChunk.write("acTL", 4, "ascii");
   const animated = Buffer.concat([image.subarray(0, 33), animationChunk, image.subarray(33)]);
   assert.throws(() => compareImages(animated, animated), { code: "UNSUPPORTED_PNG" });
-  for (const invalid of [Buffer.from("not a png"), image.subarray(0, 35), Buffer.concat([image, Buffer.from("trailing")])]) {
+  for (const invalid of [
+    Buffer.from("not a png"),
+    image.subarray(0, 35),
+    Buffer.concat([image, Buffer.from("trailing")]),
+  ]) {
     assert.throws(() => compareImages(invalid, invalid), { code: "INVALID_PNG" });
   }
   const crc = Buffer.from(image);

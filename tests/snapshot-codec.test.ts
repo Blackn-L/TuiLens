@@ -11,9 +11,14 @@ test("压缩网格精确还原宽字符、续格、颜色与样式", () => {
   };
   const cells = unpackGrid(packed, 3, 1);
   assert.equal(cells.length, 1);
-  assert.deepEqual(cells[0]!.map((cell) => [cell.x, cell.text, cell.width]), [
-    [0, "中", 2], [1, "", 0], [2, "A", 1],
-  ]);
+  assert.deepEqual(
+    cells[0]!.map((cell) => [cell.x, cell.text, cell.width]),
+    [
+      [0, "中", 2],
+      [1, "", 0],
+      [2, "A", 1],
+    ]
+  );
   assert.equal(cells[0]![0]!.fg, "#ffffff");
   assert.equal(cells[0]![2]!.fg, "#ff0000");
   assert.equal(cells[0]![2]!.bg, "#00ff00");
@@ -27,20 +32,21 @@ test("压缩网格精确还原宽字符、续格、颜色与样式", () => {
 
 test("压缩网格游程展开与空格/空字符格", () => {
   const cells = unpackGrid({ text: "s3\u001fe2\u001ftX", style: "6,111111,222222,0;" }, 6, 1);
-  assert.deepEqual(cells[0]!.map((cell) => cell.text), [" ", " ", " ", "", "", "X"]);
+  assert.deepEqual(
+    cells[0]!.map((cell) => cell.text),
+    [" ", " ", " ", "", "", "X"]
+  );
   assert.ok(cells[0]!.every((cell) => cell.fg === "#111111"));
 });
 
 test("压缩网格拒绝行数、列数与样式覆盖不一致的载荷", () => {
-  assert.throws(() => unpackGrid({ text: "tA\n", style: "1,000000,000000,0;\n" }, 1, 1),
-    { code: "INVALID_SNAPSHOT" });
-  assert.throws(() => unpackGrid({ text: "tA", style: "1,000000,000000,0;" }, 2, 1),
-    { code: "INVALID_SNAPSHOT" });
+  assert.throws(() => unpackGrid({ text: "tA\n", style: "1,000000,000000,0;\n" }, 1, 1), { code: "INVALID_SNAPSHOT" });
+  assert.throws(() => unpackGrid({ text: "tA", style: "1,000000,000000,0;" }, 2, 1), { code: "INVALID_SNAPSHOT" });
   // 两个字符格但样式只覆盖一个：不能静默补默认样式。
-  assert.throws(() => unpackGrid({ text: "tA\u001ftB", style: "1,000000,000000,0;" }, 2, 1),
-    { code: "INVALID_SNAPSHOT" });
-  assert.throws(() => unpackGrid({ text: "z", style: "1,000000,000000,0;" }, 1, 1),
-    { code: "INVALID_SNAPSHOT" });
+  assert.throws(() => unpackGrid({ text: "tA\u001ftB", style: "1,000000,000000,0;" }, 2, 1), {
+    code: "INVALID_SNAPSHOT",
+  });
+  assert.throws(() => unpackGrid({ text: "z", style: "1,000000,000000,0;" }, 1, 1), { code: "INVALID_SNAPSHOT" });
 });
 
 test("引擎快照与压缩载荷往返一致，且可跳过字符网格", { timeout: 30_000 }, async () => {
@@ -64,5 +70,7 @@ test("引擎快照与压缩载荷往返一致，且可跳过字符网格", { tim
     assert.deepEqual(light.lines, full.lines);
     assert.deepEqual(light.cursor, full.cursor);
     assert.deepEqual(light.modes, full.modes);
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });

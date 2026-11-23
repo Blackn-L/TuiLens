@@ -2,13 +2,13 @@
 
 [English](../../CONTRIBUTING.md) · [简体中文](CONTRIBUTING.md)
 
-使用 Node.js 22+，执行 npm ci、npm run build，按需安装 Playwright Chromium。
+使用 Node.js 22+，执行 npm ci、npm run build，按需执行 `npx playwright-core install chromium` 安装 Playwright Chromium。
 修改分层前先阅读架构文档。
 
 - 保持协议、引擎、会话和接口职责分离。
 - 行为变更提供独立最小夹具，不依赖外部服务。
 - 保留取消、输出顺序、容量上限和资源清理契约。
-- 依赖使用精确版本，并更新锁文件。
+- 稳定依赖使用 SemVer 范围，预发布 `node-pty` 保持精确锁定，并更新锁文件。
 - 不提交产物、凭据和机器专属配置。
 - 明确终端/图像协议支持范围。
 

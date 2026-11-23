@@ -11,9 +11,9 @@ import { spawnIsolatedPty } from "../src/session/pty-worker-client.js";
 const require = createRequire(import.meta.url);
 
 function inheritedEnv(): Record<string, string> {
-  return Object.fromEntries(Object.entries(process.env).filter(
-    (entry): entry is [string, string] => entry[1] !== undefined,
-  ));
+  return Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
+  );
 }
 
 test("macOS node-pty spawn-helper 具有执行权限", {
@@ -36,7 +36,9 @@ test("PTY worker 在独立进程流式返回输出并报告退出", { timeout: 2
     env: inheritedEnv(),
   });
   let output = "";
-  const data = pty.onData((value) => { output += value; });
+  const data = pty.onData((value) => {
+    output += value;
+  });
   try {
     const exit = await new Promise<{ exitCode: number }>((resolve, reject) => {
       const subscription = pty.onExit(resolve);
@@ -58,10 +60,14 @@ test("PTY worker 在独立进程流式返回输出并报告退出", { timeout: 2
 test("SessionManager 可通过 worker 启动并关闭 PTY", { timeout: 20_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), "tuilens-pty-worker-manager-"));
   const state = {
-    cols: 40, rows: 6,
+    cols: 40,
+    rows: 6,
     cursor: { x: 0, y: 0, visible: true, style: "block" as const, blink: false },
     modes: {
-      alternateScreen: false, bracketedPaste: false, applicationCursorKeys: false, mouseTracking: "none",
+      alternateScreen: false,
+      bracketedPaste: false,
+      applicationCursorKeys: false,
+      mouseTracking: "none",
     },
   };
   const engine: TerminalEngine = {
@@ -69,8 +75,15 @@ test("SessionManager 可通过 worker 启动并关闭 PTY", { timeout: 20_000 },
     resize: async () => {},
     state: async () => state,
     snapshot: async (frameId) => ({
-      frameId, capturedAt: new Date().toISOString(), cols: 40, rows: 6,
-      text: "", lines: [], cells: [], cursor: state.cursor, modes: state.modes,
+      frameId,
+      capturedAt: new Date().toISOString(),
+      cols: 40,
+      rows: 6,
+      text: "",
+      lines: [],
+      cells: [],
+      cursor: state.cursor,
+      modes: state.modes,
     }),
     screenshot: async () => ({ png: Buffer.alloc(0), width: 1, height: 1 }),
     close: async () => {},

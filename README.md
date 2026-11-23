@@ -9,7 +9,7 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 
 ![TuiLens terminal automation for AI agents](docs/assets/tuilens-agent-banner.en.png)
 
-> **Status:** experimental, version 0.5.0. Designed for functional and visual testing.
+> **Status:** experimental, version 0.5.5. Designed for functional and visual testing.
 > The browser renderer is not a low-overhead performance measurement environment.
 
 [Features](#features) · [Installation](#installation) · [Diagnostics](#diagnostics) · [Quick start](#quick-start) · [Interfaces](#interfaces) · [Development](#development) · [Documentation](#documentation) · [License](#license)
@@ -60,10 +60,16 @@ npm run build
 TuiLens detects a system Chrome/Edge installation. Alternatively:
 
 ```sh
-npx playwright install chromium
+npx playwright-core install chromium
 ```
 
 Set `TUILENS_BROWSER_PATH` to select a specific browser executable.
+When installing TuiLens as a dependency with npm 12+, allow `node-pty`'s native install script in the
+consuming project:
+
+```json
+"allowScripts": { "node-pty@1.2.0-beta.18": true }
+```
 
 ## Diagnostics
 
@@ -352,12 +358,18 @@ try {
 
 ```sh
 npm run check
+npm run lint
+npm run format:check
 npm test
+npm run test:coverage
+npm run smoke:install
+npm run soak
 npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 ```
 
 Tests use independent fixtures. Generated captures, recordings, reports, and build outputs are ignored by Git.
-The daemon uses a local named pipe on Windows and an abstract Unix socket on Linux, authenticated by a local token.
+The daemon uses a local named pipe on Windows, an abstract Unix socket on Linux and a private Unix socket on macOS,
+authenticated by a local token. `TUILENS_IPC_TIMEOUT_MS` optionally sets an IPC timeout; no fixed five-minute cap is applied by default.
 Set `TUILENS_HOME` to isolate its state directory (default: `~/.tuilens`). No public HTTP control server is exposed.
 
 ## Documentation
@@ -373,6 +385,7 @@ Set `TUILENS_HOME` to isolate its state directory (default: `~/.tuilens`). No pu
 | Visual comparisons | [VISUAL.md](docs/VISUAL.md) | [视觉比较](docs/zh-CN/VISUAL.md) |
 | Validation | [VALIDATION.md](docs/VALIDATION.md) | [验证](docs/zh-CN/VALIDATION.md) |
 | Performance | [PERFORMANCE.md](docs/PERFORMANCE.md) | [性能](docs/zh-CN/PERFORMANCE.md) |
+| Releasing | [RELEASING.md](docs/RELEASING.md) | [发布](docs/zh-CN/RELEASING.md) |
 | Roadmap | [ROADMAP.md](docs/ROADMAP.md) | [路线](docs/zh-CN/ROADMAP.md) |
 
 ## Limitations
@@ -386,7 +399,7 @@ Set `TUILENS_HOME` to isolate its state directory (default: `~/.tuilens`). No pu
 - `watch` is read-only by default; `--control` forwards terminal input and requires an interactive TTY. `probe` only represents the current font, browser and platform.
 - `TUILENS_PTY_WORKER=1` adds an IPC hop and is not a security sandbox.
 - Replay reproduces output, not application behavior. Stable regions do not prove an application has finished all work.
-- Windows `node-pty 1.2.0-beta.14` may print `AttachConsole failed` during cleanup; verify process termination and retain diagnostics.
+- Windows `node-pty 1.2.0-beta.18` may print `AttachConsole failed` during cleanup; verify process termination and retain diagnostics.
 
 ## License
 

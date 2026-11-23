@@ -16,10 +16,9 @@ function systemFont(): string | undefined {
       "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
     ].find(existsSync);
   }
-  return [
-    "/System/Library/Fonts/Supplemental/Arial.ttf",
-    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-  ].find(existsSync);
+  return ["/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"].find(
+    existsSync
+  );
 }
 
 test("字体文件被嵌入页面并进入渲染指纹", { timeout: 30_000 }, async (context) => {
@@ -45,10 +44,9 @@ test("损坏的字体文件返回 INVALID_FONT_FILE", { timeout: 30_000 }, async
   const fontFile = join(directory, "broken.ttf");
   await writeFile(fontFile, "not a font", "utf8");
   context.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
-  await assert.rejects(
-    createBrowserEngine({ cols: 12, rows: 2, onData() {}, fontFile }),
-    { code: "INVALID_FONT_FILE" },
-  );
+  await assert.rejects(createBrowserEngine({ cols: 12, rows: 2, onData() {}, fontFile }), {
+    code: "INVALID_FONT_FILE",
+  });
 });
 
 test("字体文件配合 strict probe 保持圈码字阶一致", { timeout: 60_000 }, async (context) => {
@@ -82,10 +80,7 @@ test("共享浏览器在字体加载失败后仍能启动后续会话", { timeou
   context.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
   const factory = createBrowserEngineFactory();
   try {
-    await assert.rejects(
-      factory({ cols: 12, rows: 2, onData() {}, fontFile: broken }),
-      { code: "INVALID_FONT_FILE" },
-    );
+    await assert.rejects(factory({ cols: 12, rows: 2, onData() {}, fontFile: broken }), { code: "INVALID_FONT_FILE" });
     const engine = await factory({ cols: 12, rows: 2, onData() {}, fontFile });
     try {
       await engine.write("OK");

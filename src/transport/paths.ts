@@ -13,7 +13,10 @@ export function runtimePaths() {
     home,
     socket,
     state: join(home, "daemon.json"),
+    startLock: join(home, "daemon-start.lock"),
     artifactDir: join(home, "artifacts"),
     log: join(home, "daemon.log"),
   };
 }
+
+export type RuntimePaths = ReturnType<typeof runtimePaths>;

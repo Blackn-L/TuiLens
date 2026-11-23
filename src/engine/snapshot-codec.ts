@@ -62,7 +62,9 @@ export function unpackGrid(packed: PackedGrid, cols: number, rows: number): Term
       if (!token) continue;
       const kind = token[0]!;
       switch (kind) {
-        case "e": case "s": case "c": {
+        case "e":
+        case "s":
+        case "c": {
           const raw = token.slice(1);
           const count = raw === "" ? 1 : Number.parseInt(raw, 36);
           if (!Number.isSafeInteger(count) || count < 1 || count > cols) {
@@ -78,7 +80,8 @@ export function unpackGrid(packed: PackedGrid, cols: number, rows: number): Term
           }
           break;
         }
-        case "t": case "T": {
+        case "t":
+        case "T": {
           const text = token.slice(1);
           if (!text) invalid("文本 token 缺少内容");
           row.push({} as TerminalCell);
@@ -87,7 +90,8 @@ export function unpackGrid(packed: PackedGrid, cols: number, rows: number): Term
           cell.width = kind === "T" ? 2 : 1;
           break;
         }
-        default: invalid(`未知的字符格 token：${kind}`);
+        default:
+          invalid(`未知的字符格 token：${kind}`);
       }
       if (row.length > cols) invalid(`第 ${y} 行字符格超过 ${cols} 列`);
     }

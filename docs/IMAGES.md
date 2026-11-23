@@ -70,6 +70,7 @@ prefer virtual placement or explicit delete/reposition where appropriate.
 
 Unsupported: file/shared-memory transport, compression, animation/APNG, crop, arbitrary z layers,
 relative placement, automatic IDs, and nonzero virtual placement IDs. Unsupported requests return protocol errors unless silenced.
+This subset is an explicit contract, not an implied promise of full Kitty semantics.
 
 Independent bounds apply before allocation: 4M pixels and 4096 pixels per side; 32 MiB bitmap cache;
 128 images; 256 placements; 65536 cumulative declared placement cells, including offscreen cells.

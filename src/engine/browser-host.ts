@@ -1,4 +1,4 @@
-import { chromium, type Browser } from "playwright";
+import { chromium, type Browser } from "playwright-core";
 import { TuiLensError } from "../core/errors.js";
 
 /**
@@ -21,7 +21,7 @@ export class BrowserHost {
    */
   constructor(
     private readonly executablePath?: string,
-    private readonly keepAlive = false,
+    private readonly keepAlive = false
   ) {}
 
   /** 取得共享浏览器并占用一个引用；调用方必须在引擎关闭时调用 release。 */
@@ -56,7 +56,9 @@ export class BrowserHost {
 
   private handle(): Promise<Browser> {
     if (this.browser?.isConnected()) return Promise.resolve(this.browser);
-    this.pending ??= this.launch().finally(() => { this.pending = undefined; });
+    this.pending ??= this.launch().finally(() => {
+      this.pending = undefined;
+    });
     return this.pending;
   }
 
@@ -79,10 +81,12 @@ export class BrowserHost {
   }
 
   private async dispose(): Promise<void> {
-    const browser = this.browser;
-    this.browser = undefined;
     // 等待正在进行的启动，避免关闭与新实例竞争。
     await this.pending?.catch(() => undefined);
+    // launch() 可能在等待期间完成；引用已归零或已永久停止时才关闭新句柄。
+    if (!this.stopped && (this.references > 0 || this.keepAlive)) return;
+    const browser = this.browser;
+    this.browser = undefined;
     await browser?.close().catch(() => undefined);
   }
 }

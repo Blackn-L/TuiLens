@@ -8,10 +8,12 @@ function normalized(value: string): string {
 /** 先匹配键和别名，再匹配 profile 名称；路径解析由此决定是否继续。 */
 export function findTerminalPreset(reference: string): TerminalPresetDefinition | undefined {
   const wanted = normalized(reference);
-  return TERMINAL_PRESETS.find((preset) =>
-    normalized(preset.key) === wanted
-    || normalized(preset.name) === wanted
-    || (preset.aliases ?? []).some((alias) => normalized(alias) === wanted));
+  return TERMINAL_PRESETS.find(
+    (preset) =>
+      normalized(preset.key) === wanted ||
+      normalized(preset.name) === wanted ||
+      (preset.aliases ?? []).some((alias) => normalized(alias) === wanted)
+  );
 }
 
 export function listTerminalProfiles(): {

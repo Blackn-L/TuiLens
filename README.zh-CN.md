@@ -9,7 +9,7 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 
 ![TuiLens：面向 AI Agent 的终端自动化工具](docs/assets/tuilens-agent-banner.zh-CN.png)
 
-> **状态：** 0.5.0 实验版本，用于功能和视觉测试。
+> **状态：** 0.5.5 实验版本，用于功能和视觉测试。
 > 浏览器渲染链路不属于低干扰性能测量环境。
 
 [功能](#功能) · [安装](#安装) · [诊断](#诊断) · [快速开始](#快速开始) · [接口](#接口) · [开发](#开发) · [文档](#文档) · [许可证](#许可证)
@@ -62,10 +62,15 @@ npm run build
 默认检测系统 Chrome/Edge；也可以安装 Playwright Chromium：
 
 ```sh
-npx playwright install chromium
+npx playwright-core install chromium
 ```
 
 通过 `TUILENS_BROWSER_PATH` 指定浏览器。
+使用 npm 12+ 将 TuiLens 安装为依赖时，需要在消费项目允许 `node-pty` 的原生安装脚本：
+
+```json
+"allowScripts": { "node-pty@1.2.0-beta.18": true }
+```
 
 ## 诊断
 
@@ -343,12 +348,18 @@ try {
 
 ```sh
 npm run check
+npm run lint
+npm run format:check
 npm test
+npm run test:coverage
+npm run smoke:install
+npm run soak
 npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 ```
 
 测试使用独立夹具，截图、录制、报告与编译产物均被 Git 忽略。
-后台服务使用本机命名管道或 Linux abstract Unix socket，并使用本地令牌认证。
+后台服务在 Windows 使用本机命名管道、Linux 使用 abstract Unix socket、macOS 使用私有 Unix socket，并使用本地令牌认证。
+`TUILENS_IPC_TIMEOUT_MS` 可设置 IPC 超时；默认不施加固定五分钟上限。
 `TUILENS_HOME` 可隔离状态目录，默认 `~/.tuilens`；没有公开 HTTP 控制端口。
 
 ## 文档
@@ -364,6 +375,7 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 | 视觉比较 | [视觉比较](docs/zh-CN/VISUAL.md) | [VISUAL.md](docs/VISUAL.md) |
 | 验证 | [验证](docs/zh-CN/VALIDATION.md) | [VALIDATION.md](docs/VALIDATION.md) |
 | 性能 | [性能](docs/zh-CN/PERFORMANCE.md) | [PERFORMANCE.md](docs/PERFORMANCE.md) |
+| 发布 | [发布](docs/zh-CN/RELEASING.md) | [RELEASING.md](docs/RELEASING.md) |
 | 路线 | [路线](docs/zh-CN/ROADMAP.md) | [ROADMAP.md](docs/ROADMAP.md) |
 
 ## 限制
@@ -377,7 +389,7 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 - `watch` 默认只读；`--control` 会转发终端输入并要求交互式 TTY。`probe` 只代表当前字体、浏览器和平台组合。
 - `TUILENS_PTY_WORKER=1` 增加一次 IPC 转发，不等同于安全沙箱。
 - 输出回放不等同于应用重跑；区域稳定不证明所有后台工作结束。
-- Windows node-pty 1.2.0-beta.14 清理期间可能输出 `AttachConsole failed`，需确认进程退出并保留诊断。
+- Windows node-pty 1.2.0-beta.18 清理期间可能输出 `AttachConsole failed`，需确认进程退出并保留诊断。
 
 ## 许可证
 

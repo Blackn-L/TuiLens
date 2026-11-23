@@ -59,7 +59,8 @@ test("CLI help and errors honor TUILENS_LANG", async () => {
   assert.match(chinese.stdout, /TUILENS_LANG 选择/u);
 
   const failedEnglish = await run(process.execPath, [cli, "definitely-unknown"], {
-    env: envWithoutLocale(), maxBuffer: 1024 * 1024,
+    env: envWithoutLocale(),
+    maxBuffer: 1024 * 1024,
   }).catch((error: { stdout?: string }) => error);
   const payloadEnglish = JSON.parse(failedEnglish.stdout ?? "{}") as {
     error?: { code?: string; message?: string; messageEn?: string; messageZh?: string };
@@ -69,7 +70,8 @@ test("CLI help and errors honor TUILENS_LANG", async () => {
   assert.equal(payloadEnglish.error?.messageZh, "未知命令；使用 --help 查看帮助");
 
   const failedChinese = await run(process.execPath, [cli, "definitely-unknown"], {
-    env: envWithoutLocale({ TUILENS_LANG: "zh-CN" }), maxBuffer: 1024 * 1024,
+    env: envWithoutLocale({ TUILENS_LANG: "zh-CN" }),
+    maxBuffer: 1024 * 1024,
   }).catch((error: { stdout?: string }) => error);
   const payloadChinese = JSON.parse(failedChinese.stdout ?? "{}") as {
     error?: { message?: string; messageEn?: string; messageZh?: string };

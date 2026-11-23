@@ -25,11 +25,20 @@ export { runPerf } from "./perf/runner.js";
 export { summarize, percentile } from "./perf/stats.js";
 export { perfSpecSchema } from "./perf/schema.js";
 export type {
-  BaselineFile, MetricComparison, PerfMatrixFailure, PerfMatrixResult, PerfMatrixRun, PerfResult, PerfRunOptions,
+  BaselineFile,
+  MetricComparison,
+  PerfMatrixFailure,
+  PerfMatrixResult,
+  PerfMatrixRun,
+  PerfResult,
+  PerfRunOptions,
 } from "./perf/runner.js";
 export type { PerfSpec } from "./perf/schema.js";
 export { createBrowserEngineFactory } from "./engine/browser-engine.js";
 export {
-  applyTerminalProfileOverrides, defaultTerminalProfile, imageProfileGraphics, listTerminalProfiles,
+  applyTerminalProfileOverrides,
+  defaultTerminalProfile,
+  imageProfileGraphics,
+  listTerminalProfiles,
   resolveTerminalProfile,
 } from "./profiles/index.js";

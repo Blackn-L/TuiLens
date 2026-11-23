@@ -6,7 +6,11 @@ import { z } from "zod";
 import { TuiLensError } from "../core/errors.js";
 import { readBoundedFile } from "../core/bounded-file.js";
 import type {
-  ManagerOptions, RendererKind, ResolvedTerminalProfile, TerminalEngine, TerminalSnapshot,
+  ManagerOptions,
+  RendererKind,
+  ResolvedTerminalProfile,
+  TerminalEngine,
+  TerminalSnapshot,
 } from "../core/types.js";
 import { createBrowserEngine } from "../engine/browser-engine.js";
 import { profileFileSchema } from "../profiles/resolver.js";
@@ -14,24 +18,42 @@ import { pick } from "../core/i18n.js";
 
 const columns = z.number().int().min(2).max(500);
 const rows = z.number().int().min(2).max(250);
-const time = z.number().finite().min(0).max(7 * 24 * 60 * 60 * 1000);
+const time = z
+  .number()
+  .finite()
+  .min(0)
+  .max(7 * 24 * 60 * 60 * 1000);
 export type RecordingTerminalProfile = Omit<ResolvedTerminalProfile, "env" | "source"> & {
   env?: Record<string, never>;
 };
 
-const recordingProfile = profileFileSchema.omit({ extends: true }).extend({
-  name: z.string().trim().min(1).max(160),
-  env: z.record(z.string(), z.never()).optional(),
-}).strict();
-const header = z.object({ type: z.literal("header"), version: z.literal(1), cols: columns, rows,
-  images: z.enum(["off", "sixel", "iterm", "all"]), renderer: z.enum(["dom", "webgl"]).optional(),
-  profile: recordingProfile.optional() }).strict()
+const recordingProfile = profileFileSchema
+  .omit({ extends: true })
+  .extend({
+    name: z.string().trim().min(1).max(160),
+    env: z.record(z.string(), z.never()).optional(),
+  })
+  .strict();
+const header = z
+  .object({
+    type: z.literal("header"),
+    version: z.literal(1),
+    cols: columns,
+    rows,
+    images: z.enum(["off", "sixel", "iterm", "all"]),
+    renderer: z.enum(["dom", "webgl"]).optional(),
+    profile: recordingProfile.optional(),
+  })
+  .strict()
   .superRefine((value, context) => {
     if (value.profile && value.images !== "off") {
-      context.addIssue({ code: "custom", message: pick(
-        "New recordings should use profile for final graphics instead of retaining an images override.",
-        "新录制应使用 profile 表示最终 graphics，而不是同时保留 images 覆盖",
-      ) });
+      context.addIssue({
+        code: "custom",
+        message: pick(
+          "New recordings should use profile for final graphics instead of retaining an images override.",
+          "新录制应使用 profile 表示最终 graphics，而不是同时保留 images 覆盖"
+        ),
+      });
     }
   });
 const event = z.discriminatedUnion("type", [
@@ -48,9 +70,15 @@ export interface ReplayResult {
   events: number;
   truncated: boolean;
 }
-export interface ReplayOptions { speed?: number; allowTruncated?: boolean; signal?: AbortSignal }
+export interface ReplayOptions {
+  speed?: number;
+  allowTruncated?: boolean;
+  signal?: AbortSignal;
+}
 
-function aborted(): TuiLensError { return new TuiLensError("ABORTED", "回放已取消"); }
+function aborted(): TuiLensError {
+  return new TuiLensError("ABORTED", "回放已取消");
+}
 
 function checkAbort(signal?: AbortSignal): void {
   if (signal?.aborted) throw aborted();
@@ -59,7 +87,10 @@ function checkAbort(signal?: AbortSignal): void {
 /** 不修改引擎处理顺序；取消仅终止等待，并由外层主动关闭引擎打断后台操作。 */
 function cancellable<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
-    const abort = () => { signal?.removeEventListener("abort", abort); reject(aborted()); };
+    const abort = () => {
+      signal?.removeEventListener("abort", abort);
+      reject(aborted());
+    };
     signal?.addEventListener("abort", abort, { once: true });
     operation.then(
       (value) => {
@@ -70,7 +101,7 @@ function cancellable<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T>
       (error: unknown) => {
         signal?.removeEventListener("abort", abort);
         reject(signal?.aborted ? aborted() : error);
-      },
+      }
     );
     if (signal?.aborted) abort();
   });
@@ -93,7 +124,8 @@ function parseRecording(text: string, allowTruncated: boolean) {
       const end = next < 0 ? content.length : next;
       const item = event.parse(JSON.parse(content.slice(cursor, end)));
       if (item.atMs < previous) throw new TuiLensError("INVALID_RECORDING", "录制时间戳未按序排列");
-      if (item.type === "end" && end !== content.length) throw new TuiLensError("INVALID_RECORDING", "录制中存在提前结束标记");
+      if (item.type === "end" && end !== content.length)
+        throw new TuiLensError("INVALID_RECORDING", "录制中存在提前结束标记");
       previous = item.atMs;
       events.push(item);
       cursor = end + 1;
@@ -119,11 +151,15 @@ async function closeBounded(engine: TerminalEngine, timeoutMs: number): Promise<
     await Promise.race([
       engine.close(),
       new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => reject(new TuiLensError("REPLAY_CLEANUP_TIMEOUT",
-          `回放引擎未在 ${timeoutMs / 1000} 秒内关闭`)), timeoutMs);
+        timeout = setTimeout(
+          () => reject(new TuiLensError("REPLAY_CLEANUP_TIMEOUT", `回放引擎未在 ${timeoutMs / 1000} 秒内关闭`)),
+          timeoutMs
+        );
       }),
     ]);
-  } finally { clearTimeout(timeout); }
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function replayProfile(profile: z.infer<typeof recordingProfile>): ResolvedTerminalProfile {
@@ -139,35 +175,49 @@ function replayProfile(profile: z.infer<typeof recordingProfile>): ResolvedTermi
 function withoutUndefined<T>(value: T): T {
   if (Array.isArray(value)) return value.map((item) => withoutUndefined(item)) as T;
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
-      .filter(([, item]) => item !== undefined)
-      .map(([key, item]) => [key, withoutUndefined(item)])) as T;
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, item]) => item !== undefined)
+        .map(([key, item]) => [key, withoutUndefined(item)])
+    ) as T;
   }
   return value;
 }
 
 /** 回放只应用输出和 resize，从不执行录制的命令、输入或其他文件中的代码。 */
-export async function replayRecording(path: string, manager: ManagerOptions, options: ReplayOptions = {}): Promise<ReplayResult> {
+export async function replayRecording(
+  path: string,
+  manager: ManagerOptions,
+  options: ReplayOptions = {}
+): Promise<ReplayResult> {
   checkAbort(options.signal);
   const speed = options.speed ?? 0;
-  if (!Number.isFinite(speed) || speed < 0 || speed > 100) throw new TuiLensError("INVALID_ARGUMENT", "回放速度须为 0–100，0 表示立即应用");
+  if (!Number.isFinite(speed) || speed < 0 || speed > 100)
+    throw new TuiLensError("INVALID_ARGUMENT", "回放速度须为 0–100，0 表示立即应用");
   const data = await readBoundedFile(path, 64 * 1024 * 1024);
   checkAbort(options.signal);
   const { start, events, truncated } = parseRecording(data.toString("utf8"), options.allowTruncated ?? false);
   checkAbort(options.signal);
   const engine = await (manager.engineFactory ?? createBrowserEngine)({
-    cols: start.cols, rows: start.rows,
+    cols: start.cols,
+    rows: start.rows,
     renderer: start.renderer ?? "dom",
     ...(start.profile ? {} : { images: start.images }),
-    ...(start.profile ? { profile: replayProfile(start.profile) } : {}), onData: () => {},
+    ...(start.profile ? { profile: replayProfile(start.profile) } : {}),
+    onData: () => {},
     ...(manager.executablePath ? { executablePath: manager.executablePath } : {}),
     ...(manager.fontFamily ? { fontFamily: manager.fontFamily } : {}),
     ...(manager.fontFile ? { fontFile: manager.fontFile } : {}),
   });
   let closing: Promise<void> | undefined;
-  const close = () => closing ??= closeBounded(engine,
-    options.signal?.aborted ? ABORT_CLEANUP_TIMEOUT_MS : COMPLETE_CLEANUP_TIMEOUT_MS);
-  const onAbort = () => { void close().catch(() => undefined); };
+  const close = () =>
+    (closing ??= closeBounded(
+      engine,
+      options.signal?.aborted ? ABORT_CLEANUP_TIMEOUT_MS : COMPLETE_CLEANUP_TIMEOUT_MS
+    ));
+  const onAbort = () => {
+    void close().catch(() => undefined);
+  };
   options.signal?.addEventListener("abort", onAbort, { once: true });
   let frameId = 0;
   let previous = 0;
@@ -179,12 +229,20 @@ export async function replayRecording(path: string, manager: ManagerOptions, opt
     for (const item of events) {
       checkAbort(options.signal);
       const delay = speed ? (item.atMs - previous) / speed : 0;
-      if (delay > 30000) throw new TuiLensError("REPLAY_DELAY_LIMIT", "单步回放延迟超过 30 秒；可提高速度或使用 speed=0");
-      if (delay) await cancellable(sleep(delay, undefined, options.signal ? { signal: options.signal } : {}), options.signal);
+      if (delay > 30000)
+        throw new TuiLensError("REPLAY_DELAY_LIMIT", "单步回放延迟超过 30 秒；可提高速度或使用 speed=0");
+      if (delay)
+        await cancellable(sleep(delay, undefined, options.signal ? { signal: options.signal } : {}), options.signal);
       checkAbort(options.signal);
       previous = item.atMs;
-      if (item.type === "output") { await cancellable(engine.write(item.data), options.signal); frameId += 1; }
-      if (item.type === "resize") { await cancellable(engine.resize(item.cols, item.rows), options.signal); frameId += 1; }
+      if (item.type === "output") {
+        await cancellable(engine.write(item.data), options.signal);
+        frameId += 1;
+      }
+      if (item.type === "resize") {
+        await cancellable(engine.resize(item.cols, item.rows), options.signal);
+        frameId += 1;
+      }
       checkAbort(options.signal);
     }
     checkAbort(options.signal);
@@ -198,21 +256,29 @@ export async function replayRecording(path: string, manager: ManagerOptions, opt
     artifacts.push(target);
     await writeFile(target, capture.png, { mode: 0o600 });
     checkAbort(options.signal);
-    result = { snapshot, screenshot: { path: target, width: capture.width, height: capture.height, frameId },
-      ...(engine.renderer ? { renderer: engine.renderer } : {}), events: events.length, truncated };
+    result = {
+      snapshot,
+      screenshot: { path: target, width: capture.width, height: capture.height, frameId },
+      ...(engine.renderer ? { renderer: engine.renderer } : {}),
+      events: events.length,
+      truncated,
+    };
     const metadata = target.replace(/\.png$/, ".json");
     artifacts.push(metadata);
     await writeFile(metadata, JSON.stringify(result, null, 2), { mode: 0o600 });
     checkAbort(options.signal);
-  } catch (error) { failure = options.signal?.aborted ? aborted() : error; }
-  finally {
+  } catch (error) {
+    failure = options.signal?.aborted ? aborted() : error;
+  } finally {
     options.signal?.removeEventListener("abort", onAbort);
-    try { await close(); }
-    catch (error) {
+    try {
+      await close();
+    } catch (error) {
       failure = failure
-        ? new TuiLensError(options.signal?.aborted ? "ABORTED" : "REPLAY_CLEANUP_FAILED", "回放未完成且引擎清理失败",
-          { cause: failure instanceof Error ? failure.message : String(failure),
-            cleanup: error instanceof Error ? error.message : String(error) })
+        ? new TuiLensError(options.signal?.aborted ? "ABORTED" : "REPLAY_CLEANUP_FAILED", "回放未完成且引擎清理失败", {
+            cause: failure instanceof Error ? failure.message : String(failure),
+            cleanup: error instanceof Error ? error.message : String(error),
+          })
         : error;
     }
   }

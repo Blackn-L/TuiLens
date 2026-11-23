@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.5.5
+
+### Fixed
+- macOS performance runs now sample the real process tree through `ps`; `peakRssBytes` and
+  `peakProcesses` no longer collapse to zero.
+- Multi-condition waits retry `FRAME_PENDING`, advance backoff once per poll, and perform a final
+  check after a deadline-truncated sleep.
+- Browser host disposal waits for an in-flight launch before deciding whether to close the browser.
+- Local IPC removes the per-request preflight ping, uses an owner-token autostart lock, cleans stale
+  macOS sockets after an inode-checked bind failure, and uses constant-time token comparison.
+- Replay participates in the same admission and exited-session reclamation path as launch.
+
+### Changed
+- Replaced the full `playwright` package with `playwright-core`; Chromium remains an explicit runtime
+  prerequisite installed with `npx playwright-core install chromium`.
+- Stable dependencies use SemVer ranges. `node-pty` moves to `1.2.0-beta.18` and remains the only exact
+  prerelease pin until a stable compatibility release can replace it.
+- `src/version.ts` is generated from `package.json`; mismatch checks run in the quality gate.
+- Timeout evidence screenshots now use the same 5 second lower bound as confirmed-input screenshots.
+- Dispatcher params are validated once; process-tree lookup uses pid/parent maps.
+
+### Added
+- Tag-driven npm publish/provenance, GitHub Release, version/tag validation and clean-install smoke
+  workflows.
+- Biome lint and formatting gates, coverage thresholds, scheduled soak runs, dependency drift artifacts
+  and Dependabot updates.
+- Release documentation and explicit renderer/image-protocol boundaries with replacement criteria.
+
 ## 0.5.0
 
 ### Performance
@@ -85,6 +113,12 @@
 - Initial PTY, browser engine, CLI, MCP, SDK, observation and input support.
 
 ## 简体中文
+
+0.5.5：修复 macOS 进程树采样、组合等待 `FRAME_PENDING`/退避/末次检查、浏览器宿主 dispose 竞态、
+本机 IPC 自动启动竞态、macOS 残留 socket 和回放槽位回收；`playwright` 替换为 `playwright-core`，
+稳定依赖改用 SemVer 范围，`node-pty` 更新至 `1.2.0-beta.18`。版本号从 `package.json` 生成，
+新增 Biome/格式/覆盖率门禁、定时 soak、依赖漂移归档、tag 驱动的 npm publish/GitHub Release、
+干净安装烟测和发布文档，并记录浏览器引擎与图片协议边界。
 
 0.5.0：新增 `doctor` 本地诊断命令，检查运行时、浏览器、`node-pty`、存储和 daemon 状态但不启动 daemon；
 `ping` 返回 daemon 运行时长和会话/启动/回放计数，未运行 daemon 时 `shutdown` 可幂等成功。
