@@ -21,6 +21,8 @@
     "CHANGELOG.md",
     "LICENSE",
     "THIRD_PARTY.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
     "docs/*.md",
     "docs/zh-CN/*.md",
     "docs/assets/"

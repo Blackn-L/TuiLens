@@ -177,9 +177,13 @@ function benchmarkEnv(): Record<string, string> {
   return { ...env, TERM: "xterm-256color", COLORTERM: "truecolor" };
 }
 
+function isBenchmarkDir(path: string): boolean {
+  return dirname(resolve(path)) === resolve(tmpdir()) && basename(path).startsWith("tuilens-overhead-");
+}
+
 async function worker(mode: Mode, frames: number, paceMs: number): Promise<Result> {
   const workdir = await mkdtemp(join(tmpdir(), "tuilens-overhead-"));
-  if (dirname(resolve(workdir)) !== resolve(tmpdir()) || !basename(workdir).startsWith("tuilens-overhead-")) {
+  if (!isBenchmarkDir(workdir)) {
     throw new Error("拒绝使用不属于本次基准的目录");
   }
   const token = randomUUID().replaceAll("-", "");
@@ -345,7 +349,7 @@ async function worker(mode: Mode, frames: number, paceMs: number): Promise<Resul
   } finally {
     if (timer) clearInterval(timer);
     await close?.();
-    await rm(workdir, { recursive: true, force: true });
+    if (isBenchmarkDir(workdir)) await rm(workdir, { recursive: true, force: true });
   }
 }
 
