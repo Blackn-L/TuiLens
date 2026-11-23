@@ -71,7 +71,7 @@
     "@biomejs/biome": "^2.6.8",
     "@types/node": "^26.6.6",
     "@types/pngjs": "^6.0.5",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   },
   "allowScripts": {
     "node-pty@1.2.0-beta.18": true
