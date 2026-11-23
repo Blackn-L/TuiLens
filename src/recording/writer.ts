@@ -17,8 +17,13 @@ export interface RecordingHeader {
 
 function sanitizeRecordingHeader(header: RecordingHeader): RecordingHeader {
   if (!header.profile) return header;
-  const { env: _env, source: _source, ...profile } = header.profile as RecordingTerminalProfile & {
-    env?: Record<string, string>; source?: unknown;
+  const {
+    env: _env,
+    source: _source,
+    ...profile
+  } = header.profile as RecordingTerminalProfile & {
+    env?: Record<string, string>;
+    source?: unknown;
   };
   return { ...header, profile };
 }
@@ -41,7 +46,7 @@ export class RecordingWriter {
   private constructor(
     readonly path: string,
     private readonly file: FileHandle,
-    private readonly maxBytes: number,
+    private readonly maxBytes: number
   ) {}
 
   static async create(directory: string, id: string, header: RecordingHeader, maxBytes = 16 * 1024 * 1024) {
@@ -52,7 +57,12 @@ export class RecordingWriter {
     const path = join(directory, `${id}.recording.jsonl`);
     const file = await open(path, "wx", 0o600);
     const writer = new RecordingWriter(path, file, maxBytes);
-    try { await writer.line(sanitizeRecordingHeader(header)); } catch (error) { await file.close(); throw error; }
+    try {
+      await writer.line(sanitizeRecordingHeader(header));
+    } catch (error) {
+      await file.close();
+      throw error;
+    }
     return writer;
   }
 
@@ -99,7 +109,9 @@ export class RecordingWriter {
     await this.pending;
     try {
       await this.line({ type: "end", truncated: this.truncated, atMs: Math.round(performance.now() - this.started) });
-    } finally { await this.file.close(); }
+    } finally {
+      await this.file.close();
+    }
     if (this.failure) throw this.failure;
   }
 }

@@ -19,5 +19,7 @@ process.stdin.on("data", (data: Buffer) => {
   if (/\x1b\[<3[26];/.test(value)) drag = true;
   if (drag && /\x1b\[<\d+;\d+;\d+m/.test(value)) process.stdout.write("\x1b[6;1HDRAG_RECEIVED");
 });
-process.stdout.on("resize", () => process.stdout.write(`\x1b[7;1HSIZE_${process.stdout.columns}_${process.stdout.rows}`));
+process.stdout.on("resize", () =>
+  process.stdout.write(`\x1b[7;1HSIZE_${process.stdout.columns}_${process.stdout.rows}`)
+);
 process.stdin.resume();

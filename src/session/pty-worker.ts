@@ -7,7 +7,11 @@ let pty: IPty | undefined;
 let exited = false;
 
 function send(event: PtyWorkerEvent): void {
-  try { process.send?.(event); } catch { /* 父进程已断开；按退出路径清理。 */ }
+  try {
+    process.send?.(event);
+  } catch {
+    /* 父进程已断开；按退出路径清理。 */
+  }
 }
 
 function fail(error: unknown): void {
@@ -42,12 +46,23 @@ process.on("message", (message: PtyWorkerRequest) => {
       return;
     }
     switch (message.type) {
-      case "write": pty.write(message.data); break;
-      case "resize": pty.resize(message.cols, message.rows); break;
-      case "pause": pty.pause(); break;
-      case "resume": pty.resume(); break;
-      case "kill": pty.kill(message.signal); break;
-      case "spawn": throw new Error("PTY worker already spawned");
+      case "write":
+        pty.write(message.data);
+        break;
+      case "resize":
+        pty.resize(message.cols, message.rows);
+        break;
+      case "pause":
+        pty.pause();
+        break;
+      case "resume":
+        pty.resume();
+        break;
+      case "kill":
+        pty.kill(message.signal);
+        break;
+      case "spawn":
+        throw new Error("PTY worker already spawned");
     }
   } catch (error) {
     fail(error);
@@ -55,7 +70,11 @@ process.on("message", (message: PtyWorkerRequest) => {
 });
 
 process.on("disconnect", () => {
-  try { if (!exited) pty?.kill(); } catch { /* 尽力清理。 */ }
+  try {
+    if (!exited) pty?.kill();
+  } catch {
+    /* 尽力清理。 */
+  }
   process.exit(0);
 });
 

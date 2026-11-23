@@ -209,7 +209,11 @@ export interface ResolvedTerminalProfile {
   source: TerminalProfileSource;
 }
 
-export interface Modifiers { shift?: boolean; ctrl?: boolean; alt?: boolean }
+export interface Modifiers {
+  shift?: boolean;
+  ctrl?: boolean;
+  alt?: boolean;
+}
 
 export interface LaunchOptions {
   command: string;
@@ -292,8 +296,23 @@ export type InputAction =
   | { type: "click"; x: number; y: number; button?: "left" | "middle" | "right"; modifiers?: Modifiers }
   | { type: "move"; x: number; y: number; modifiers?: Modifiers }
   | { type: "mouseDown" | "mouseUp"; x: number; y: number; button?: "left" | "middle" | "right"; modifiers?: Modifiers }
-  | { type: "drag"; from: { x: number; y: number }; to: { x: number; y: number }; steps?: number; button?: "left" | "middle" | "right"; modifiers?: Modifiers }
-  | { type: "scroll"; x: number; y: number; direction: "up" | "down"; unit?: "line" | "page"; amount?: number; modifiers?: Modifiers }
+  | {
+      type: "drag";
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+      steps?: number;
+      button?: "left" | "middle" | "right";
+      modifiers?: Modifiers;
+    }
+  | {
+      type: "scroll";
+      x: number;
+      y: number;
+      direction: "up" | "down";
+      unit?: "line" | "page";
+      amount?: number;
+      modifiers?: Modifiers;
+    }
   | { type: "scroll"; x: number; y: number; to: "top" | "bottom"; modifiers?: Modifiers }
   | { type: "raw"; data: string };
 
@@ -360,7 +379,10 @@ export interface TerminalEngine {
   /** 等待最近一次写入完成两帧绘制；用于帧级性能采样。 */
   paint?(): Promise<{ paintMs: number }>;
   snapshot(frameId: number, options?: FrameAccessOptions): Promise<TerminalSnapshot>;
-  screenshot(region?: Region, options?: { cursor?: "hide" | "show" }): Promise<{ png: Buffer; width: number; height: number }>;
+  screenshot(
+    region?: Region,
+    options?: { cursor?: "hide" | "show" }
+  ): Promise<{ png: Buffer; width: number; height: number }>;
   close(): Promise<void>;
 }
 

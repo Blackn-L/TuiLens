@@ -30,9 +30,7 @@ test("doctor 聚合运行时、浏览器、PTY、存储和 idle daemon 状态", 
     assert.ok(report.status === "ok" || report.status === "warn");
     assert.equal(report.version, VERSION);
     assert.equal(report.checks.find((item) => item.code === "runtime.node")?.status, "ok");
-    assert.ok(["ok", "warn"].includes(
-      report.checks.find((item) => item.code === "runtime.platform")?.status ?? "",
-    ));
+    assert.ok(["ok", "warn"].includes(report.checks.find((item) => item.code === "runtime.platform")?.status ?? ""));
     assert.equal(report.checks.find((item) => item.code === "browser")?.status, "ok");
     assert.equal(report.checks.find((item) => item.code === "pty")?.status, "ok");
     assert.equal(report.checks.find((item) => item.code === "storage")?.status, "ok");
@@ -69,10 +67,13 @@ test("doctor 报告缺失浏览器与陈旧 daemon 状态", { timeout: 30_000 },
     assert.equal(report.summary.error, 1);
     assert.ok(report.summary.warn >= 1);
 
-    const failure = await execute(process.execPath, [cli, "doctor"], {
+    const failure = (await execute(process.execPath, [cli, "doctor"], {
       env: { ...process.env, TUILENS_HOME: home, TUILENS_BROWSER_PATH: process.env.TUILENS_BROWSER_PATH },
       maxBuffer: 1024 * 1024,
-    }).then(() => undefined, (error: unknown) => error) as { code?: number; stdout?: string };
+    }).then(
+      () => undefined,
+      (error: unknown) => error
+    )) as { code?: number; stdout?: string };
     assert.equal(failure.code, 1);
     const payload = JSON.parse(failure.stdout ?? "{}") as { ok: boolean; data: { ok: boolean; status: string } };
     assert.equal(payload.ok, true);

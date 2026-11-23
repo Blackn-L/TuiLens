@@ -17,13 +17,15 @@ try {
     if (frame % 32 === 0) await new Promise<void>((resolve) => setImmediate(resolve));
   }
   const memory = process.memoryUsage();
-  process.stdout.write(JSON.stringify({
-    frames,
-    elapsedMs: Math.round(performance.now() - started),
-    rssBytes: memory.rss,
-    heapUsedBytes: memory.heapUsed,
-    lastPaintMs,
-  }) + "\n");
+  process.stdout.write(
+    JSON.stringify({
+      frames,
+      elapsedMs: Math.round(performance.now() - started),
+      rssBytes: memory.rss,
+      heapUsedBytes: memory.heapUsed,
+      lastPaintMs,
+    }) + "\n"
+  );
 } finally {
   await engine.close();
 }

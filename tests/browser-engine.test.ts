@@ -7,7 +7,7 @@ import type { TerminalEngine } from "../src/core/types.js";
 
 /** 统计块字符条带中明显低于中位亮度的周期暗列。 */
 function darkBlockColumns(png: PNG, columns = 160, blocks = 120): number[] {
-  const width = Math.round(blocks * png.width / columns);
+  const width = Math.round((blocks * png.width) / columns);
   const luminance = (x: number, y: number): number => {
     const offset = (y * png.width + x) * 4;
     return 0.2126 * png.data[offset]! + 0.7152 * png.data[offset + 1]! + 0.0722 * png.data[offset + 2]!;
@@ -54,7 +54,9 @@ test("快速文本条件读取当前解析状态，支持中文且不等待截�
     await engine.write("\x1b[2J\x1b[HNEW");
     assert.equal(await engine.hasText?.("READY"), false);
     assert.equal(await engine.hasText?.("NEW"), true);
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });
 
 test("区域文本探测在引擎内统计文本、区域与样式匹配", { timeout: 30_000 }, async () => {
@@ -98,7 +100,9 @@ test("默认引擎保留 xterm 原生 DA 应答", async () => {
     await engine.snapshot(1);
     assert.ok(responses.includes("\x1b[?1;2c"));
     assert.ok(responses.includes("\x1b[>0;276;0c"));
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });
 
 test("鼠标编码与跟踪范围独立，模式镜像符合 xterm 查询响应", { timeout: 30_000 }, async () => {
@@ -160,7 +164,11 @@ test("光标可见性、样式和闪烁进入状态与快照，截图默认隐�
     await engine.write("\x1b[?25l\x1b[4 q");
     const hiddenState = await engine.state();
     assert.deepEqual(hiddenState.cursor, {
-      x: 0, y: 0, visible: false, style: "underline", blink: false,
+      x: 0,
+      y: 0,
+      visible: false,
+      style: "underline",
+      blink: false,
     });
     const hiddenSnapshot = await engine.snapshot(1);
     assert.deepEqual(hiddenSnapshot.cursor, hiddenState.cursor);
@@ -177,7 +185,9 @@ test("光标可见性、样式和闪烁进入状态与快照，截图默认隐�
     const shown = await engine.screenshot(undefined, { cursor: "show" });
     assert.deepEqual(hidden.png, hiddenAgain.png);
     assert.notDeepEqual(hidden.png, shown.png);
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });
 
 test("截图隐藏块光标时保留宽字符光标格", { timeout: 30_000 }, async () => {
@@ -190,7 +200,9 @@ test("截图隐藏块光标时保留宽字符光标格", { timeout: 30_000 }, as
     const cursorHidden = await engine.screenshot();
 
     assert.deepEqual(cursorOnText.png, cursorHidden.png);
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });
 
 test("resize 后截图直接使用新网格并保持 PNG 尺寸一致", { timeout: 30_000 }, async () => {
@@ -211,7 +223,9 @@ test("resize 后截图直接使用新网格并保持 PNG 尺寸一致", { timeou
     assert.equal(again.width, again.png.readUInt32BE(16));
     assert.equal(again.height, again.png.readUInt32BE(20));
     assert.equal((await engine.state()).cols, 30);
-  } finally { await engine.close(); }
+  } finally {
+    await engine.close();
+  }
 });
 
 test("浏览器终端解析宽字符、样式与模式，并从同一画面输出 PNG", { timeout: 30_000 }, async () => {
@@ -237,8 +251,14 @@ test("浏览器终端解析宽字符、样式与模式，并从同一画面输�
 
     await engine.write("\x1b[6n\x1b[16t");
     await engine.snapshot(18);
-    assert.ok(responses.some((data) => /^\x1b\[\d+;\d+R$/.test(data)), "必须将光标查询响应交还 PTY");
-    assert.ok(responses.some((data) => /^\x1b\[6;\d+;\d+t$/.test(data)), "必须返回真实字符像素尺寸");
+    assert.ok(
+      responses.some((data) => /^\x1b\[\d+;\d+R$/.test(data)),
+      "必须将光标查询响应交还 PTY"
+    );
+    assert.ok(
+      responses.some((data) => /^\x1b\[6;\d+;\d+t$/.test(data)),
+      "必须返回真实字符像素尺寸"
+    );
     const image = await engine.screenshot();
     assert.deepEqual(image.png.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
     assert.equal(image.png.readUInt32BE(16), image.width);
@@ -282,29 +302,48 @@ test("会话上限可配置，默认值仍为 8", async () => {
   const { SessionManager } = await import("../src/session/manager.js");
   const limited = new SessionManager({ artifactDir: tmpdir(), maxSessions: 1 });
   try {
-    assert.throws(() => new SessionManager({ artifactDir: tmpdir(), maxSessions: 0 }),
-      { code: "INVALID_ARGUMENT" });
+    assert.throws(() => new SessionManager({ artifactDir: tmpdir(), maxSessions: 0 }), { code: "INVALID_ARGUMENT" });
     // 上限 1：第二次启动在创建引擎前就被拒绝，因此不需要真实浏览器。
     const engine: TerminalEngine = {
-      write: async () => {}, state: async () => ({
-        cols: 10, rows: 2, cursor: { x: 0, y: 0, visible: true, style: "block", blink: false },
+      write: async () => {},
+      state: async () => ({
+        cols: 10,
+        rows: 2,
+        cursor: { x: 0, y: 0, visible: true, style: "block", blink: false },
         modes: { alternateScreen: false, bracketedPaste: false, applicationCursorKeys: false, mouseTracking: "none" },
       }),
-      snapshot: async (id) => ({ frameId: id, capturedAt: "", cols: 10, rows: 2, text: "", lines: [], cells: [],
+      snapshot: async (id) => ({
+        frameId: id,
+        capturedAt: "",
+        cols: 10,
+        rows: 2,
+        text: "",
+        lines: [],
+        cells: [],
         cursor: { x: 0, y: 0, visible: true, style: "block", blink: false },
-        modes: { alternateScreen: false, bracketedPaste: false, applicationCursorKeys: false, mouseTracking: "none" } }),
+        modes: { alternateScreen: false, bracketedPaste: false, applicationCursorKeys: false, mouseTracking: "none" },
+      }),
       screenshot: async () => ({ png: Buffer.alloc(0), width: 1, height: 1 }),
-      resize: async () => {}, close: async () => {},
+      resize: async () => {},
+      close: async () => {},
     };
     const manager = new SessionManager({ artifactDir: tmpdir(), maxSessions: 1, engineFactory: async () => engine });
     try {
       await manager.launch({ command: process.execPath, args: ["-e", "setTimeout(()=>{},5000)"] });
       await assert.rejects(
         manager.launch({ command: process.execPath, args: ["-e", "setTimeout(()=>{},5000)"] }),
-        (error: unknown) => error instanceof Error && "code" in error && error.code === "SESSION_LIMIT"
-          && (error as { details?: { maxSessions?: number } }).details?.maxSessions === 1);
-    } finally { await manager.closeAll(); }
-  } finally { await limited.closeAll().catch(() => undefined); }
+        (error: unknown) =>
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "SESSION_LIMIT" &&
+          (error as { details?: { maxSessions?: number } }).details?.maxSessions === 1
+      );
+    } finally {
+      await manager.closeAll();
+    }
+  } finally {
+    await limited.closeAll().catch(() => undefined);
+  }
 });
 
 test("默认 DOM；显式 WebGL 的 120 个块字符不产生周期暗列", { timeout: 30_000 }, async () => {

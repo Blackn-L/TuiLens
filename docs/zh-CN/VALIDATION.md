@@ -6,10 +6,15 @@
 
 ```sh
 npm run check
+npm run lint
+npm run format:check
 npm test
+npm run test:coverage
+npm run smoke:install
 ```
 
 `npm run soak` 单独运行有界渲染循环；可用 `TUILENS_SOAK_FRAMES` 调整长度。
+覆盖率阈值为行 70%、分支 65%、函数 70%。`smoke:install` 会打包、在干净项目安装，并校验 SDK/CLI 版本。
 测试覆盖：
 
 - Chrome/xterm 的 Unicode、样式、模式、查询响应与 PNG。
@@ -40,6 +45,6 @@ npm test
 
 ## 平台限制
 
-Windows `node-pty 1.2.0-beta.14` 在自然退出后的资源清理中可能由辅助进程输出
+Windows `node-pty 1.2.0-beta.18` 在自然退出后的资源清理中可能由辅助进程输出
 `AttachConsole failed`。必须核实进程最终释放，并保留原始诊断。
 测试成功不能替代各终端宿主、字体和输入法配置下的验收。

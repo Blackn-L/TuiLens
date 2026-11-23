@@ -2,9 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { errorRecord, TuiLensError } from "../core/errors.js";
-import type {
-  ClickTextOptions, InputAction, LaunchOptions, RendererKind, WaitCondition,
-} from "../core/types.js";
+import type { ClickTextOptions, InputAction, LaunchOptions, RendererKind, WaitCondition } from "../core/types.js";
 import type { SessionManager } from "../session/manager.js";
 import { scenarioSchema, type ScenarioSpec } from "./schema.js";
 import type { VisualOptions } from "../visual/artifacts.js";
@@ -34,7 +32,7 @@ export async function runScenario(
   manager: SessionManager,
   specification: unknown,
   directory: string,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<ScenarioRunResult> {
   const parsed = scenarioSchema.safeParse(specification);
   if (!parsed.success) throw new TuiLensError("INVALID_SCENARIO", "场景格式不合法", parsed.error.issues);
@@ -47,7 +45,7 @@ async function runScenarioMatrix(
   manager: SessionManager,
   spec: ScenarioSpec,
   directory: string,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<ScenarioMatrixResult> {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const profiles = spec.profiles!;
@@ -55,10 +53,17 @@ async function runScenarioMatrix(
   const runs: ScenarioResult[] = [];
   for (const profile of profiles) {
     if (signal?.aborted) break;
-    runs.push(await runScenarioSingle(manager, {
-      ...base,
-      launch: { ...base.launch, terminalProfile: profile } as LaunchOptions,
-    }, directory, signal));
+    runs.push(
+      await runScenarioSingle(
+        manager,
+        {
+          ...base,
+          launch: { ...base.launch, terminalProfile: profile } as LaunchOptions,
+        },
+        directory,
+        signal
+      )
+    );
   }
   const result: ScenarioMatrixResult = {
     pass: runs.length === profiles.length && runs.every((run) => run.pass),
@@ -75,10 +80,14 @@ async function runScenarioSingle(
   manager: SessionManager,
   spec: ScenarioSpec,
   directory: string,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<ScenarioResult> {
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  const result: ScenarioResult = { pass: true, reportPath: join(directory, `scenario-${randomUUID()}.json`), steps: [] };
+  const result: ScenarioResult = {
+    pass: true,
+    reportPath: join(directory, `scenario-${randomUUID()}.json`),
+    steps: [],
+  };
   let id: string | undefined;
   try {
     if (signal?.aborted) throw new TuiLensError("ABORTED", "场景已取消");
@@ -89,29 +98,51 @@ async function runScenarioSingle(
     for (const [index, step] of spec.steps.entries()) {
       const started = performance.now();
       const record: ScenarioResult["steps"][number] = {
-        index, type: step.type, elapsedMs: 0, ...(step.name ? { name: step.name } : {}),
+        index,
+        type: step.type,
+        elapsedMs: 0,
+        ...(step.name ? { name: step.name } : {}),
       };
       result.steps.push(record);
       try {
         if (signal?.aborted) throw new TuiLensError("ABORTED", "场景已取消");
         switch (step.type) {
-          case "input": await manager.input(id, step.action as InputAction, undefined, signal ? { signal } : {}); break;
-          case "resize": await manager.resize(id, step.cols, step.rows, signal ? { signal } : {}); break;
+          case "input":
+            await manager.input(id, step.action as InputAction, undefined, signal ? { signal } : {});
+            break;
+          case "resize":
+            await manager.resize(id, step.cols, step.rows, signal ? { signal } : {});
+            break;
           case "wait": {
-            const waited = await manager.wait(id, { conditions: step.conditions as WaitCondition[],
-              ...(step.timeoutMs === undefined ? {} : { timeoutMs: step.timeoutMs }), ...(signal ? { signal } : {}) });
+            const waited = await manager.wait(id, {
+              conditions: step.conditions as WaitCondition[],
+              ...(step.timeoutMs === undefined ? {} : { timeoutMs: step.timeoutMs }),
+              ...(signal ? { signal } : {}),
+            });
             record.result = { frameId: waited.observation.snapshot.frameId };
             break;
           }
           case "observe": {
-            const observation = await manager.observe(id, {
-              ...(step.region ? { region: step.region } : {}),
-              ...(step.cursor ? { cursor: step.cursor } : {}),
-            }, signal ? { signal } : {});
+            const observation = await manager.observe(
+              id,
+              {
+                ...(step.region ? { region: step.region } : {}),
+                ...(step.cursor ? { cursor: step.cursor } : {}),
+              },
+              signal ? { signal } : {}
+            );
             record.result = observation.screenshot;
             break;
           }
-          case "clickText": await manager.clickText(id, step.text, step.region, step.options as ClickTextOptions | undefined, signal ? { signal } : {}); break;
+          case "clickText":
+            await manager.clickText(
+              id,
+              step.text,
+              step.region,
+              step.options as ClickTextOptions | undefined,
+              signal ? { signal } : {}
+            );
+            break;
           case "compare": {
             const comparison = await manager.compare(id, step.options as VisualOptions, signal ? { signal } : {});
             record.result = comparison;
@@ -121,7 +152,9 @@ async function runScenarioSingle(
       } catch (error) {
         record.error = errorRecord(error);
         throw error;
-      } finally { record.elapsedMs = performance.now() - started; }
+      } finally {
+        record.elapsedMs = performance.now() - started;
+      }
     }
   } catch (error) {
     result.pass = false;
@@ -136,8 +169,12 @@ async function runScenarioSingle(
     }
   } finally {
     if (id) {
-      try { await manager.close(id); }
-      catch (error) { result.pass = false; result.cleanupError = errorRecord(error); }
+      try {
+        await manager.close(id);
+      } catch (error) {
+        result.pass = false;
+        result.cleanupError = errorRecord(error);
+      }
     }
     await writeFile(result.reportPath, JSON.stringify(result, null, 2), { mode: 0o600 });
   }

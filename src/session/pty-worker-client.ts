@@ -44,10 +44,16 @@ export function spawnIsolatedPty(options: PtySpawnOptions, signal?: AbortSignal)
     const terminate = (): void => {
       try {
         if (child.connected) child.send({ type: "kill" } satisfies PtyWorkerRequest);
-      } catch { /* 连接可能已经关闭。 */ }
+      } catch {
+        /* 连接可能已经关闭。 */
+      }
       setTimeout(() => {
         if (child.exitCode === null && child.signalCode === null) {
-          try { child.kill(); } catch { /* 已退出。 */ }
+          try {
+            child.kill();
+          } catch {
+            /* 已退出。 */
+          }
         }
       }, 750).unref();
     };
@@ -56,10 +62,13 @@ export function spawnIsolatedPty(options: PtySpawnOptions, signal?: AbortSignal)
       if (!resolved) {
         resolved = true;
         terminate();
-        reject(error instanceof TuiLensError ? error
-          : new TuiLensError("PROCESS_START_FAILED", "无法启动隔离的 PTY worker", {
-            reason: error instanceof Error ? error.message : String(error),
-          }));
+        reject(
+          error instanceof TuiLensError
+            ? error
+            : new TuiLensError("PROCESS_START_FAILED", "无法启动隔离的 PTY worker", {
+                reason: error instanceof Error ? error.message : String(error),
+              })
+        );
         return;
       }
       terminate();
@@ -81,7 +90,7 @@ export function spawnIsolatedPty(options: PtySpawnOptions, signal?: AbortSignal)
     };
     const handleMessage = (event: PtyWorkerEvent): void => {
       switch (event.type) {
-        case "ready":
+        case "ready": {
           if (ready || resolved) return;
           ready = true;
           pid = event.pid;
@@ -89,21 +98,35 @@ export function spawnIsolatedPty(options: PtySpawnOptions, signal?: AbortSignal)
           rows = event.rows;
           clearReadiness();
           const handle: PtyHandle = {
-            get pid() { return pid; },
-            get cols() { return cols; },
-            get rows() { return rows; },
+            get pid() {
+              return pid;
+            },
+            get cols() {
+              return cols;
+            },
+            get rows() {
+              return rows;
+            },
             onData(listener) {
               dataListeners.add(listener);
               if (pendingData.length) {
                 const buffered = pendingData.splice(0);
                 for (const data of buffered) listener(data);
               }
-              return { dispose: () => { dataListeners.delete(listener); } } satisfies IDisposable;
+              return {
+                dispose: () => {
+                  dataListeners.delete(listener);
+                },
+              } satisfies IDisposable;
             },
             onExit(listener) {
               exitListeners.add(listener);
               if (exitEvent) queueMicrotask(() => listener(exitEvent!));
-              return { dispose: () => { exitListeners.delete(listener); } } satisfies IDisposable;
+              return {
+                dispose: () => {
+                  exitListeners.delete(listener);
+                },
+              } satisfies IDisposable;
             },
             write(data) {
               if (exited || !child.connected) throw new TuiLensError("PROCESS_EXITED", "PTY worker 已退出");
@@ -133,6 +156,7 @@ export function spawnIsolatedPty(options: PtySpawnOptions, signal?: AbortSignal)
           resolved = true;
           resolve(handle);
           return;
+        }
         case "data":
           emitData(event.data);
           return;
@@ -141,9 +165,11 @@ export function spawnIsolatedPty(options: PtySpawnOptions, signal?: AbortSignal)
           clearReadiness();
           return;
         case "error":
-          fail(new TuiLensError("PROCESS_START_FAILED", "PTY worker 报告启动或运行错误", {
-            reason: event.message,
-          }));
+          fail(
+            new TuiLensError("PROCESS_START_FAILED", "PTY worker 报告启动或运行错误", {
+              reason: event.message,
+            })
+          );
           return;
       }
     };
@@ -153,10 +179,12 @@ export function spawnIsolatedPty(options: PtySpawnOptions, signal?: AbortSignal)
     child.once("exit", (code, exitSignal) => {
       clearReadiness();
       if (!ready) {
-        fail(new TuiLensError("PROCESS_START_FAILED", "PTY worker 在 ready 前退出", {
-          exitCode: code,
-          ...(exitSignal === null ? {} : { signal: exitSignal }),
-        }));
+        fail(
+          new TuiLensError("PROCESS_START_FAILED", "PTY worker 在 ready 前退出", {
+            exitCode: code,
+            ...(exitSignal === null ? {} : { signal: exitSignal }),
+          })
+        );
         return;
       }
       emitExit({ exitCode: code ?? 1 });

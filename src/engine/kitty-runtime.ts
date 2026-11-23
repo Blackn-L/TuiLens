@@ -12,7 +12,7 @@ declare global {
     __tuilensCreateKitty(
       terminal: Terminal,
       reply: (data: string) => void,
-      background: (cell: IBufferCell) => string,
+      background: (cell: IBufferCell) => string
     ): KittyRuntime;
   }
 }
@@ -63,7 +63,9 @@ export function installKittyRuntime(diacritics: number[]): void {
     if (!context) throw new Error("无法创建图片画布");
     const nativeWrite = (data: string): Promise<void> => new Promise((resolve) => terminal.write(data, resolve));
     const signature = (cell: IBufferCell | undefined): string =>
-      cell ? `${cell.getChars()}:${cell.getFgColorMode()}:${cell.getFgColor()}:${cell.getBgColorMode()}:${cell.getBgColor()}` : "";
+      cell
+        ? `${cell.getChars()}:${cell.getFgColorMode()}:${cell.getFgColor()}:${cell.getBgColorMode()}:${cell.getBgColor()}`
+        : "";
     const releasePlacement = (placement: Placement): void => {
       placementCells -= placement.columns * placement.rows;
       placement.marker?.dispose();
@@ -75,7 +77,11 @@ export function installKittyRuntime(diacritics: number[]): void {
     };
     const removeImage = (id: number): void => {
       const old = images.get(id);
-      if (old) { old.bitmap.close(); bytes -= old.bytes; images.delete(id); }
+      if (old) {
+        old.bitmap.close();
+        bytes -= old.bytes;
+        images.delete(id);
+      }
       removePlacements((placement) => placement.id === id);
     };
     const clear = (): void => {
@@ -95,13 +101,24 @@ export function installKittyRuntime(diacritics: number[]): void {
     const geometry = () => {
       const rectangle = screen.getBoundingClientRect();
       return {
-        width: Math.ceil(rectangle.width), height: Math.ceil(rectangle.height),
-        cellWidth: rectangle.width / terminal.cols, cellHeight: rectangle.height / terminal.rows,
+        width: Math.ceil(rectangle.width),
+        height: Math.ceil(rectangle.height),
+        cellWidth: rectangle.width / terminal.cols,
+        cellHeight: rectangle.height / terminal.rows,
       };
     };
-    const paintTile = (image: ImageBitmap, placement: Placement, imageRow: number, imageCol: number, x: number, y: number, cw: number, ch: number): void => {
+    const paintTile = (
+      image: ImageBitmap,
+      placement: Placement,
+      imageRow: number,
+      imageCol: number,
+      x: number,
+      y: number,
+      cw: number,
+      ch: number
+    ): void => {
       // 虚拟矩形保留图像纵横比，留白由占位字符原背景提供。
-      const scale = Math.min(placement.columns * cw / image.width, placement.rows * ch / image.height);
+      const scale = Math.min((placement.columns * cw) / image.width, (placement.rows * ch) / image.height);
       const imageWidth = image.width * scale;
       const imageHeight = image.height * scale;
       const sx = imageCol * cw;
@@ -111,9 +128,21 @@ export function installKittyRuntime(diacritics: number[]): void {
       if (width <= 0 || height <= 0) return;
       // 字符像素宽可能为小数，分块直接绘制会在相邻边缘产生透明接缝。
       // 所有图块共用同一像素边界取整规则，避免每块分别产生半透明边。
-      const left = Math.round(x * cw), top = Math.round(y * ch);
-      const right = Math.round(x * cw + width), bottom = Math.round(y * ch + height);
-      context.drawImage(image, sx / scale, sy / scale, width / scale, height / scale, left, top, right - left, bottom - top);
+      const left = Math.round(x * cw),
+        top = Math.round(y * ch);
+      const right = Math.round(x * cw + width),
+        bottom = Math.round(y * ch + height);
+      context.drawImage(
+        image,
+        sx / scale,
+        sy / scale,
+        width / scale,
+        height / scale,
+        left,
+        top,
+        right - left,
+        bottom - top
+      );
     };
     const render = (): void => {
       if (closed || terminal.modes.synchronizedOutputMode) return;
@@ -155,7 +184,10 @@ export function installKittyRuntime(diacritics: number[]): void {
         for (let x = 0; x < terminal.cols; x += 1) {
           const cell = line?.getCell(x, reusable);
           const chars = cell?.getChars() ?? "";
-          if (!cell || !chars.startsWith(placeholder)) { previous = undefined; continue; }
+          if (!cell || !chars.startsWith(placeholder)) {
+            previous = undefined;
+            continue;
+          }
           const marks = [...chars].slice(1).map((char) => indices.get(char.codePointAt(0)!));
           const low = cell.isFgRGB() || cell.isFgPalette() ? cell.getFgColor() : 0;
           const high = marks[2] ?? (previous ? Math.floor(previous.id / 0x1000000) : 0);
@@ -189,12 +221,14 @@ export function installKittyRuntime(diacritics: number[]): void {
       const columns = number(keys, "c", Math.ceil(image.bitmap.width / cw));
       const rows = number(keys, "r", Math.ceil(image.bitmap.height / ch));
       if (!columns || !rows || columns > 500 || rows > 250) throw new Error("EINVAL:placement size");
-      const replacing = (p: Placement): boolean => p.id === id && p.placementId === placementId && p.virtual === virtual;
+      const replacing = (p: Placement): boolean =>
+        p.id === id && p.placementId === placementId && p.virtual === virtual;
       const replaced = placements.filter(replacing);
       const replacedCells = replaced.reduce((total, p) => total + p.columns * p.rows, 0);
       // 图片像素缓存之外，放置元数据也有独立累计预算；视口之外的声明面积同样计入。
       // 必须在构造任何逐格 Map 前拒绝超额请求，并保留此前有效放置。
-      if (placementCells - replacedCells + columns * rows > MAX_PLACEMENT_CELLS) throw new Error("ENOSPC:placement cell limit");
+      if (placementCells - replacedCells + columns * rows > MAX_PLACEMENT_CELLS)
+        throw new Error("ENOSPC:placement cell limit");
       if (placements.length - replaced.length >= MAX_PLACEMENTS) throw new Error("ENOSPC:placement limit");
       const buffer = terminal.buffer.active;
       const x = buffer.cursorX;
@@ -213,8 +247,17 @@ export function installKittyRuntime(diacritics: number[]): void {
       const marker = virtual ? undefined : terminal.registerMarker(0);
       removePlacements(replacing);
       placements.push({
-        id, placementId, columns, rows, virtual, buffer: buffer.type,
-        ...(marker ? { marker } : {}), absoluteY, x, signatures, damaged: new Set(),
+        id,
+        placementId,
+        columns,
+        rows,
+        virtual,
+        buffer: buffer.type,
+        ...(marker ? { marker } : {}),
+        absoluteY,
+        x,
+        signatures,
+        damaged: new Set(),
       });
       placementCells += columns * rows;
       if (!virtual && number(keys, "C", 0) !== 1) {
@@ -230,12 +273,16 @@ export function installKittyRuntime(diacritics: number[]): void {
         const signature = [137, 80, 78, 71, 13, 10, 26, 10];
         if (raw.length < 45 || !signature.every((value, index) => raw[index] === value)) throw new Error("EINVAL:PNG");
         const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
-        if (view.getUint32(8) !== 13 || String.fromCharCode(...raw.subarray(12, 16)) !== "IHDR") throw new Error("EINVAL:PNG header");
+        if (view.getUint32(8) !== 13 || String.fromCharCode(...raw.subarray(12, 16)) !== "IHDR")
+          throw new Error("EINVAL:PNG header");
         const width = view.getUint32(16);
         const height = view.getUint32(20);
-        if (!width || !height || width * height > MAX_PIXELS || width > 4096 || height > 4096) throw new Error("E2BIG:pixel limit");
+        if (!width || !height || width * height > MAX_PIXELS || width > 4096 || height > 4096)
+          throw new Error("E2BIG:pixel limit");
         // 浏览器可能把 APNG 当首帧接受；协议子集明确不支持动画，因此先检查整个容器。
-        let offset = 8, idat = false, ended = false;
+        let offset = 8,
+          idat = false,
+          ended = false;
         while (offset < raw.length) {
           if (offset + 12 > raw.length) throw new Error("EINVAL:PNG chunk");
           const length = view.getUint32(offset);
@@ -248,9 +295,9 @@ export function installKittyRuntime(diacritics: number[]): void {
           let crc = 0xffffffff;
           for (let index = offset + 4; index < end - 4; index += 1) {
             crc ^= raw[index]!;
-            for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+            for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
           }
-          if (((crc ^ 0xffffffff) >>> 0) !== view.getUint32(end - 4)) throw new Error("EINVAL:PNG CRC");
+          if ((crc ^ 0xffffffff) >>> 0 !== view.getUint32(end - 4)) throw new Error("EINVAL:PNG CRC");
           if (type === "IDAT") idat = true;
           if (type === "IEND") {
             if (length !== 0 || end !== raw.length || !idat) throw new Error("EINVAL:PNG end");
@@ -262,8 +309,10 @@ export function installKittyRuntime(diacritics: number[]): void {
         return createImageBitmap(new Blob([raw], { type: "image/png" }));
       }
       if (format !== 24 && format !== 32) throw new Error("ENOTSUP:pixel format");
-      const width = number(keys, "s", 0), height = number(keys, "v", 0);
-      if (!width || !height || width * height > MAX_PIXELS || width > 4096 || height > 4096) throw new Error("E2BIG:pixel limit");
+      const width = number(keys, "s", 0),
+        height = number(keys, "v", 0);
+      if (!width || !height || width * height > MAX_PIXELS || width > 4096 || height > 4096)
+        throw new Error("E2BIG:pixel limit");
       const channels = format / 8;
       if (raw.length !== width * height * channels) throw new Error("EINVAL:pixel length");
       const pixels = new Uint8ClampedArray(width * height * 4);
@@ -288,7 +337,10 @@ export function installKittyRuntime(diacritics: number[]): void {
         if (number(keys, "q", 0) > 2) throw new Error("EINVAL:quiet");
         if (pending) {
           pending.payload += chunk;
-          if (pending.payload.length > MAX_PAYLOAD) { pending = undefined; throw new Error("E2BIG:payload limit"); }
+          if (pending.payload.length > MAX_PAYLOAD) {
+            pending = undefined;
+            throw new Error("E2BIG:payload limit");
+          }
           if (keys.m === "1") return;
           keys = { ...pending.keys, m: "0" };
         } else if (keys.m === "1") {
@@ -306,28 +358,50 @@ export function installKittyRuntime(diacritics: number[]): void {
             if (target === "A") clear();
             else removePlacements(() => true);
           } else if (target === "I") removeImage(id);
-          else removePlacements((placement) => placement.id === id && (!keys.p || placement.placementId === number(keys, "p", 0)));
-          render(); return;
+          else
+            removePlacements(
+              (placement) => placement.id === id && (!keys.p || placement.placementId === number(keys, "p", 0))
+            );
+          render();
+          return;
         }
-        if (action === "p") { await place(keys, id); respond(keys, "OK"); render(); return; }
+        if (action === "p") {
+          await place(keys, id);
+          respond(keys, "OK");
+          render();
+          return;
+        }
         if (!["t", "T", "q"].includes(action)) throw new Error("ENOTSUP:action");
         if (keys.t && keys.t !== "d") throw new Error("ENOTSUP:transmission medium");
         if (keys.o || keys.I) throw new Error("ENOTSUP:compression or automatic id");
         if (!id) throw new Error("EINVAL:image id");
         const bitmap = await decode(keys, payload);
-        if (action === "q") { bitmap.close(); respond(keys, "OK"); return; }
+        if (action === "q") {
+          bitmap.close();
+          respond(keys, "OK");
+          return;
+        }
         const size = bitmap.width * bitmap.height * 4;
         // 替换数据保留已有位置；新缓存先逐出最旧图像。
         const old = images.get(id);
-        if (old) { old.bitmap.close(); bytes -= old.bytes; images.delete(id); }
+        if (old) {
+          old.bitmap.close();
+          bytes -= old.bytes;
+          images.delete(id);
+        }
         while (images.size >= 128 || bytes + size > MAX_STORAGE) removeImage(images.keys().next().value!);
-        images.set(id, { bitmap, bytes: size }); bytes += size;
+        images.set(id, { bitmap, bytes: size });
+        bytes += size;
         if (action === "T") await place(keys, id);
         respond(keys, "OK");
       } catch (error) {
         pending = undefined;
         const message = error instanceof Error ? error.message : "EINVAL:image decode";
-        try { respond(keys, message); } catch { reply("\x1b_G;EINVAL:control data\x1b\\"); }
+        try {
+          respond(keys, message);
+        } catch {
+          reply("\x1b_G;EINVAL:control data\x1b\\");
+        }
       }
       render();
     };
@@ -335,8 +409,14 @@ export function installKittyRuntime(diacritics: number[]): void {
       terminal.onRender(render),
       terminal.onScroll(render),
       terminal.onResize(render),
-      terminal.buffer.onBufferChange(() => { removePlacements((p) => !p.virtual && p.buffer === "alternate"); render(); }),
-      terminal.parser.registerEscHandler({ final: "c" }, () => { clear(); return false; }),
+      terminal.buffer.onBufferChange(() => {
+        removePlacements((p) => !p.virtual && p.buffer === "alternate");
+        render();
+      }),
+      terminal.parser.registerEscHandler({ final: "c" }, () => {
+        clear();
+        return false;
+      }),
       terminal.parser.registerCsiHandler({ final: "J" }, (params) => {
         const value = params[0] ?? 0;
         if (value === 2 || value === 3) removePlacements((p) => !p.virtual && p.buffer === terminal.buffer.active.type);
@@ -364,30 +444,49 @@ export function installKittyRuntime(diacritics: number[]): void {
       async write(data) {
         if (closed) throw new Error("图片解码器已关闭");
         let text = "";
-        const flush = async () => { if (text) { const next = text; text = ""; await nativeWrite(next); } };
+        const flush = async () => {
+          if (text) {
+            const next = text;
+            text = "";
+            await nativeWrite(next);
+          }
+        };
         // 保留跨 write 的 ESC/APC 状态；其他 DCS/OSC 字符串原样交给 xterm。
         for (const char of data) {
           if (mode === "text") {
-            if (char === "\x1b") mode = "esc"; else text += char;
+            if (char === "\x1b") mode = "esc";
+            else text += char;
           } else if (mode === "esc") {
             if (char === "\x1b") text += char;
-            else if (char === "_") { await flush(); mode = "apc"; sequence = ""; }
-            else {
+            else if (char === "_") {
+              await flush();
+              mode = "apc";
+              sequence = "";
+            } else {
               text += "\x1b" + char;
-              if (char === "]" || char === "P" || char === "^") { mode = "string"; stringOsc = char === "]"; }
-              else mode = "text";
+              if (char === "]" || char === "P" || char === "^") {
+                mode = "string";
+                stringOsc = char === "]";
+              } else mode = "text";
             }
           } else if (mode === "apc" || mode === "apcEsc") {
             if (char === "\x18" || char === "\x1a") {
-              sequence = ""; pending = undefined; mode = "text"; text += char;
+              sequence = "";
+              pending = undefined;
+              mode = "text";
+              text += char;
             } else if (mode === "apcEsc" && char === "\\") {
               if (sequence.startsWith("G")) await command(sequence.slice(1));
-              sequence = ""; mode = "text";
+              sequence = "";
+              mode = "text";
             } else {
               if (mode === "apcEsc") sequence += "\x1b";
               mode = char === "\x1b" ? "apcEsc" : "apc";
               if (char !== "\x1b") sequence += char;
-              if (sequence.length > MAX_PAYLOAD + 4096) { pending = undefined; throw new Error("图片控制序列超过 8 MiB 上限"); }
+              if (sequence.length > MAX_PAYLOAD + 4096) {
+                pending = undefined;
+                throw new Error("图片控制序列超过 8 MiB 上限");
+              }
             }
           } else {
             text += char;
@@ -406,7 +505,8 @@ export function installKittyRuntime(diacritics: number[]): void {
         if (closed) return;
         closed = true;
         for (const listener of listeners) listener.dispose();
-        clear(); canvas.remove();
+        clear();
+        canvas.remove();
       },
     };
   };

@@ -4,18 +4,41 @@ import { integer } from "./validation.js";
 
 const CSI = "\x1b[";
 const plainKeys: Record<string, string> = {
-  enter: "\r", return: "\r", escape: "\x1b", esc: "\x1b",
-  backspace: "\x7f", tab: "\t", space: " ",
-  insert: `${CSI}2~`, delete: `${CSI}3~`,
-  pageup: `${CSI}5~`, pagedown: `${CSI}6~`,
-  f1: "\x1bOP", f2: "\x1bOQ", f3: "\x1bOR", f4: "\x1bOS",
-  f5: `${CSI}15~`, f6: `${CSI}17~`, f7: `${CSI}18~`,
-  f8: `${CSI}19~`, f9: `${CSI}20~`, f10: `${CSI}21~`,
-  f11: `${CSI}23~`, f12: `${CSI}24~`,
+  enter: "\r",
+  return: "\r",
+  escape: "\x1b",
+  esc: "\x1b",
+  backspace: "\x7f",
+  tab: "\t",
+  space: " ",
+  insert: `${CSI}2~`,
+  delete: `${CSI}3~`,
+  pageup: `${CSI}5~`,
+  pagedown: `${CSI}6~`,
+  f1: "\x1bOP",
+  f2: "\x1bOQ",
+  f3: "\x1bOR",
+  f4: "\x1bOS",
+  f5: `${CSI}15~`,
+  f6: `${CSI}17~`,
+  f7: `${CSI}18~`,
+  f8: `${CSI}19~`,
+  f9: `${CSI}20~`,
+  f10: `${CSI}21~`,
+  f11: `${CSI}23~`,
+  f12: `${CSI}24~`,
 };
 const arrows: Record<string, string> = {
-  up: "A", arrowup: "A", down: "B", arrowdown: "B",
-  right: "C", arrowright: "C", left: "D", arrowleft: "D", home: "H", end: "F",
+  up: "A",
+  arrowup: "A",
+  down: "B",
+  arrowdown: "B",
+  right: "C",
+  arrowright: "C",
+  left: "D",
+  arrowleft: "D",
+  home: "H",
+  end: "F",
 };
 
 /**
@@ -23,13 +46,33 @@ const arrows: Record<string, string> = {
  * `CSI <code> ; <modifier> u` 使用这些值；可打印字符直接使用其码位。
  */
 const kittyCodes: Record<string, number> = {
-  escape: 27, esc: 27, enter: 13, return: 13, tab: 9, backspace: 127, space: 32,
-  insert: 57348, delete: 57349,
-  left: 57350, arrowleft: 57350, right: 57351, arrowright: 57351,
-  up: 57352, arrowup: 57352, down: 57353, arrowdown: 57353,
-  pageup: 57354, pagedown: 57355, home: 57356, end: 57357,
-  capslock: 57358, scrolllock: 57359, numlock: 57360,
-  printscreen: 57361, pause: 57362, menu: 57363,
+  escape: 27,
+  esc: 27,
+  enter: 13,
+  return: 13,
+  tab: 9,
+  backspace: 127,
+  space: 32,
+  insert: 57348,
+  delete: 57349,
+  left: 57350,
+  arrowleft: 57350,
+  right: 57351,
+  arrowright: 57351,
+  up: 57352,
+  arrowup: 57352,
+  down: 57353,
+  arrowdown: 57353,
+  pageup: 57354,
+  pagedown: 57355,
+  home: 57356,
+  end: 57357,
+  capslock: 57358,
+  scrolllock: 57359,
+  numlock: 57360,
+  printscreen: 57361,
+  pause: 57362,
+  menu: 57363,
 };
 for (let index = 1; index <= 12; index += 1) kittyCodes[`f${index}`] = 57363 + index;
 for (let index = 13; index <= 35; index += 1) kittyCodes[`f${index}`] = 57363 + index;
@@ -88,8 +131,7 @@ export function encodeKey(key: string, applicationCursorKeys: boolean, keyboard?
     // modifyOtherKeys 只覆盖 ASCII；功能键仍使用各自的 CSI 形式。
     // 已有传统控制字符编码的组合（Ctrl+字母 → C0）必须保持原样：
     // 应用普遍依赖 \x01 之类的字节，改写会破坏既有行为。
-    const hasControlEncoding = modifiers.has("ctrl") && !modifiers.has("alt")
-      && /^[a-z@\[\]\\^_]$/u.test(name);
+    const hasControlEncoding = modifiers.has("ctrl") && !modifiers.has("alt") && /^[a-z@\[\]\\^_]$/u.test(name);
     if (code !== undefined && code < 57344 && !hasControlEncoding) {
       return modifyOtherKeysSequence(code, modifier);
     }
@@ -120,9 +162,14 @@ export function encodeKey(key: string, applicationCursorKeys: boolean, keyboard?
 
 function modifierCode(modifiers: Modifiers | undefined): number {
   if (modifiers === undefined) return 0;
-  if (!modifiers || typeof modifiers !== "object" || Array.isArray(modifiers)
-    || Object.entries(modifiers).some(([key, value]) =>
-      !["shift", "alt", "ctrl"].includes(key) || typeof value !== "boolean")) {
+  if (
+    !modifiers ||
+    typeof modifiers !== "object" ||
+    Array.isArray(modifiers) ||
+    Object.entries(modifiers).some(
+      ([key, value]) => !["shift", "alt", "ctrl"].includes(key) || typeof value !== "boolean"
+    )
+  ) {
     throw new TuiLensError("INVALID_ARGUMENT", "modifiers 只接受 shift、alt、ctrl 布尔值");
   }
   return (modifiers.shift ? 4 : 0) | (modifiers.alt ? 8 : 0) | (modifiers.ctrl ? 16 : 0);
@@ -156,10 +203,7 @@ const SCROLL_END_BATCH = 100;
  * 一次性向 PTY 写入 2000 个事件会对应用形成突发输入，
  * 也让操作无法在中间取消。返回 `undefined` 表示这不是到达端点的滚动。
  */
-export function encodeScrollBatches(
-  action: InputAction,
-  state: TerminalState,
-): string[] | undefined {
+export function encodeScrollBatches(action: InputAction, state: TerminalState): string[] | undefined {
   if (action.type !== "scroll" || !("to" in action)) return undefined;
   const coordinates = position(action.x, action.y, state);
   const modifiers = modifierCode(action.modifiers);
@@ -189,9 +233,9 @@ function encodeDrag(action: Extract<InputAction, { type: "drag" }>, state: Termi
   // 拖拽按下后逐格发送 button-motion，最后释放同一按钮；跳过取整产生的重复格。
   for (let step = 1; step <= steps; step += 1) {
     const coordinates = position(
-      Math.round(action.from.x + dx * step / steps),
-      Math.round(action.from.y + dy * step / steps),
-      state,
+      Math.round(action.from.x + (dx * step) / steps),
+      Math.round(action.from.y + (dy * step) / steps),
+      state
     );
     if (coordinates !== previous) events.push(mouseEvent(code | 32, coordinates));
     previous = coordinates;

@@ -2,11 +2,17 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, extname, join } from "node:path";
-import type { Browser, BrowserContext, Page } from "playwright";
+import type { Browser, BrowserContext, Page } from "playwright-core";
 import { TuiLensError } from "../core/errors.js";
 import { readBoundedFile } from "../core/bounded-file.js";
 import type {
-  BrowserEngineOptions, EngineFactory, Region, RenderMetadata, RendererKind, TerminalEngine, TerminalSnapshot,
+  BrowserEngineOptions,
+  EngineFactory,
+  Region,
+  RenderMetadata,
+  RendererKind,
+  TerminalEngine,
+  TerminalSnapshot,
   TerminalState,
 } from "../core/types.js";
 import { BrowserHost } from "./browser-host.js";
@@ -20,18 +26,19 @@ import { applyTerminalProfileOverrides, defaultTerminalProfile } from "../profil
 const require = createRequire(import.meta.url);
 // Windows Terminal 的 Cascadia Mono 来自私有字体集合，且不能假定它覆盖全部圈码；
 // 使用只覆盖圈码的本地 FontFace，避免符号字体影响 ASCII/CJK 的主字体和格宽。
-const DEFAULT_FONT = "'Cascadia Mono','DejaVu Sans Mono','Noto Sans Mono CJK SC','Noto Sans CJK SC','Microsoft YaHei','Segoe UI Emoji','Noto Color Emoji',monospace";
+const DEFAULT_FONT =
+  "'Cascadia Mono','DejaVu Sans Mono','Noto Sans Mono CJK SC','Noto Sans CJK SC','Microsoft YaHei','Segoe UI Emoji','Noto Color Emoji',monospace";
 const SYMBOL_FONT_FAMILY = "'TuiLensSymbolNoto','TuiLensSymbolPGothic','TuiLensSymbolSegoe','TuiLensSymbolApple'";
 const SYMBOL_UNICODE_RANGE = "U+24EA,U+2460-2473";
 const SYMBOL_FONT_CSS = [
-  `@font-face{font-family:'TuiLensSymbolNoto';src:local('Noto Sans CJK SC'),local('Noto Sans SC');`
-    + `unicode-range:${SYMBOL_UNICODE_RANGE};font-display:block}`,
-  `@font-face{font-family:'TuiLensSymbolPGothic';src:local('MS PGothic');`
-    + `unicode-range:${SYMBOL_UNICODE_RANGE};font-display:block}`,
-  `@font-face{font-family:'TuiLensSymbolSegoe';src:local('Segoe UI Symbol');`
-    + `unicode-range:${SYMBOL_UNICODE_RANGE};font-display:block}`,
-  `@font-face{font-family:'TuiLensSymbolApple';src:local('Apple Symbols');`
-    + `unicode-range:${SYMBOL_UNICODE_RANGE};font-display:block}`,
+  `@font-face{font-family:'TuiLensSymbolNoto';src:local('Noto Sans CJK SC'),local('Noto Sans SC');` +
+    `unicode-range:${SYMBOL_UNICODE_RANGE};font-display:block}`,
+  `@font-face{font-family:'TuiLensSymbolPGothic';src:local('MS PGothic');` +
+    `unicode-range:${SYMBOL_UNICODE_RANGE};font-display:block}`,
+  `@font-face{font-family:'TuiLensSymbolSegoe';src:local('Segoe UI Symbol');` +
+    `unicode-range:${SYMBOL_UNICODE_RANGE};font-display:block}`,
+  `@font-face{font-family:'TuiLensSymbolApple';src:local('Apple Symbols');` +
+    `unicode-range:${SYMBOL_UNICODE_RANGE};font-display:block}`,
 ].join("");
 const EMBEDDED_FONT_FAMILY = "TuiLensEmbeddedFont";
 const MAX_FONT_BYTES = 32 * 1024 * 1024;
@@ -56,28 +63,38 @@ async function loadEmbeddedFont(fontFile: string): Promise<EmbeddedFont> {
   const extension = extname(fontFile).toLowerCase();
   const format = FONT_FORMATS[extension];
   if (!format) {
-    throw new TuiLensError("INVALID_FONT_FILE", "字体文件格式必须是 .ttf、.otf、.woff 或 .woff2", {
-      path: fontFile,
-      extension,
-    }, "The font file must use .ttf, .otf, .woff or .woff2.");
+    throw new TuiLensError(
+      "INVALID_FONT_FILE",
+      "字体文件格式必须是 .ttf、.otf、.woff 或 .woff2",
+      {
+        path: fontFile,
+        extension,
+      },
+      "The font file must use .ttf, .otf, .woff or .woff2."
+    );
   }
   let bytes: Buffer;
   try {
     bytes = await readBoundedFile(fontFile, MAX_FONT_BYTES);
   } catch (error) {
-    throw new TuiLensError("INVALID_FONT_FILE", "无法读取字体文件", {
-      path: fontFile,
-      reason: error instanceof Error ? error.message : String(error),
-    }, "The font file could not be read.");
+    throw new TuiLensError(
+      "INVALID_FONT_FILE",
+      "无法读取字体文件",
+      {
+        path: fontFile,
+        reason: error instanceof Error ? error.message : String(error),
+      },
+      "The font file could not be read."
+    );
   }
   if (bytes.length === 0) {
-    throw new TuiLensError("INVALID_FONT_FILE", "字体文件为空", { path: fontFile },
-      "The font file is empty.");
+    throw new TuiLensError("INVALID_FONT_FILE", "字体文件为空", { path: fontFile }, "The font file is empty.");
   }
   const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
-  const css = `@font-face{font-family:'${EMBEDDED_FONT_FAMILY}';`
-    + `src:url("data:${format.mime};base64,${bytes.toString("base64")}") format('${format.format}');`
-    + "font-display:block}";
+  const css =
+    `@font-face{font-family:'${EMBEDDED_FONT_FAMILY}';` +
+    `src:url("data:${format.mime};base64,${bytes.toString("base64")}") format('${format.format}');` +
+    "font-display:block}";
   return { family: EMBEDDED_FONT_FAMILY, css, hash };
 }
 
@@ -91,14 +108,17 @@ export function resolveBrowserExecutable(explicit?: string): string | undefined 
     return configured;
   }
   const windowsRoots = [process.env.ProgramFiles, process.env["ProgramFiles(x86)"], process.env.LOCALAPPDATA];
-  const candidates = process.platform === "win32"
-    ? windowsRoots.filter((path): path is string => Boolean(path)).flatMap((path) => [
-      join(path, "Google/Chrome/Application/chrome.exe"),
-      join(path, "Microsoft/Edge/Application/msedge.exe"),
-    ])
-    : process.platform === "darwin"
-      ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
-      : ["/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"];
+  const candidates =
+    process.platform === "win32"
+      ? windowsRoots
+          .filter((path): path is string => Boolean(path))
+          .flatMap((path) => [
+            join(path, "Google/Chrome/Application/chrome.exe"),
+            join(path, "Microsoft/Edge/Application/msedge.exe"),
+          ])
+      : process.platform === "darwin"
+        ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
+        : ["/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"];
   return candidates.find((path) => existsSync(path));
 }
 
@@ -161,7 +181,8 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
   const embeddedFont = options.fontFile === undefined ? undefined : await loadEmbeddedFont(options.fontFile);
   const requestedFontFamily = options.fontFamily ?? DEFAULT_FONT;
   const fontFamily = [embeddedFont ? `'${embeddedFont.family}'` : "", SYMBOL_FONT_FAMILY, requestedFontFamily]
-    .filter(Boolean).join(",");
+    .filter(Boolean)
+    .join(",");
   const host = shared ?? new BrowserHost(resolveBrowserExecutable(options.executablePath));
   const ownsHost = shared === undefined;
   let browser: Browser | undefined;
@@ -180,33 +201,46 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
     // 会话只渲染本地终端字节，拒绝页面产生外部网络请求。
     await context.route("**/*", (route) => route.abort());
     page = await context.newPage();
-    page.on("crash", () => { crashed = true; });
+    page.on("crash", () => {
+      crashed = true;
+    });
     page.setDefaultTimeout(10_000);
     await page.exposeFunction("__tuilensData", (data: unknown) => {
       if (!closed && typeof data === "string") options.onData(data);
     });
-    await page.setContent("<!doctype html><html><head><meta charset='utf-8'></head><body><div id='terminal'></div></body></html>");
+    await page.setContent(
+      "<!doctype html><html><head><meta charset='utf-8'></head><body><div id='terminal'></div></body></html>"
+    );
     const terminalModule = require.resolve("@xterm/xterm");
     const addonModule = require.resolve("@xterm/addon-unicode-graphemes");
     await page.addStyleTag({ path: join(dirname(terminalModule), "../css/xterm.css") });
     await page.addStyleTag({
-      content: "html,body{margin:0;padding:0;overflow:hidden;background:#101114}#terminal{display:inline-block}.xterm{padding:0}.xterm-viewport{scrollbar-width:none!important}.xterm-viewport::-webkit-scrollbar{display:none}.xterm-scrollable-element>.scrollbar{display:none!important}",
+      content:
+        "html,body{margin:0;padding:0;overflow:hidden;background:#101114}#terminal{display:inline-block}.xterm{padding:0}.xterm-viewport{scrollbar-width:none!important}.xterm-viewport::-webkit-scrollbar{display:none}.xterm-scrollable-element>.scrollbar{display:none!important}",
     });
     await page.addStyleTag({ content: SYMBOL_FONT_CSS });
     if (embeddedFont) {
       await page.addStyleTag({ content: embeddedFont.css });
       try {
-        const loaded = await page.evaluate(async ({ family, size }) => {
-          const faces = await document.fonts.load(`${size}px "${family}"`);
-          await document.fonts.ready;
-          return faces.length > 0 && faces.every((face) => face.status === "loaded");
-        }, { family: embeddedFont.family, size: fontSize });
+        const loaded = await page.evaluate(
+          async ({ family, size }) => {
+            const faces = await document.fonts.load(`${size}px "${family}"`);
+            await document.fonts.ready;
+            return faces.length > 0 && faces.every((face) => face.status === "loaded");
+          },
+          { family: embeddedFont.family, size: fontSize }
+        );
         if (!loaded) throw new Error("FontFace was not loaded");
       } catch (error) {
-        throw new TuiLensError("INVALID_FONT_FILE", "字体文件无法在浏览器中加载", {
-          path: options.fontFile,
-          reason: error instanceof Error ? error.message : String(error),
-        }, "The font file could not be loaded in the browser.");
+        throw new TuiLensError(
+          "INVALID_FONT_FILE",
+          "字体文件无法在浏览器中加载",
+          {
+            path: options.fontFile,
+            reason: error instanceof Error ? error.message : String(error),
+          },
+          "The font file could not be loaded in the browser."
+        );
       }
     }
     await page.addScriptTag({ path: terminalModule });
@@ -233,19 +267,28 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
       graphics,
       ...(options.profile ? { replies: profile.replies } : {}),
       ...(options.profile && profile.capabilities.keyboard?.kitty !== undefined
-        ? { keyboard: profile.capabilities.keyboard } : {}),
+        ? { keyboard: profile.capabilities.keyboard }
+        : {}),
     });
     await resizeViewport();
   } catch (error) {
     // 字体解码等启动中途失败时，不能把已创建的页面留在共享浏览器里。
-    try { await context?.close(); } catch { /* 浏览器或页面可能已崩溃。 */ }
+    try {
+      await context?.close();
+    } catch {
+      /* 浏览器或页面可能已崩溃。 */
+    }
     // 启动失败只归还本次引用；共享浏览器可能仍有其他会话在用。
     if (ownsHost) await host.shutdown();
     else host.release();
     if (error instanceof TuiLensError) throw error;
-    throw new TuiLensError("BROWSER_START_FAILED", "无法启动终端浏览器。可设置 TUILENS_BROWSER_PATH 或执行 npx playwright install chromium。", {
-      cause: error instanceof Error ? error.message : String(error),
-    });
+    throw new TuiLensError(
+      "BROWSER_START_FAILED",
+      "无法启动终端浏览器。可设置 TUILENS_BROWSER_PATH 或执行 npx playwright-core install chromium。",
+      {
+        cause: error instanceof Error ? error.message : String(error),
+      }
+    );
   }
 
   function assertOpen(): void {
@@ -272,9 +315,12 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
   }
 
   async function nextPaint(): Promise<void> {
-    await page.evaluate(() => new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-    }));
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        })
+    );
   }
 
   async function screenRect(): Promise<{ x: number; y: number; width: number; height: number }> {
@@ -295,9 +341,10 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
     do {
       const current = await state();
       const rectangle = await screenRect();
-      const stable = previous !== undefined
-        && Math.abs(previous.width - rectangle.width) <= 1
-        && Math.abs(previous.height - rectangle.height) <= 1;
+      const stable =
+        previous !== undefined &&
+        Math.abs(previous.width - rectangle.width) <= 1 &&
+        Math.abs(previous.height - rectangle.height) <= 1;
       if (stable && (!expected || (current.cols === expected.cols && current.rows === expected.rows))) {
         return { rectangle, current };
       }
@@ -325,15 +372,21 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
         const { rectangle, current } = await waitForGeometry();
         let clip = rectangle;
         if (region) {
-          if (!Object.values(region).every(Number.isInteger) || region.x < 0 || region.y < 0
-            || region.width < 1 || region.height < 1 || region.x + region.width > current.cols
-            || region.y + region.height > current.rows) {
+          if (
+            !Object.values(region).every(Number.isInteger) ||
+            region.x < 0 ||
+            region.y < 0 ||
+            region.width < 1 ||
+            region.height < 1 ||
+            region.x + region.width > current.cols ||
+            region.y + region.height > current.rows
+          ) {
             throw new TuiLensError("INVALID_REGION", "截图区域必须位于终端字符网格内");
           }
-          const x = Math.floor(rectangle.x + rectangle.width * region.x / current.cols);
-          const y = Math.floor(rectangle.y + rectangle.height * region.y / current.rows);
-          const right = Math.ceil(rectangle.x + rectangle.width * (region.x + region.width) / current.cols);
-          const bottom = Math.ceil(rectangle.y + rectangle.height * (region.y + region.height) / current.rows);
+          const x = Math.floor(rectangle.x + (rectangle.width * region.x) / current.cols);
+          const y = Math.floor(rectangle.y + (rectangle.height * region.y) / current.rows);
+          const right = Math.ceil(rectangle.x + (rectangle.width * (region.x + region.width)) / current.cols);
+          const bottom = Math.ceil(rectangle.y + (rectangle.height * (region.y + region.height)) / current.rows);
           clip = { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
         }
         // 放在 settle 之后，避免重绘重新生成带光标类的节点。
@@ -391,13 +444,19 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
       assertOpen();
       await assertFrameReady();
       return page.evaluate((args) => window.__tuilens.probeText(args.text, args.region, args.style), {
-        text, region, style,
+        text,
+        region,
+        style,
       });
     },
     async glyphMetrics(texts) {
       assertOpen();
-      if (!Array.isArray(texts) || texts.length === 0 || texts.length > 64
-        || texts.some((text) => typeof text !== "string" || text.length === 0 || text.length > 16)) {
+      if (
+        !Array.isArray(texts) ||
+        texts.length === 0 ||
+        texts.length > 64 ||
+        texts.some((text) => typeof text !== "string" || text.length === 0 || text.length > 16)
+      ) {
         throw new TuiLensError("INVALID_ARGUMENT", "glyphMetrics 需要 1～64 个非空短字符串");
       }
       await settle();
@@ -415,7 +474,8 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
       const includeGrid = options?.cells !== false;
       const packed = await page.evaluate(
         ({ id, grid, scrollback }) => window.__tuilens.snapshot(id, grid, scrollback),
-        { id: frameId, grid: includeGrid, scrollback: options?.scrollback ?? 0 });
+        { id: frameId, grid: includeGrid, scrollback: options?.scrollback ?? 0 }
+      );
       return {
         frameId: packed.frameId,
         capturedAt: packed.capturedAt,
@@ -440,7 +500,11 @@ async function createEngine(options: BrowserEngineOptions, shared?: BrowserHost)
         // 只释放本会话的页面与上下文；共享浏览器由宿主按引用计数管理。
         await page.evaluate(() => window.__tuilens.dispose());
       } finally {
-        try { await page.context().close(); } catch { /* 页面或浏览器可能已崩溃。 */ }
+        try {
+          await page.context().close();
+        } catch {
+          /* 页面或浏览器可能已崩溃。 */
+        }
         if (ownsHost) await host.shutdown();
         else host.release();
       }

@@ -1,11 +1,22 @@
 import type {
-  LaunchOptions, ResolvedTerminalProfile, TerminalKeyboardCapabilities, TerminalReplies,
+  LaunchOptions,
+  ResolvedTerminalProfile,
+  TerminalKeyboardCapabilities,
+  TerminalReplies,
 } from "../core/types.js";
 
 export type ProtocolRepliesOptions = NonNullable<LaunchOptions["protocolReplies"]>;
 
-type ReplyKind = "primary" | "secondary" | "cursor" | "status" | "cellSize" | "windowSize"
-  | "decrqm" | "xtversion" | "keyboard";
+type ReplyKind =
+  | "primary"
+  | "secondary"
+  | "cursor"
+  | "status"
+  | "cellSize"
+  | "windowSize"
+  | "decrqm"
+  | "xtversion"
+  | "keyboard";
 
 const QUERY_PATTERNS: readonly [ReplyKind, RegExp][] = [
   ["primary", /\x1b\[(?:0)?c/gu],
@@ -50,13 +61,13 @@ const KEYBOARD_REPLY = /\x1b\[\?[0-9;]*u/gu;
 export function rewriteProfileReplies(
   data: string,
   replies: TerminalReplies,
-  keyboard?: TerminalKeyboardCapabilities,
+  keyboard?: TerminalKeyboardCapabilities
 ): string {
   return data
     .replace(DA1_REPLY, () => replies.da1 ?? "")
     .replace(DA2_REPLY, () => replies.da2 ?? "")
     .replace(XTVERSION_REPLY, () => replies.xtversion ?? "")
-    .replace(KEYBOARD_REPLY, () => keyboard?.kitty === undefined ? "" : `\x1b[?${keyboard.kitty}u`);
+    .replace(KEYBOARD_REPLY, () => (keyboard?.kitty === undefined ? "" : `\x1b[?${keyboard.kitty}u`));
 }
 
 export function rewriteTerminalProfileReplies(data: string, profile: ResolvedTerminalProfile): string {

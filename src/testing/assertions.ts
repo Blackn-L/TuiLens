@@ -1,7 +1,13 @@
 import { TuiLensError } from "../core/errors.js";
 import { pick } from "../core/i18n.js";
 import type {
-  CursorState, InputAction, MatchStyle, Observation, Region, SessionInfo, WaitCondition,
+  CursorState,
+  InputAction,
+  MatchStyle,
+  Observation,
+  Region,
+  SessionInfo,
+  WaitCondition,
 } from "../core/types.js";
 import type { SessionManager } from "../session/manager.js";
 
@@ -17,7 +23,7 @@ export class TuiLensAssertionError extends TuiLensError {
       artifact?: string;
       /** 失败时刻的画面文本，截断到便于阅读的长度。 */
       screen?: string;
-    },
+    }
   ) {
     super(code, message, assertion);
     this.name = "TuiLensAssertionError";
@@ -70,29 +76,40 @@ function waitedText(timeoutMs: number): string {
 export class Terminal {
   constructor(
     private readonly manager: SessionManager,
-    readonly session: SessionInfo,
+    readonly session: SessionInfo
   ) {}
 
-  get id(): string { return this.session.id; }
+  get id(): string {
+    return this.session.id;
+  }
 
   /** 断言画面包含文本；支持区域与样式限定。 */
   async expectText(text: string, options: ExpectOptions = {}): Promise<void> {
     const timeoutMs = options.timeoutMs ?? 5000;
     try {
       await this.manager.wait(this.id, {
-        conditions: [{
-          kind: "text", text,
-          ...(options.region ? { region: options.region } : {}),
-          ...(options.style ? { style: options.style } : {}),
-        }],
+        conditions: [
+          {
+            kind: "text",
+            text,
+            ...(options.region ? { region: options.region } : {}),
+            ...(options.style ? { style: options.style } : {}),
+          },
+        ],
         timeoutMs,
       });
     } catch (error) {
       const wanted = JSON.stringify(text);
-      throw await this.fail("EXPECT_TEXT_FAILED",
-        pick(`Expected screen to contain ${wanted}; ${waitedText(timeoutMs)}`,
-          `期望画面包含 ${wanted}，${waitedText(timeoutMs)}`),
-        pick(`contain ${wanted}`, `包含 ${wanted}`), pick("not found", "未找到"), error);
+      throw await this.fail(
+        "EXPECT_TEXT_FAILED",
+        pick(
+          `Expected screen to contain ${wanted}; ${waitedText(timeoutMs)}`,
+          `期望画面包含 ${wanted}，${waitedText(timeoutMs)}`
+        ),
+        pick(`contain ${wanted}`, `包含 ${wanted}`),
+        pick("not found", "未找到"),
+        error
+      );
     }
   }
 
@@ -111,16 +128,17 @@ export class Terminal {
       observed = observation.snapshot.text;
       const present = options.region
         ? observation.snapshot.lines
-          .slice(options.region.y, options.region.y + options.region.height)
-          .some((line) => line.includes(text))
+            .slice(options.region.y, options.region.y + options.region.height)
+            .some((line) => line.includes(text))
         : observed.includes(text);
       if (present) {
         const wanted = JSON.stringify(text);
-        throw await this.fail("EXPECT_NO_TEXT_FAILED",
-          pick(`Expected screen not to contain ${wanted}, but it appeared`,
-            `期望画面不包含 ${wanted}，但已出现`),
+        throw await this.fail(
+          "EXPECT_NO_TEXT_FAILED",
+          pick(`Expected screen not to contain ${wanted}, but it appeared`, `期望画面不包含 ${wanted}，但已出现`),
           pick(`not contain ${wanted}`, `不包含 ${wanted}`),
-          pick(`contains ${wanted}`, `包含 ${wanted}`));
+          pick(`contains ${wanted}`, `包含 ${wanted}`)
+        );
       }
       // 仅在剩余时间内继续观察；不为了凑满窗口而空转。
       const remaining = deadline - performance.now();
@@ -133,27 +151,35 @@ export class Terminal {
   /** 断言光标位置或可见性。 */
   async expectCursor(
     expected: { x?: number; y?: number; visible?: boolean },
-    options: ExpectOptions = {},
+    options: ExpectOptions = {}
   ): Promise<void> {
     const timeoutMs = options.timeoutMs ?? 5000;
     try {
       await this.manager.wait(this.id, {
-        conditions: [{
-          kind: "cursor",
-          ...(expected.x === undefined ? {} : { x: expected.x }),
-          ...(expected.y === undefined ? {} : { y: expected.y }),
-          ...(expected.visible === undefined ? {} : { visible: expected.visible }),
-        }],
+        conditions: [
+          {
+            kind: "cursor",
+            ...(expected.x === undefined ? {} : { x: expected.x }),
+            ...(expected.y === undefined ? {} : { y: expected.y }),
+            ...(expected.visible === undefined ? {} : { visible: expected.visible }),
+          },
+        ],
         timeoutMs,
       });
     } catch (error) {
-      const observation = await this.manager.observe(this.id, { screenshot: false, cells: false })
+      const observation = await this.manager
+        .observe(this.id, { screenshot: false, cells: false })
         .catch(() => undefined);
-      throw await this.fail("EXPECT_CURSOR_FAILED",
-        pick(`Expected cursor to satisfy ${JSON.stringify(expected)}; ${waitedText(timeoutMs)}`,
-          `期望光标满足 ${JSON.stringify(expected)}，${waitedText(timeoutMs)}`),
+      throw await this.fail(
+        "EXPECT_CURSOR_FAILED",
+        pick(
+          `Expected cursor to satisfy ${JSON.stringify(expected)}; ${waitedText(timeoutMs)}`,
+          `期望光标满足 ${JSON.stringify(expected)}，${waitedText(timeoutMs)}`
+        ),
         JSON.stringify(expected),
-        observation ? JSON.stringify(observation.snapshot.cursor) : pick("unavailable", "不可用"), error);
+        observation ? JSON.stringify(observation.snapshot.cursor) : pick("unavailable", "不可用"),
+        error
+      );
     }
   }
 
@@ -166,15 +192,19 @@ export class Terminal {
         timeoutMs,
       });
     } catch (error) {
-      const observation = await this.manager.observe(this.id, { screenshot: false, cells: false })
+      const observation = await this.manager
+        .observe(this.id, { screenshot: false, cells: false })
         .catch(() => undefined);
-      throw await this.fail("EXPECT_SIZE_FAILED",
-        pick(`Expected terminal size ${cols}×${rows}; ${waitedText(timeoutMs)}`,
-          `期望终端尺寸为 ${cols}×${rows}，${waitedText(timeoutMs)}`),
+      throw await this.fail(
+        "EXPECT_SIZE_FAILED",
+        pick(
+          `Expected terminal size ${cols}×${rows}; ${waitedText(timeoutMs)}`,
+          `期望终端尺寸为 ${cols}×${rows}，${waitedText(timeoutMs)}`
+        ),
         `${cols}×${rows}`,
-        observation
-          ? `${observation.snapshot.cols}×${observation.snapshot.rows}`
-          : pick("unavailable", "不可用"), error);
+        observation ? `${observation.snapshot.cols}×${observation.snapshot.rows}` : pick("unavailable", "不可用"),
+        error
+      );
     }
   }
 
@@ -204,30 +234,45 @@ export class Terminal {
     return this.manager.input(this.id, action, guard);
   }
 
-  type(text: string) { return this.input({ type: "text", text }); }
+  type(text: string) {
+    return this.input({ type: "text", text });
+  }
 
   typeAndWait(text: string, conditions: WaitCondition[], timeoutMs = 10_000) {
     return this.manager.inputAndWait(this.id, { type: "text", text }, undefined, { conditions, timeoutMs });
   }
 
-  key(key: string) { return this.input({ type: "key", key }); }
+  key(key: string) {
+    return this.input({ type: "key", key });
+  }
 
-  click(x: number, y: number) { return this.input({ type: "click", x, y }); }
+  click(x: number, y: number) {
+    return this.input({ type: "click", x, y });
+  }
 
   clickText(text: string, options?: Parameters<SessionManager["clickText"]>[3]) {
     return this.manager.clickText(this.id, text, undefined, options);
   }
 
-  resize(cols: number, rows: number) { return this.manager.resize(this.id, cols, rows); }
+  resize(cols: number, rows: number) {
+    return this.manager.resize(this.id, cols, rows);
+  }
 
-  close() { return this.manager.close(this.id); }
+  close() {
+    return this.manager.close(this.id);
+  }
 
   /**
    * 组装断言失败。尽量附带失败时刻的截图，
    * 但证据采集本身失败时不能掩盖原始断言结果。
    */
-  private async fail(code: string, message: string, expected: string, actual: string,
-    cause?: unknown): Promise<TuiLensAssertionError> {
+  private async fail(
+    code: string,
+    message: string,
+    expected: string,
+    actual: string,
+    cause?: unknown
+  ): Promise<TuiLensAssertionError> {
     let artifact: string | undefined;
     let screen: string | undefined;
     try {
@@ -240,7 +285,8 @@ export class Terminal {
       }
     }
     return new TuiLensAssertionError(code, message, {
-      expected, actual,
+      expected,
+      actual,
       ...(artifact ? { artifact } : {}),
       ...(screen === undefined ? {} : { screen }),
     });
@@ -248,7 +294,10 @@ export class Terminal {
 }
 
 /** 启动被测程序并返回断言句柄；调用方负责 close 或 closeAll。 */
-export async function terminal(manager: SessionManager, options: Parameters<SessionManager["launch"]>[0]): Promise<Terminal> {
+export async function terminal(
+  manager: SessionManager,
+  options: Parameters<SessionManager["launch"]>[0]
+): Promise<Terminal> {
   return new Terminal(manager, await manager.launch(options));
 }
 

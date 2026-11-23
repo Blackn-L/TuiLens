@@ -11,7 +11,10 @@ test("probe 报告固定字形宽度与渲染指纹", { timeout: 30_000 }, async
   assert.ok(report.render.cellWidth > 0);
   assert.ok(report.render.cellHeight > 0);
   assert.match(report.render.fingerprint, /^[0-9a-f]{16}$/u);
-  assert.ok(report.glyphs.every((glyph) => glyph.pass), JSON.stringify(report.glyphs));
+  assert.ok(
+    report.glyphs.every((glyph) => glyph.pass),
+    JSON.stringify(report.glyphs)
+  );
   assert.ok(report.fontScale);
   assert.equal(report.fontScale.texts.length, 21);
   assert.ok(report.fontScale.texts.includes("⑫"));

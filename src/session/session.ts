@@ -6,15 +6,23 @@ import { TuiLensError } from "../core/errors.js";
 import { compactSnapshot } from "../core/compact.js";
 import { encodeInput, encodeScrollBatches } from "../core/input.js";
 import type {
-  CursorState, InputAction, InputGuard, Observation, ObserveOptions, SessionInfo, TerminalEngine,
-  FrameAccessOptions, MatchStyle, Region, ResolvedTerminalProfile, TextProbe,
+  CursorState,
+  InputAction,
+  InputGuard,
+  Observation,
+  ObserveOptions,
+  SessionInfo,
+  TerminalEngine,
+  FrameAccessOptions,
+  MatchStyle,
+  Region,
+  ResolvedTerminalProfile,
+  TextProbe,
 } from "../core/types.js";
 import { dimensions, inputGuard, regionWithin } from "../core/validation.js";
 import { regionFingerprint } from "../core/locator.js";
 import type { RecordingWriter } from "../recording/writer.js";
-import {
-  ProtocolReplyGuard, rewriteTerminalProfileReplies, type ProtocolRepliesOptions,
-} from "./protocol-replies.js";
+import { ProtocolReplyGuard, rewriteTerminalProfileReplies, type ProtocolRepliesOptions } from "./protocol-replies.js";
 import type { PtyHandle } from "./pty-runtime.js";
 
 const MAX_PENDING_BYTES = 16 * 1024 * 1024;
@@ -64,15 +72,12 @@ export function controlled<T>(promise: Promise<T>, control: OperationControl, co
     if (control.timeoutMs !== undefined) {
       timer = setTimeout(() => fail(new TuiLensError(code, "操作未在期限内完成")), control.timeoutMs);
     }
-    promise.then(
-      (value) => {
-        if (finished) return;
-        finished = true;
-        cleanup();
-        resolve(value);
-      },
-      fail,
-    );
+    promise.then((value) => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      resolve(value);
+    }, fail);
   });
 }
 
@@ -97,9 +102,17 @@ export class ManagedSession {
   private exited = false;
   private readonly protocolGuard: ProtocolReplyGuard;
   private readonly counters: SessionMetrics = {
-    receivedBytes: 0, appliedBytes: 0, pendingBytes: 0,
-    peakPendingBytes: 0, pauseCount: 0, pauseDurationMs: 0, writeBatches: 0,
-    protocolQueries: 0, protocolRepliesForwarded: 0, protocolRepliesDropped: 0, lastProtocolReplyLatencyMs: 0,
+    receivedBytes: 0,
+    appliedBytes: 0,
+    pendingBytes: 0,
+    peakPendingBytes: 0,
+    pauseCount: 0,
+    pauseDurationMs: 0,
+    writeBatches: 0,
+    protocolQueries: 0,
+    protocolRepliesForwarded: 0,
+    protocolRepliesDropped: 0,
+    lastProtocolReplyLatencyMs: 0,
   };
 
   constructor(
@@ -109,34 +122,40 @@ export class ManagedSession {
     private readonly artifactDir: string,
     private readonly recorder?: RecordingWriter,
     protocolReplies?: ProtocolRepliesOptions,
-    private readonly profile?: ResolvedTerminalProfile,
+    private readonly profile?: ResolvedTerminalProfile
   ) {
     this.protocolGuard = new ProtocolReplyGuard(protocolReplies);
-    this.exitPromise = new Promise((resolve) => { this.resolveExit = resolve; });
+    this.exitPromise = new Promise((resolve) => {
+      this.resolveExit = resolve;
+    });
     this.disposables.push(pty.onData((data) => this.receive(data)));
-    this.disposables.push(pty.onExit(({ exitCode }) => {
-      this.exited = true;
-      this.resolveExit();
-      // 最后一批输出先入队；已退出状态只能在它完成后对外可见。
-      this.sealBatch();
-      void this.enqueue(async () => {
-        this.details.status = "exited";
-        this.details.exitCode = exitCode;
-        await this.recorder?.append({ type: "exit", code: exitCode });
-        await this.recorder?.close();
-        for (const wake of [...this.exitWaiters]) wake();
-      }).catch((error: unknown) => this.setFault(error));
-    }));
+    this.disposables.push(
+      pty.onExit(({ exitCode }) => {
+        this.exited = true;
+        this.resolveExit();
+        // 最后一批输出先入队；已退出状态只能在它完成后对外可见。
+        this.sealBatch();
+        void this.enqueue(async () => {
+          this.details.status = "exited";
+          this.details.exitCode = exitCode;
+          await this.recorder?.append({ type: "exit", code: exitCode });
+          await this.recorder?.close();
+          for (const wake of [...this.exitWaiters]) wake();
+        }).catch((error: unknown) => this.setFault(error));
+      })
+    );
   }
 
-  info(): SessionInfo { return { ...this.details }; }
+  info(): SessionInfo {
+    return { ...this.details };
+  }
 
   metrics(): SessionMetrics {
     return {
       ...this.counters,
       ...this.protocolGuard.metrics(),
-      pauseDurationMs: this.counters.pauseDurationMs
-        + (this.pausedAt === undefined ? 0 : performance.now() - this.pausedAt),
+      pauseDurationMs:
+        this.counters.pauseDurationMs + (this.pausedAt === undefined ? 0 : performance.now() - this.pausedAt),
     };
   }
 
@@ -144,7 +163,11 @@ export class ManagedSession {
     if (this.closing || this.exited || this.fault) return;
     const rewritten = this.profile ? rewriteTerminalProfileReplies(data, this.profile) : data;
     if (!rewritten || !this.protocolGuard.shouldForward(rewritten)) return;
-    try { this.pty.write(rewritten); } catch (error) { this.setFault(error); }
+    try {
+      this.pty.write(rewritten);
+    } catch (error) {
+      this.setFault(error);
+    }
   }
 
   private setFault(error: unknown): void {
@@ -154,7 +177,10 @@ export class ManagedSession {
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.tail.then(operation);
-    this.tail = result.then(() => {}, () => {});
+    this.tail = result.then(
+      () => {},
+      () => {}
+    );
     return result;
   }
 
@@ -176,7 +202,11 @@ export class ManagedSession {
     // 暂停时仍可能有数据在途；硬上限防止失控进程耗尽守护进程内存。
     if (this.counters.pendingBytes + bytes > MAX_PENDING_BYTES) {
       this.setFault(new Error("终端待处理输出超过 16 MiB"));
-      try { this.pty.kill(); } catch (error) { this.setFault(error); }
+      try {
+        this.pty.kill();
+      } catch (error) {
+        this.setFault(error);
+      }
       return;
     }
     this.counters.pendingBytes += bytes;
@@ -186,7 +216,9 @@ export class ManagedSession {
         this.pty.pause();
         this.pausedAt = performance.now();
         this.counters.pauseCount += 1;
-      } catch (error) { this.setFault(error); }
+      } catch (error) {
+        this.setFault(error);
+      }
     }
     let start = 0;
     while (start < data.length) {
@@ -194,7 +226,10 @@ export class ManagedSession {
       // 不在 UTF-16 代理对中间切断，避免浏览器两次 write 产生替换字符。
       const last = data.charCodeAt(end - 1);
       if (end < data.length && last >= 0xd800 && last <= 0xdbff) end -= 1;
-      if (end <= start) { this.sealBatch(); continue; }
+      if (end <= start) {
+        this.sealBatch();
+        continue;
+      }
       const part = data.slice(start, end);
       this.batch.push(part);
       this.batchChars += part.length;
@@ -237,8 +272,11 @@ export class ManagedSession {
     }).catch((error: unknown) => this.setFault(error));
   }
 
-  observe(options: ObserveOptions = {}, control: OperationControl = {},
-    frame: FrameAccessOptions = {}): Promise<Observation> {
+  observe(
+    options: ObserveOptions = {},
+    control: OperationControl = {},
+    frame: FrameAccessOptions = {}
+  ): Promise<Observation> {
     this.assertUsable();
     return this.observeReady(options, control, frame);
   }
@@ -255,8 +293,12 @@ export class ManagedSession {
     return controlled(pending, control);
   }
 
-  async probeText(text: string, region: Region | undefined, style: MatchStyle | undefined,
-    control: OperationControl): Promise<(TextProbe & { frameId: number }) | undefined> {
+  async probeText(
+    text: string,
+    region: Region | undefined,
+    style: MatchStyle | undefined,
+    control: OperationControl
+  ): Promise<(TextProbe & { frameId: number }) | undefined> {
     if (!this.engine.probeText) return undefined;
     this.assertUsable();
     this.sealBatch();
@@ -280,8 +322,11 @@ export class ManagedSession {
     return controlled(pending, control);
   }
 
-  private async observeReady(options: ObserveOptions, control: OperationControl,
-    frame: FrameAccessOptions = {}): Promise<Observation> {
+  private async observeReady(
+    options: ObserveOptions,
+    control: OperationControl,
+    frame: FrameAccessOptions = {}
+  ): Promise<Observation> {
     const deadline = performance.now() + (control.timeoutMs ?? 10_000);
     let lastError: unknown;
     const signal = control.signal
@@ -299,7 +344,9 @@ export class ManagedSession {
           ...frame,
           ...(options.compact === true
             ? { cells: false }
-            : options.cells === undefined ? {} : { cells: options.cells }),
+            : options.cells === undefined
+              ? {}
+              : { cells: options.cells }),
           ...(options.scrollback === undefined ? {} : { scrollback: options.scrollback }),
         });
         if (options.region) regionWithin(options.region, snapshot.cols, snapshot.rows);
@@ -314,7 +361,10 @@ export class ManagedSession {
           const path = `${prefix}.png`;
           await writeFile(path, capture.png, { mode: 0o600 });
           observation.screenshot = {
-            path, width: capture.width, height: capture.height, frameId: snapshot.frameId,
+            path,
+            width: capture.width,
+            height: capture.height,
+            frameId: snapshot.frameId,
             ...(options.region ? { region: options.region } : {}),
             cursor: options.cursor === "show" ? "shown" : "hidden",
           };
@@ -337,9 +387,12 @@ export class ManagedSession {
           signal,
           timeoutMs: Math.max(1, deadline - performance.now()),
         }).catch((timeoutError: unknown) => {
-          if (lastError instanceof TuiLensError
-            && timeoutError instanceof TuiLensError
-            && timeoutError.code === "OPERATION_TIMEOUT") throw lastError;
+          if (
+            lastError instanceof TuiLensError &&
+            timeoutError instanceof TuiLensError &&
+            timeoutError.code === "OPERATION_TIMEOUT"
+          )
+            throw lastError;
           throw timeoutError;
         });
       }
@@ -351,7 +404,11 @@ export class ManagedSession {
     return this.inputWithFrame(action, guard, control).then((result) => result.session);
   }
 
-  inputWithFrame(action: InputAction, guard?: InputGuard, control: OperationControl = {}): Promise<{
+  inputWithFrame(
+    action: InputAction,
+    guard?: InputGuard,
+    control: OperationControl = {}
+  ): Promise<{
     session: SessionInfo;
     frameId: number;
     cursor: CursorState;
@@ -359,8 +416,12 @@ export class ManagedSession {
     return this.inputWithFrameOptions(action, guard, control);
   }
 
-  inputWithFrameOptions(action: InputAction, guard: InputGuard | undefined, control: OperationControl = {},
-    frame: FrameAccessOptions = {}): Promise<{
+  inputWithFrameOptions(
+    action: InputAction,
+    guard: InputGuard | undefined,
+    control: OperationControl = {},
+    frame: FrameAccessOptions = {}
+  ): Promise<{
     session: SessionInfo;
     frameId: number;
     cursor: CursorState;
@@ -368,7 +429,9 @@ export class ManagedSession {
     this.assertUsable(true);
     this.sealBatch();
     let cancelled = false;
-    const check = () => { if (cancelled || control.signal?.aborted) throw new TuiLensError("ABORTED", "输入已取消"); };
+    const check = () => {
+      if (cancelled || control.signal?.aborted) throw new TuiLensError("ABORTED", "输入已取消");
+    };
     const pending = this.enqueue(async () => {
       this.assertUsable(true);
       check();
@@ -403,7 +466,10 @@ export class ManagedSession {
       await this.recorder?.append({ type: "input", action });
       return { session: this.info(), frameId: inputFrameId, cursor: state.cursor };
     });
-    return controlled(pending, { timeoutMs: 10000, ...control }).catch((error) => { cancelled = true; throw error; });
+    return controlled(pending, { timeoutMs: 10000, ...control }).catch((error) => {
+      cancelled = true;
+      throw error;
+    });
   }
 
   resize(cols: number, rows: number, control: OperationControl = {}): Promise<SessionInfo> {
@@ -423,7 +489,10 @@ export class ManagedSession {
       this.frameId += 1;
       return this.info();
     });
-    return controlled(pending, { timeoutMs: 10000, ...control }).catch((error) => { cancelled = true; throw error; });
+    return controlled(pending, { timeoutMs: 10000, ...control }).catch((error) => {
+      cancelled = true;
+      throw error;
+    });
   }
 
   async waitForExit(control: OperationControl): Promise<void> {
@@ -440,12 +509,18 @@ export class ManagedSession {
         this.exitWaiters.delete(done);
         signal.removeEventListener("abort", abort);
       };
-      const done = () => { cleanup(); resolve(); };
+      const done = () => {
+        cleanup();
+        resolve();
+      };
       const abort = () => {
         cleanup();
         reject(new TuiLensError(this.closing ? "SESSION_CLOSED" : "ABORTED", "等待已取消"));
       };
-      if (signal.aborted) { abort(); return; }
+      if (signal.aborted) {
+        abort();
+        return;
+      }
       this.exitWaiters.add(done);
       signal.addEventListener("abort", abort, { once: true });
       timer = setTimeout(() => {
@@ -482,13 +557,27 @@ export class ManagedSession {
         // node-pty 的自然退出仅关闭输出管道；显式 kill 还会释放 ConPTY worker 与输入句柄。
         this.pty.kill();
       }
-    } catch (error) { closeError = error; }
+    } catch (error) {
+      closeError = error;
+    }
     this.pty.dispose?.();
     for (const disposable of this.disposables.splice(0)) disposable.dispose();
     // 先关闭浏览器可打断卡住的 evaluate；再等待队列收敛，不能让 close 无限悬挂。
-    try { await this.engine.close(); } catch (error) { closeError ??= error; }
-    try { await controlled(this.tail, { timeoutMs: 2000 }); } catch (error) { closeError ??= error; }
-    try { await this.recorder?.close(); } catch (error) { closeError ??= error; }
+    try {
+      await this.engine.close();
+    } catch (error) {
+      closeError ??= error;
+    }
+    try {
+      await controlled(this.tail, { timeoutMs: 2000 });
+    } catch (error) {
+      closeError ??= error;
+    }
+    try {
+      await this.recorder?.close();
+    } catch (error) {
+      closeError ??= error;
+    }
     this.details.status = "closed";
     if (closeError) throw closeError;
   }

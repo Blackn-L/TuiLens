@@ -29,7 +29,7 @@ npm run build
 Install the browser only when no system browser is available:
 
 ```powershell
-npx playwright install chromium
+npx playwright-core install chromium
 ```
 
 `TUILENS_BROWSER_PATH` can select a browser explicitly.
@@ -157,7 +157,7 @@ browser-backed session unnecessarily.
 | `spawn node ENOENT` | The MCP client does not inherit the shell `PATH` | Set `command` to the absolute `node` executable |
 | No tools appear after restart | Client configuration was not reloaded, or the server failed to start | Check the client's MCP logs, verify the path, and restart the client |
 | `node-pty` install failure | Unsupported Node version or missing native build tools | Use Node.js 22 or newer, run `npm ci`, and install the platform C++ toolchain if needed |
-| Browser launch failure | No Chrome/Edge installation was detected | Run `npx playwright install chromium` or set `TUILENS_BROWSER_PATH` |
+| Browser launch failure | No Chrome/Edge installation was detected | Run `npx playwright-core install chromium` or set `TUILENS_BROWSER_PATH` |
 | Relative file or command not found | The client's working directory differs from the shell's | Pass an absolute `cwd` and absolute program or script paths in tool arguments |
 | The `mcp` command appears to hang with no output | This is a stdio server waiting for JSON-RPC input | Test it through an MCP client, not as an interactive terminal command |
 | Environment readiness is unclear | Browser, PTY, storage or daemon state may be missing or invalid | Run `node dist/src/interfaces/cli.js doctor`; exit code 1 means an error-level check failed |

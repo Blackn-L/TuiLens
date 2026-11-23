@@ -112,6 +112,7 @@ For long-running tests, fix fonts, grid, engine and browser versions; sample eac
 record collection overhead and backpressure; and distinguish input delivery, application output, parsing and display.
 Short synthetic output tests cannot establish hours-long latency or memory stability.
 Native engines and Rust processing layers still require overhead calibration.
+The accepted browser-engine costs and replacement gates are recorded in [architecture](ARCHITECTURE.md).
 
 The browser path is an observation environment, not a zero-overhead performance probe. `perf` measures the
 application through that environment, so the tool's own cost is a constant offset, not the reported metric.

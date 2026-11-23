@@ -28,7 +28,7 @@ npm run build
 系统没有可用的浏览器时再安装：
 
 ```powershell
-npx playwright install chromium
+npx playwright-core install chromium
 ```
 
 也可以通过 `TUILENS_BROWSER_PATH` 明确指定浏览器路径。
@@ -150,7 +150,7 @@ shell，再为它增加客户端级规则或 Skill。例如在 Codex 的 `AGENTS
 | `spawn node ENOENT` | MCP 客户端没有继承 shell 的 `PATH` | 把 `command` 改成 `node` 可执行文件的绝对路径 |
 | 重启后看不到工具 | 客户端没有重新加载配置，或服务启动失败 | 查看客户端的 MCP 日志，核对路径，然后重启客户端 |
 | `node-pty` 安装失败 | Node 版本不满足要求，或缺少原生构建工具 | 使用 Node.js 22+，执行 `npm ci`；必要时安装平台 C++ 工具链 |
-| 浏览器启动失败 | 没有检测到 Chrome/Edge | 执行 `npx playwright install chromium`，或设置 `TUILENS_BROWSER_PATH` |
+| 浏览器启动失败 | 没有检测到 Chrome/Edge | 执行 `npx playwright-core install chromium`，或设置 `TUILENS_BROWSER_PATH` |
 | 相对路径的文件或命令找不到 | 客户端的工作目录与 shell 不同 | 在工具参数中传入绝对 `cwd`、程序路径或脚本路径 |
 | 直接运行 `mcp` 命令后一直没有输出 | stdio 服务正在等待 JSON-RPC 输入，这是正常行为 | 通过 MCP 客户端测试，不要把它当成交互式终端命令 |
 | 不确定环境是否就绪 | 浏览器、PTY、存储或 daemon 状态可能缺失或无效 | 运行 `node dist/src/interfaces/cli.js doctor`；退出码 1 表示存在错误级检查 |

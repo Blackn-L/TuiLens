@@ -94,9 +94,10 @@ test("Windows 缺失命令给出有界搜索详情", { skip: !windows }, async (
         env: { PATH: directory, PATHEXT: ".EXE" },
         platform: "win32",
       }),
-      (error: unknown) => error instanceof TuiLensError
-        && error.code === "EXECUTABLE_NOT_FOUND"
-        && Array.isArray((error.details as { searchDirectories?: unknown }).searchDirectories),
+      (error: unknown) =>
+        error instanceof TuiLensError &&
+        error.code === "EXECUTABLE_NOT_FOUND" &&
+        Array.isArray((error.details as { searchDirectories?: unknown }).searchDirectories)
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -113,7 +114,7 @@ test("Windows 批处理脚本不被隐式包装", { skip: !windows }, async () =
         env: { PATH: directory, PATHEXT: ".CMD" },
         platform: "win32",
       }),
-      (error: unknown) => error instanceof TuiLensError && error.code === "EXECUTABLE_REQUIRES_SHELL",
+      (error: unknown) => error instanceof TuiLensError && error.code === "EXECUTABLE_REQUIRES_SHELL"
     );
   } finally {
     await rm(directory, { recursive: true, force: true });

@@ -21,13 +21,10 @@
 
 ## 0.5.x plan
 
-Keep all follow-up work inside the 0.5 patch line. Do not open a 0.6 line until the
-0.5.x exit criteria are met. npm publishing, GitHub Release automation and clean-install
-smoke tests are deliberately deferred.
-The version stays at 0.5.0 while these phases land in one working tree; release slicing can
-map them to 0.5.1–0.5.4 later.
+0.5.1–0.5.4 are landed. The current patch version is 0.5.5, which closes the release and quality-gate
+work instead of deferring it.
 
-### 0.5.0 Delivery foundation (current)
+### 0.5.0 Delivery foundation (landed)
 
 - Add `doctor` for runtime, browser, `node-pty`, storage and daemon diagnostics.
 - Expose daemon uptime and live session/launch/replay counts from `ping`.
@@ -69,9 +66,23 @@ Exit: supported platforms have CI evidence; visual differences are explainable.
 
 Exit: measured budgets exist before any native-engine rewrite is considered.
 
+### 0.5.5 Release engineering and quality gates (landed)
+
+- Replace `playwright` with `playwright-core`; stable dependencies use SemVer ranges while the
+  prerelease `node-pty` pin remains exact.
+- Generate the SDK version from `package.json`; publish, GitHub Release and clean-install smoke are
+  tag-driven workflows.
+- Add Biome lint/format gates, coverage thresholds, scheduled soak runs, dependency drift artifacts and
+  Dependabot updates.
+- Record the browser renderer boundary and the evidence required before a native/browser-free engine.
+
+Exit: tag builds publish reproducibly, install from the packed tarball, and pass the same checks as CI.
+
 ## Later
 
 - Expand tested image protocol semantics without advertising unsupported behavior.
 - Evaluate a native processing engine using measured parser, IPC and rendering costs.
 
-A browser-free engine still needs reproducible overhead measurements; changing language alone does not guarantee accuracy.
+A browser-free engine still needs reproducible overhead measurements and renderer equivalence; changing
+language alone does not guarantee accuracy. See the renderer exit criteria in
+[architecture](ARCHITECTURE.md).

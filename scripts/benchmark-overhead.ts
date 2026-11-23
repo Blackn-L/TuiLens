@@ -18,7 +18,12 @@ const ROWS = 50;
 const TIMEOUT_MS = 120_000;
 const DEFAULTS = { frames: 240, repeats: 3, paceMs: 0 };
 type Mode = "drain-only" | "tuilens";
-interface Options { frames: number; repeats: number; paceMs: number; out: string }
+interface Options {
+  frames: number;
+  repeats: number;
+  paceMs: number;
+  out: string;
+}
 interface FixtureResult {
   frames: number;
   producedBytes: number;
@@ -82,8 +87,12 @@ function parseOptions(args: string[]): Options {
   };
 }
 
-function cpuMs(cpu: NodeJS.CpuUsage): number { return (cpu.user + cpu.system) / 1000; }
-function rounded(value: number): number { return Math.round(value * 1000) / 1000; }
+function cpuMs(cpu: NodeJS.CpuUsage): number {
+  return (cpu.user + cpu.system) / 1000;
+}
+function rounded(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
 
 async function until(predicate: () => boolean, label: string): Promise<void> {
   const deadline = performance.now() + TIMEOUT_MS;
@@ -95,9 +104,12 @@ async function until(predicate: () => boolean, label: string): Promise<void> {
 
 /** stdout 回调保证字节交给通道；耗时仍可能受 PTY 背压影响，正是本对照需要观察的量。 */
 function writeStdout(data: string): Promise<void> {
-  return new Promise((resolveWrite, reject) => process.stdout.write(data, (error) => {
-    if (error) reject(error); else resolveWrite();
-  }));
+  return new Promise((resolveWrite, reject) =>
+    process.stdout.write(data, (error) => {
+      if (error) reject(error);
+      else resolveWrite();
+    })
+  );
 }
 
 async function fixture(args: string[]): Promise<void> {
@@ -122,10 +134,12 @@ async function fixture(args: string[]): Promise<void> {
   await writeStdout(`\x1b[?25l\x1b[2J\x1b[HREADY_${token}\r\n`);
   await ready;
   // 每帧改变整行内容，避免 ConPTY 将重复画面优化成只有标题更新。
-  const frameBodies = Array.from({ length: 26 }, (_, frame) => Array.from({ length: 45 }, (_, index) => {
-    const payload = String.fromCharCode(65 + frame).repeat(128);
-    return `\x1b[${index + 3};1H\x1b[38;2;${40 + index};170;220mROW_${String(index).padStart(3, "0")} 中文 🚀 ⠀ ${payload}\x1b[0m`;
-  }).join(""));
+  const frameBodies = Array.from({ length: 26 }, (_, frame) =>
+    Array.from({ length: 45 }, (_, index) => {
+      const payload = String.fromCharCode(65 + frame).repeat(128);
+      return `\x1b[${index + 3};1H\x1b[38;2;${40 + index};170;220mROW_${String(index).padStart(3, "0")} 中文 🚀 ⠀ ${payload}\x1b[0m`;
+    }).join("")
+  );
   const started = performance.now();
   const cpuStarted = process.cpuUsage();
   let producedBytes = 0;
@@ -139,7 +153,9 @@ async function fixture(args: string[]): Promise<void> {
   producedBytes += Buffer.byteLength(done);
   await writeStdout(done);
   const result: FixtureResult = {
-    frames, producedBytes, elapsedMs: rounded(performance.now() - started),
+    frames,
+    producedBytes,
+    elapsedMs: rounded(performance.now() - started),
     cpu: process.cpuUsage(cpuStarted),
     // Node resourceUsage 的 maxRSS 在支持的平台以 KiB 返回。
     maxRssBytes: process.resourceUsage().maxRSS * 1024,
@@ -150,9 +166,9 @@ async function fixture(args: string[]): Promise<void> {
 }
 
 function benchmarkEnv(): Record<string, string> {
-  const env = Object.fromEntries(Object.entries(process.env).filter(
-    (entry): entry is [string, string] => entry[1] !== undefined,
-  ));
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
+  );
   delete env.FORCE_COLOR;
   delete env.NO_COLOR;
   delete env.TERM_PROGRAM;
@@ -161,8 +177,15 @@ function benchmarkEnv(): Record<string, string> {
   return { ...env, TERM: "xterm-256color", COLORTERM: "truecolor" };
 }
 
+function isBenchmarkDir(path: string): boolean {
+  return dirname(resolve(path)) === resolve(tmpdir()) && basename(path).startsWith("tuilens-overhead-");
+}
+
 async function worker(mode: Mode, frames: number, paceMs: number): Promise<Result> {
   const workdir = await mkdtemp(join(tmpdir(), "tuilens-overhead-"));
+  if (!isBenchmarkDir(workdir)) {
+    throw new Error("拒绝使用不属于本次基准的目录");
+  }
   const token = randomUUID().replaceAll("-", "");
   const reportPath = join(workdir, "fixture.json");
   const fixtureArgs = [SELF, "--fixture", String(frames), String(paceMs), reportPath, token];
@@ -195,20 +218,34 @@ async function worker(mode: Mode, frames: number, paceMs: number): Promise<Resul
     if (mode === "drain-only") {
       const nodePty = await import("node-pty");
       pty = nodePty.spawn(process.execPath, fixtureArgs, {
-        cwd: process.cwd(), cols: COLS, rows: ROWS, name: "xterm-256color", env: benchmarkEnv(),
+        cwd: process.cwd(),
+        cols: COLS,
+        rows: ROWS,
+        name: "xterm-256color",
+        env: benchmarkEnv(),
       });
-      listeners.push(pty.onData((data) => {
-        collect(data);
-        appliedBytes += Buffer.byteLength(data);
-        lastAppliedAt = performance.now();
-      }));
-      listeners.push(pty.onExit(({ exitCode }) => { exited = exitCode; }));
-      send = async () => { pty!.write("GO\r"); };
+      listeners.push(
+        pty.onData((data) => {
+          collect(data);
+          appliedBytes += Buffer.byteLength(data);
+          lastAppliedAt = performance.now();
+        })
+      );
+      listeners.push(
+        pty.onExit(({ exitCode }) => {
+          exited = exitCode;
+        })
+      );
+      send = async () => {
+        pty!.write("GO\r");
+      };
       hasExited = () => exited !== undefined;
       close = async () => {
         for (const listener of listeners) listener.dispose();
         // Windows 的退出事件到达后仍可能持有 PTY 管道，明确释放宿主资源。
-        try { pty!.kill(); } catch (error) {
+        try {
+          pty!.kill();
+        } catch (error) {
           if (exited === undefined) throw error;
         }
       };
@@ -231,13 +268,20 @@ async function worker(mode: Mode, frames: number, paceMs: number): Promise<Resul
       const manager = new SessionManager({ artifactDir: workdir, engineFactory });
       close = () => manager.closeAll();
       const session = await manager.launch({
-        command: process.execPath, args: fixtureArgs, cols: COLS, rows: ROWS,
-        env: benchmarkEnv(), cwd: process.cwd(),
+        command: process.execPath,
+        args: fixtureArgs,
+        cols: COLS,
+        rows: ROWS,
+        env: benchmarkEnv(),
+        cwd: process.cwd(),
       });
       const metricsManager = manager as typeof manager & { metrics(id: string): SessionMetrics };
-      if (typeof metricsManager.metrics !== "function") throw new Error("当前 SessionManager 尚未提供 metrics()，不能伪造排队/背压指标");
+      if (typeof metricsManager.metrics !== "function")
+        throw new Error("当前 SessionManager 尚未提供 metrics()，不能伪造排队/背压指标");
       getMetrics = () => metricsManager.metrics(session.id);
-      send = async () => { await manager.input(session.id, { type: "raw", data: "GO\r" }); };
+      send = async () => {
+        await manager.input(session.id, { type: "raw", data: "GO\r" });
+      };
       hasExited = () => {
         const info = manager.list().find((item) => item.id === session.id);
         if (info?.status === "exited") {
@@ -255,7 +299,9 @@ async function worker(mode: Mode, frames: number, paceMs: number): Promise<Resul
     const startupRootCpuMs = cpuMs(process.cpuUsage(startupCpu));
     const rootRssStartBytes = process.memoryUsage.rss();
     let peakRss = rootRssStartBytes;
-    timer = setInterval(() => { peakRss = Math.max(peakRss, process.memoryUsage.rss()); }, 25);
+    timer = setInterval(() => {
+      peakRss = Math.max(peakRss, process.memoryUsage.rss());
+    }, 25);
     const controlStarted = performance.now();
     const controlCpu = process.cpuUsage();
     await send!();
@@ -288,45 +334,55 @@ async function worker(mode: Mode, frames: number, paceMs: number): Promise<Resul
       tool: {
         controlToOutputAppliedMs: rounded(lastAppliedAt - controlStarted),
         controlToExitObservedMs: rounded(end - controlStarted),
-        rootCpuMs: rounded(rootCpuMs), rootRssStartBytes,
-        rootRssPeakBytes: peakRss, rootRssEndBytes, rssSamplingIntervalMs: 25,
+        rootCpuMs: rounded(rootCpuMs),
+        rootRssStartBytes,
+        rootRssPeakBytes: peakRss,
+        rootRssEndBytes,
+        rssSamplingIntervalMs: 25,
         receivedBytes: metrics?.receivedBytes ?? receivedBytes,
         appliedBytes: metrics?.appliedBytes ?? appliedBytes,
-        observedChunks, sessionMetrics: metrics,
+        observedChunks,
+        sessionMetrics: metrics,
       },
       validation: { completionMarkerReceived: true, finalScreenContainsMarker, exitCode: exited },
     };
   } finally {
     if (timer) clearInterval(timer);
     await close?.();
-    // 只移除本次 mkdtemp 创建的目录，Windows 同样先检查最终绝对路径。
-    if (dirname(resolve(workdir)) !== resolve(tmpdir()) || !basename(workdir).startsWith("tuilens-overhead-")) {
-      throw new Error("拒绝清理不属于本次基准的目录");
-    }
-    await rm(workdir, { recursive: true, force: true });
+    if (isBenchmarkDir(workdir)) await rm(workdir, { recursive: true, force: true });
   }
 }
 
 async function subprocess(mode: Mode, options: Options): Promise<Result> {
   return new Promise((resolveWorker, reject) => {
     const child = spawn(process.execPath, [SELF, "--worker", mode, String(options.frames), String(options.paceMs)], {
-      stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
     });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (data: string) => { stdout += data; });
-    child.stderr.on("data", (data: string) => { stderr = (stderr + data).slice(-8192); });
+    child.stdout.on("data", (data: string) => {
+      stdout += data;
+    });
+    child.stderr.on("data", (data: string) => {
+      stderr = (stderr + data).slice(-8192);
+    });
     child.once("error", reject);
     child.once("exit", (code) => {
-      if (code !== 0) { reject(new Error(`${mode} 基准失败 (${code})：${stderr}`)); return; }
+      if (code !== 0) {
+        reject(new Error(`${mode} 基准失败 (${code})：${stderr}`));
+        return;
+      }
       try {
         const result = JSON.parse(stdout) as Result;
         // 成功退出不抹去宿主清理诊断，便于区分测量通过与平台兼容问题。
         if (stderr.trim()) result.workerDiagnostics = stderr.trim();
         resolveWorker(result);
-      } catch (error) { reject(error); }
+      } catch (error) {
+        reject(error);
+      }
     });
   });
 }
@@ -350,21 +406,34 @@ async function main(options: Options): Promise<void> {
     const middle = Math.floor(sorted.length / 2);
     return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
   };
-  const summary = Object.fromEntries((["drain-only", "tuilens"] as const).map((mode) => {
-    const results = rounds.flatMap((round) => round.results).filter((result) => result.mode === mode);
-    return [mode, {
-      medianStartupMs: rounded(median(results.map((result) => result.startupMs))),
-      medianWorkloadMs: rounded(median(results.map((result) => result.workload.elapsedMs))),
-      medianOutputAppliedMs: rounded(median(results.map((result) => result.tool.controlToOutputAppliedMs))),
-      medianToolRootCpuMs: rounded(median(results.map((result) => result.tool.rootCpuMs))),
-      peakToolRootRssBytes: Math.max(...results.map((result) => result.tool.rootRssPeakBytes)),
-    }];
-  }));
+  const summary = Object.fromEntries(
+    (["drain-only", "tuilens"] as const).map((mode) => {
+      const results = rounds.flatMap((round) => round.results).filter((result) => result.mode === mode);
+      return [
+        mode,
+        {
+          medianStartupMs: rounded(median(results.map((result) => result.startupMs))),
+          medianWorkloadMs: rounded(median(results.map((result) => result.workload.elapsedMs))),
+          medianOutputAppliedMs: rounded(median(results.map((result) => result.tool.controlToOutputAppliedMs))),
+          medianToolRootCpuMs: rounded(median(results.map((result) => result.tool.rootCpuMs))),
+          peakToolRootRssBytes: Math.max(...results.map((result) => result.tool.rootRssPeakBytes)),
+        },
+      ];
+    })
+  );
   const report = {
-    schemaVersion: 1, createdAt: new Date().toISOString(),
-    environment: { node: process.version, platform: platform(), release: release(), arch: process.arch,
-      cpuModel: cpus()[0]?.model ?? "unknown", logicalCpus: cpus().length,
-      grid: { cols: COLS, rows: ROWS }, browserPath: process.env.TUILENS_BROWSER_PATH ?? "system auto selection" },
+    schemaVersion: 1,
+    createdAt: new Date().toISOString(),
+    environment: {
+      node: process.version,
+      platform: platform(),
+      release: release(),
+      arch: process.arch,
+      cpuModel: cpus()[0]?.model ?? "unknown",
+      logicalCpus: cpus().length,
+      grid: { cols: COLS, rows: ROWS },
+      browserPath: process.env.TUILENS_BROWSER_PATH ?? "system auto selection",
+    },
     settings: { frames: options.frames, repeats: options.repeats, paceMs: options.paceMs },
     boundaries: [
       "drain-only 不解析/绘制，不代表正常终端用户体验。",
@@ -377,7 +446,8 @@ async function main(options: Options): Promise<void> {
       "根进程 RSS 每 25ms 采样，短峰值可能未被采到。",
       "该短期合成输出对照不能替代真实长任务的延迟、进程树资源及内存增长测试。",
     ],
-    summary, rounds,
+    summary,
+    rounds,
   };
   await mkdir(dirname(options.out), { recursive: true });
   await writeFile(options.out, JSON.stringify(report, null, 2));

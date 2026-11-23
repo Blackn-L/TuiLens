@@ -10,6 +10,7 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { Observation, SessionInfo } from "../src/core/types.js";
+import { VERSION } from "../src/version.js";
 
 const run = promisify(execFile);
 const cli = fileURLToPath(new URL("../src/interfaces/cli.js", import.meta.url));
@@ -19,62 +20,107 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
   const home = await mkdtemp(join(tmpdir(), "tuilens-interface-"));
   const env = { ...process.env, TUILENS_HOME: home, TUILENS_LANG: "en" };
   const call = async (method: string, params = {}): Promise<unknown> => {
-    const result = await run(process.execPath, [cli, method, "--json", JSON.stringify(params)], { env, maxBuffer: 20 * 1024 * 1024 });
+    const result = await run(process.execPath, [cli, method, "--json", JSON.stringify(params)], {
+      env,
+      maxBuffer: 20 * 1024 * 1024,
+    });
     const payload = JSON.parse(result.stdout) as { ok: boolean; data: unknown };
     assert.equal(payload.ok, true, result.stdout);
     return payload.data;
   };
   let client: Client | undefined;
   try {
-    const session = await call("launch", { command: "node", args: [fixture], cols: 60, rows: 12, recording: {} }) as SessionInfo;
+    const session = (await call("launch", {
+      command: "node",
+      args: [fixture],
+      cols: 60,
+      rows: 12,
+      recording: {},
+    })) as SessionInfo;
     assert.equal(session.renderer, "dom");
     await call("wait", { id: session.id, conditions: [{ kind: "text", text: "TUILENS_READY" }] });
-    const clicked = await run(process.execPath, [cli, "click-text", "--json", JSON.stringify({
-      id: session.id, text: "TUILENS_READY", options: { selection: "unique" },
-    })], { env, maxBuffer: 20 * 1024 * 1024 });
+    const clicked = await run(
+      process.execPath,
+      [
+        cli,
+        "click-text",
+        "--json",
+        JSON.stringify({
+          id: session.id,
+          text: "TUILENS_READY",
+          options: { selection: "unique" },
+        }),
+      ],
+      { env, maxBuffer: 20 * 1024 * 1024 }
+    );
     const clickPayload = JSON.parse(clicked.stdout) as { ok: boolean; error?: { code?: string } };
     assert.equal(clickPayload.ok, true, clicked.stdout);
     assert.notEqual(clickPayload.error?.code, "UNKNOWN_METHOD");
-    const waitedInput = await run(process.execPath, [cli, "input-wait", "--json", JSON.stringify({
-      id: session.id,
-      action: { type: "text", text: "PING" },
-      wait: { conditions: [{ kind: "text", text: "INPUT_RECEIVED" }], timeoutMs: 5000 },
-    })], { env, maxBuffer: 20 * 1024 * 1024 });
+    const waitedInput = await run(
+      process.execPath,
+      [
+        cli,
+        "input-wait",
+        "--json",
+        JSON.stringify({
+          id: session.id,
+          action: { type: "text", text: "PING" },
+          wait: { conditions: [{ kind: "text", text: "INPUT_RECEIVED" }], timeoutMs: 5000 },
+        }),
+      ],
+      { env, maxBuffer: 20 * 1024 * 1024 }
+    );
     const waitedPayload = JSON.parse(waitedInput.stdout) as { ok: boolean; error?: { code?: string } };
     assert.equal(waitedPayload.ok, true, waitedInput.stdout);
     assert.notEqual(waitedPayload.error?.code, "UNKNOWN_METHOD");
-    const observation = await call("observe", { id: session.id }) as Observation;
+    const observation = (await call("observe", { id: session.id })) as Observation;
     assert.equal(observation.session.renderer, "dom");
     assert.equal(observation.snapshot.frameId, observation.screenshot?.frameId);
     assert.match(observation.snapshot.text, /中文 🚀 A⠀B/u);
-    assert.deepEqual([...((await readFile(observation.screenshot!.path)).subarray(0, 8))], [137, 80, 78, 71, 13, 10, 26, 10]);
-    const watched = await run(process.execPath, [
-      cli, "watch", session.id, "--interval", "50", "--timeout", "350",
-    ], { env, maxBuffer: 20 * 1024 * 1024 });
-    const watchLines = watched.stdout.trim().split("\n").map((line) => JSON.parse(line) as {
-      ok: boolean;
-      data: { stopped?: boolean; snapshot?: { cells?: unknown } };
+    assert.deepEqual(
+      [...(await readFile(observation.screenshot!.path)).subarray(0, 8)],
+      [137, 80, 78, 71, 13, 10, 26, 10]
+    );
+    const watched = await run(process.execPath, [cli, "watch", session.id, "--interval", "50", "--timeout", "350"], {
+      env,
+      maxBuffer: 20 * 1024 * 1024,
     });
+    const watchLines = watched.stdout
+      .trim()
+      .split("\n")
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            ok: boolean;
+            data: { stopped?: boolean; snapshot?: { cells?: unknown } };
+          }
+      );
     assert.ok(watchLines.length >= 2);
     assert.ok(watchLines.some((line) => line.data.stopped === true));
     assert.ok(watchLines.some((line) => line.data.snapshot !== undefined && line.data.snapshot.cells === undefined));
-    const crop = await call("observe", { id: session.id, region: { x: 0, y: 0, width: 12, height: 2 } }) as Observation;
+    const crop = (await call("observe", {
+      id: session.id,
+      region: { x: 0, y: 0, width: 12, height: 2 },
+    })) as Observation;
     assert.ok(crop.screenshot!.width < observation.screenshot!.width);
-    const comparison = await call("compare", { id: session.id, options: { baseline: crop.screenshot!.path,
-      region: { x: 0, y: 0, width: 12, height: 2 } } }) as { pass: boolean; renderer?: string };
+    const comparison = (await call("compare", {
+      id: session.id,
+      options: { baseline: crop.screenshot!.path, region: { x: 0, y: 0, width: 12, height: 2 } },
+    })) as { pass: boolean; renderer?: string };
     assert.equal(comparison.pass, true);
     assert.equal(comparison.renderer, "dom");
     await call("input", { id: session.id, action: { type: "text", text: "PING" } });
     await call("wait", { id: session.id, conditions: [{ kind: "text", text: "INPUT_RECEIVED" }] });
     await call("resize", { id: session.id, cols: 80, rows: 16 });
     await call("wait", { id: session.id, conditions: [{ kind: "text", text: "SIZE_80_16" }] });
-    const metrics = await call("metrics", { id: session.id }) as { receivedBytes: number; appliedBytes: number };
+    const metrics = (await call("metrics", { id: session.id })) as { receivedBytes: number; appliedBytes: number };
     assert.ok(metrics.receivedBytes > 0);
     assert.ok(metrics.appliedBytes <= metrics.receivedBytes);
     await call("input", { id: session.id, action: { type: "key", key: "Ctrl+q" } });
     await call("wait", { id: session.id, conditions: [{ kind: "exited" }] });
-    const replayed = await call("replay", { path: session.recordingPath }) as {
-      snapshot: { cols: number; rows: number }; renderer?: string;
+    const replayed = (await call("replay", { path: session.recordingPath })) as {
+      snapshot: { cols: number; rows: number };
+      renderer?: string;
     };
     assert.equal(replayed.snapshot.cols, 80);
     assert.equal(replayed.snapshot.rows, 16);
@@ -84,32 +130,58 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
 
     client = new Client({ name: "tuilens-test", version: "1" });
     const inherited = Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => e[1] !== undefined));
-    await client.connect(new StdioClientTransport({ command: process.execPath, args: [cli, "mcp"], env: inherited, stderr: "pipe" }));
-    assert.deepEqual(client.getServerVersion(), { name: "tuilens", version: "0.5.0" });
+    await client.connect(
+      new StdioClientTransport({ command: process.execPath, args: [cli, "mcp"], env: inherited, stderr: "pipe" })
+    );
+    assert.deepEqual(client.getServerVersion(), { name: "tuilens", version: VERSION });
     assert.match(client.getInstructions() ?? "", /preferred tool for interactive terminal\/TUI work/u);
     const tools = await client.listTools();
     const expectedTools = [
-      "terminal_launch", "terminal_list", "terminal_observe", "terminal_input", "terminal_inputAndWait",
-      "terminal_find", "terminal_clickText", "terminal_resize", "terminal_wait", "terminal_metrics",
-      "terminal_close", "terminal_compare", "terminal_replay", "terminal_scenario", "terminal_perf",
+      "terminal_launch",
+      "terminal_list",
+      "terminal_observe",
+      "terminal_input",
+      "terminal_inputAndWait",
+      "terminal_find",
+      "terminal_clickText",
+      "terminal_resize",
+      "terminal_wait",
+      "terminal_metrics",
+      "terminal_close",
+      "terminal_compare",
+      "terminal_replay",
+      "terminal_scenario",
+      "terminal_perf",
     ];
     assert.equal(tools.tools.length, 15);
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), expectedTools.sort());
-    const launch = await client.callTool({ name: "terminal_launch",
-      arguments: { command: process.execPath, args: [fixture], cols: 60, rows: 12, colorMode: "truecolor" } });
+    const launch = await client.callTool({
+      name: "terminal_launch",
+      arguments: { command: process.execPath, args: [fixture], cols: 60, rows: 12, colorMode: "truecolor" },
+    });
     const launchContent = launch.content as { type: string; text?: string }[];
     assert.notEqual(launch.isError, true, launchContent[0]?.text ?? "MCP launch failed");
     const mcpSession = JSON.parse(launchContent[0]!.text!) as SessionInfo;
     const progress: unknown[] = [];
-    const waiting = await client.callTool({ name: "terminal_wait", arguments: { id: mcpSession.id, conditions: [{ kind: "text", text: "TUILENS_READY" }] } },
-      undefined, { onprogress: (item) => progress.push(item) });
+    const waiting = await client.callTool(
+      {
+        name: "terminal_wait",
+        arguments: { id: mcpSession.id, conditions: [{ kind: "text", text: "TUILENS_READY" }] },
+      },
+      undefined,
+      { onprogress: (item) => progress.push(item) }
+    );
     assert.notEqual(waiting.isError, true);
     assert.ok(progress.length >= 1);
     const abort = new AbortController();
-    const cancelled = client.callTool({
-      name: "terminal_wait",
-      arguments: { id: mcpSession.id, conditions: [{ kind: "text", text: "NEVER_MCP_EVIDENCE" }], timeoutMs: 10_000 },
-    }, undefined, { signal: abort.signal });
+    const cancelled = client.callTool(
+      {
+        name: "terminal_wait",
+        arguments: { id: mcpSession.id, conditions: [{ kind: "text", text: "NEVER_MCP_EVIDENCE" }], timeoutMs: 10_000 },
+      },
+      undefined,
+      { signal: abort.signal }
+    );
     setTimeout(() => abort.abort(), 100);
     await assert.rejects(cancelled, (error: unknown) => error instanceof Error);
     const confirmed = await client.callTool({
@@ -133,7 +205,12 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     const captured = await client.callTool({ name: "terminal_observe", arguments: { id: mcpSession.id } });
     assert.notEqual(captured.isError, true);
     assert.ok((captured.content as { type: string }[]).some((item) => item.type === "image"));
-    const lateLaunch = client.callTool({ name: "terminal_launch", arguments: { command: process.execPath, args: [fixture], cols: 60, rows: 12 } }).catch(() => undefined);
+    const lateLaunch = client
+      .callTool({
+        name: "terminal_launch",
+        arguments: { command: process.execPath, args: [fixture], cols: 60, rows: 12 },
+      })
+      .catch(() => undefined);
     await sleep(50);
     await client.close();
     await lateLaunch;
@@ -158,10 +235,11 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
 test("CLI scroll 拒绝顶/底与方向或数量冲突", async () => {
   const home = await mkdtemp(join(tmpdir(), "tuilens-scroll-conflict-"));
   try {
-    const result = await run(process.execPath, [
-      cli, "scroll", "00000000-0000-4000-8000-000000000000", "0", "0", "up", "--top",
-    ], { env: { ...process.env, TUILENS_HOME: home }, maxBuffer: 1024 * 1024 })
-      .catch((error: { stdout?: string }) => error);
+    const result = await run(
+      process.execPath,
+      [cli, "scroll", "00000000-0000-4000-8000-000000000000", "0", "0", "up", "--top"],
+      { env: { ...process.env, TUILENS_HOME: home }, maxBuffer: 1024 * 1024 }
+    ).catch((error: { stdout?: string }) => error);
     const payload = JSON.parse((result as { stdout?: string }).stdout ?? "{}") as {
       ok: boolean;
       error?: { code?: string };

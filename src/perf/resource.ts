@@ -12,7 +12,7 @@ export interface ProcessTreeSample {
   processes: number;
 }
 
-interface ProcessRecord {
+export interface ProcessRecord {
   pid: number;
   parentPid: number;
   rssBytes: number;
@@ -31,16 +31,21 @@ async function linuxProcesses(): Promise<ProcessRecord[]> {
       const rss = /^VmRSS:\s+(\d+)\s+kB/mu.exec(status);
       if (!parent || !rss) continue;
       records.push({ pid, parentPid: Number(parent[1]), rssBytes: Number(rss[1]) * 1024 });
-    } catch { /* 进程可能在读取期间退出。 */ }
+    } catch {
+      /* 进程可能在读取期间退出。 */
+    }
   }
   return records;
 }
 
 /** Windows 用一次 CIM 查询取回全部进程的父子关系与工作集。 */
 async function windowsProcesses(): Promise<ProcessRecord[]> {
-  const script = "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,WorkingSetSize | ConvertTo-Json -Compress";
+  const script =
+    "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,WorkingSetSize | ConvertTo-Json -Compress";
   const { stdout } = await run("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
-    maxBuffer: 16 * 1024 * 1024, timeout: 10_000, windowsHide: true,
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: 10_000,
+    windowsHide: true,
   });
   const parsed = JSON.parse(stdout.trim() || "[]") as unknown;
   const rows = Array.isArray(parsed) ? parsed : [parsed];
@@ -48,18 +53,45 @@ async function windowsProcesses(): Promise<ProcessRecord[]> {
     if (!row || typeof row !== "object") return [];
     const item = row as { ProcessId?: unknown; ParentProcessId?: unknown; WorkingSetSize?: unknown };
     if (typeof item.ProcessId !== "number" || typeof item.ParentProcessId !== "number") return [];
-    return [{
-      pid: item.ProcessId,
-      parentPid: item.ParentProcessId,
-      rssBytes: typeof item.WorkingSetSize === "number" ? item.WorkingSetSize : 0,
-    }];
+    return [
+      {
+        pid: item.ProcessId,
+        parentPid: item.ParentProcessId,
+        rssBytes: typeof item.WorkingSetSize === "number" ? item.WorkingSetSize : 0,
+      },
+    ];
   });
+}
+
+/** macOS 的 ps 输出使用 KiB，转换为字节后再统一参与进程树汇总。 */
+export function parseDarwinProcessTable(stdout: string): ProcessRecord[] {
+  const records: ProcessRecord[] = [];
+  for (const line of stdout.split(/\r?\n/u)) {
+    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s*$/u.exec(line);
+    if (!match) continue;
+    records.push({
+      pid: Number(match[1]),
+      parentPid: Number(match[2]),
+      rssBytes: Number(match[3]) * 1024,
+    });
+  }
+  return records;
+}
+
+/** macOS 通过一次 ps 读取完整父子关系，避免逐进程启动命令。 */
+async function darwinProcesses(): Promise<ProcessRecord[]> {
+  const { stdout } = await run("ps", ["-eo", "pid=,ppid=,rss="], {
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: 10_000,
+  });
+  return parseDarwinProcessTable(stdout);
 }
 
 async function snapshotProcesses(): Promise<ProcessRecord[]> {
   if (process.platform === "linux") return linuxProcesses();
   if (process.platform === "win32") return windowsProcesses();
-  // macOS 及其他平台退化为只统计根进程，并在报告里由 `processes` 字段体现。
+  if (process.platform === "darwin") return darwinProcesses();
+  // 未识别的平台退化为只统计当前进程，并在报告里由 `processes` 字段体现。
   return [{ pid: process.pid, parentPid: 0, rssBytes: process.memoryUsage.rss() }];
 }
 
@@ -82,13 +114,15 @@ export class ProcessTreeSampler {
 
   constructor(
     private readonly rootPid: number,
-    private readonly intervalMs = 1000,
+    private readonly intervalMs = 1000
   ) {}
 
   start(): void {
     // 立即采一次，短会话也能获得至少一个数据点。
     void this.sample();
-    this.timer ??= setInterval(() => { void this.sample(); }, this.intervalMs);
+    this.timer ??= setInterval(() => {
+      void this.sample();
+    }, this.intervalMs);
     // 采样不应阻止进程退出。
     this.timer.unref?.();
   }
@@ -108,7 +142,9 @@ export class ProcessTreeSampler {
 
   private sample(): Promise<void> {
     if (this.inFlight) return this.inFlight;
-    this.inFlight = this.collect().finally(() => { this.inFlight = undefined; });
+    this.inFlight = this.collect().finally(() => {
+      this.inFlight = undefined;
+    });
     return this.inFlight;
   }
 
@@ -157,7 +193,9 @@ export class ProcessTreeSampler {
 /** 从根 pid 出发收集整棵子树；不存在的 pid 返回空数组。 */
 export function collectTree(records: ProcessRecord[], rootPid: number): ProcessRecord[] {
   const byParent = new Map<number, ProcessRecord[]>();
+  const byPid = new Map<number, ProcessRecord>();
   for (const record of records) {
+    byPid.set(record.pid, record);
     const siblings = byParent.get(record.parentPid) ?? [];
     siblings.push(record);
     byParent.set(record.parentPid, siblings);
@@ -165,11 +203,11 @@ export function collectTree(records: ProcessRecord[], rootPid: number): ProcessR
   const result: ProcessRecord[] = [];
   const queue = [rootPid];
   const seen = new Set<number>();
-  while (queue.length) {
-    const pid = queue.shift()!;
+  for (let index = 0; index < queue.length; index += 1) {
+    const pid = queue[index]!;
     if (seen.has(pid)) continue;
     seen.add(pid);
-    const record = records.find((item) => item.pid === pid);
+    const record = byPid.get(pid);
     if (record) result.push(record);
     for (const child of byParent.get(pid) ?? []) queue.push(child.pid);
   }

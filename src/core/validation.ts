@@ -1,6 +1,12 @@
 import { TuiLensError } from "./errors.js";
 import type {
-  ClickTextOptions, InputGuard, LaunchOptions, MatchOptions, MatchStyle, Region, WaitOptions,
+  ClickTextOptions,
+  InputGuard,
+  LaunchOptions,
+  MatchOptions,
+  MatchStyle,
+  Region,
+  WaitOptions,
 } from "./types.js";
 
 function object(value: unknown, label: string): asserts value is object {
@@ -33,16 +39,25 @@ export function launchOptions(options: LaunchOptions): void {
     throw new TuiLensError("INVALID_ARGUMENT", "command 必须是非空可执行程序路径或名称");
   }
   dimensions(options.cols ?? 160, options.rows ?? 50);
-  if (options.args !== undefined && (!Array.isArray(options.args) ||
-      options.args.some((arg) => typeof arg !== "string" || arg.includes("\0")))) {
+  if (
+    options.args !== undefined &&
+    (!Array.isArray(options.args) || options.args.some((arg) => typeof arg !== "string" || arg.includes("\0")))
+  ) {
     throw new TuiLensError("INVALID_ARGUMENT", "args 必须是字符串数组，且不能包含 NUL");
   }
   if (options.cwd !== undefined && (typeof options.cwd !== "string" || !options.cwd || options.cwd.includes("\0"))) {
     throw new TuiLensError("INVALID_ARGUMENT", "cwd 必须是有效目录路径");
   }
-  if (options.env !== undefined && (typeof options.env !== "object" || options.env === null ||
-      Array.isArray(options.env) || Object.entries(options.env).some(([key, value]) =>
-        !key || key.includes("=") || key.includes("\0") || typeof value !== "string" || value.includes("\0")))) {
+  if (
+    options.env !== undefined &&
+    (typeof options.env !== "object" ||
+      options.env === null ||
+      Array.isArray(options.env) ||
+      Object.entries(options.env).some(
+        ([key, value]) =>
+          !key || key.includes("=") || key.includes("\0") || typeof value !== "string" || value.includes("\0")
+      ))
+  ) {
     throw new TuiLensError("INVALID_ARGUMENT", "env 必须是有效的环境变量字符串映射");
   }
   if (options.colorMode !== undefined && !["truecolor", "ansi256", "none"].includes(options.colorMode)) {
@@ -69,9 +84,12 @@ export function launchOptions(options: LaunchOptions): void {
       }
     }
   }
-  if (options.terminalProfile !== undefined
-    && (typeof options.terminalProfile !== "string" || !options.terminalProfile.trim()
-      || options.terminalProfile.includes("\0"))) {
+  if (
+    options.terminalProfile !== undefined &&
+    (typeof options.terminalProfile !== "string" ||
+      !options.terminalProfile.trim() ||
+      options.terminalProfile.includes("\0"))
+  ) {
     throw new TuiLensError("INVALID_ARGUMENT", "terminalProfile 必须是非空 preset 名称或文件路径");
   }
   if (options.recording !== undefined) {
@@ -79,15 +97,18 @@ export function launchOptions(options: LaunchOptions): void {
     if (Object.keys(options.recording).some((key) => key !== "maxBytes")) {
       throw new TuiLensError("INVALID_ARGUMENT", "recording 含未知字段");
     }
-    if (options.recording.maxBytes !== undefined) integer(options.recording.maxBytes, "recording.maxBytes", 4096, 64 * 1024 * 1024);
+    if (options.recording.maxBytes !== undefined)
+      integer(options.recording.maxBytes, "recording.maxBytes", 4096, 64 * 1024 * 1024);
   }
   if (options.protocolReplies !== undefined) {
     object(options.protocolReplies, "protocolReplies");
     if (Object.keys(options.protocolReplies).some((key) => !["mode", "maxLatencyMs"].includes(key))) {
       throw new TuiLensError("INVALID_ARGUMENT", "protocolReplies 含未知字段");
     }
-    if (options.protocolReplies.mode !== undefined
-      && !["auto", "forward", "suppress"].includes(options.protocolReplies.mode)) {
+    if (
+      options.protocolReplies.mode !== undefined &&
+      !["auto", "forward", "suppress"].includes(options.protocolReplies.mode)
+    ) {
       throw new TuiLensError("INVALID_ARGUMENT", "不支持的 protocolReplies.mode");
     }
     if (options.protocolReplies.maxLatencyMs !== undefined) {
@@ -163,7 +184,11 @@ export function clickTextOptions(options: ClickTextOptions | undefined): void {
   }
   if (modifiers !== undefined) {
     object(modifiers, "modifiers");
-    if (Object.entries(modifiers).some(([key, value]) => !["shift", "alt", "ctrl"].includes(key) || typeof value !== "boolean")) {
+    if (
+      Object.entries(modifiers).some(
+        ([key, value]) => !["shift", "alt", "ctrl"].includes(key) || typeof value !== "boolean"
+      )
+    ) {
       throw new TuiLensError("INVALID_ARGUMENT", "modifiers 只接受 shift、alt、ctrl 布尔值");
     }
   }
@@ -183,8 +208,11 @@ export function inputGuard(guard: InputGuard | undefined, cols: number, rows: nu
       throw new TuiLensError("INVALID_ARGUMENT", "guard.region 含未知字段");
     }
     regionWithin(guard.region.bounds, cols, rows);
-    if (typeof guard.region.fingerprint !== "string" || !guard.region.fingerprint
-      || Buffer.byteLength(guard.region.fingerprint) > 64 * 1024 * 1024) {
+    if (
+      typeof guard.region.fingerprint !== "string" ||
+      !guard.region.fingerprint ||
+      Buffer.byteLength(guard.region.fingerprint) > 64 * 1024 * 1024
+    ) {
       throw new TuiLensError("INVALID_ARGUMENT", "guard.region.fingerprint 必须是非空且大小有界的字符串");
     }
   }
@@ -192,7 +220,12 @@ export function inputGuard(guard: InputGuard | undefined, cols: number, rows: nu
 
 export function waitOptions(options: WaitOptions): void {
   if (options?.afterFrameId !== undefined) integer(options.afterFrameId, "afterFrameId", 0, Number.MAX_SAFE_INTEGER);
-  if (!options || !Array.isArray(options.conditions) || options.conditions.length === 0 || options.conditions.length > 20) {
+  if (
+    !options ||
+    !Array.isArray(options.conditions) ||
+    options.conditions.length === 0 ||
+    options.conditions.length > 20
+  ) {
     throw new TuiLensError("INVALID_ARGUMENT", "等待需要 1～20 个条件");
   }
   integer(options.timeoutMs ?? 10_000, "timeoutMs", 1, 300_000);

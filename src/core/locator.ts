@@ -4,7 +4,12 @@ import { matchOptions, regionWithin } from "./validation.js";
 import { TuiLensError } from "./errors.js";
 
 /** 字符格到字符串的偏移映射保留 CJK、emoji 和组合字素的真实列宽。 */
-export function findText(snapshot: TerminalSnapshot, text: string, region?: Region, options: MatchOptions = {}): TextMatch[] {
+export function findText(
+  snapshot: TerminalSnapshot,
+  text: string,
+  region?: Region,
+  options: MatchOptions = {}
+): TextMatch[] {
   if (typeof text !== "string" || !text || text.includes("\n") || text.includes("\r")) {
     throw new TuiLensError("INVALID_ARGUMENT", "定位文本必须非空且不能跨行");
   }
@@ -60,17 +65,22 @@ function matchesStyle(row: TerminalCell[], start: number, end: number, style?: M
 function selectMatches(matches: TextMatch[], options: MatchOptions): TextMatch[] {
   if (options.nth !== undefined) {
     const result = matches[options.nth];
-    if (!result) throw new TuiLensError("NO_MATCH", "指定序号没有匹配结果", { count: matches.length, nth: options.nth });
+    if (!result)
+      throw new TuiLensError("NO_MATCH", "指定序号没有匹配结果", { count: matches.length, nth: options.nth });
     return [result];
   }
   switch (options.selection) {
     case "unique":
       if (matches.length === 0) throw new TuiLensError("NO_MATCH", "未找到匹配文本");
-      if (matches.length !== 1) throw new TuiLensError("AMBIGUOUS_MATCH", "文本存在多个匹配，请限定区域或样式", { count: matches.length });
+      if (matches.length !== 1)
+        throw new TuiLensError("AMBIGUOUS_MATCH", "文本存在多个匹配，请限定区域或样式", { count: matches.length });
       return matches;
-    case "first": return matches.slice(0, 1);
-    case "last": return matches.slice(-1);
-    default: return matches;
+    case "first":
+      return matches.slice(0, 1);
+    case "last":
+      return matches.slice(-1);
+    default:
+      return matches;
   }
 }
 
@@ -81,8 +91,7 @@ export function regionFingerprint(snapshot: TerminalSnapshot, region?: Region): 
   const value = JSON.stringify({
     cols: snapshot.cols,
     rows: snapshot.rows,
-    cells: snapshot.cells.slice(area.y, area.y + area.height)
-      .map((row) => row.slice(area.x, area.x + area.width)),
+    cells: snapshot.cells.slice(area.y, area.y + area.height).map((row) => row.slice(area.x, area.x + area.width)),
   });
   return createHash("sha256").update(value).digest("hex");
 }

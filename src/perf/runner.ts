@@ -156,7 +156,7 @@ function withoutUndefined<T>(value: T): T {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
         .filter(([, item]) => item !== undefined)
-        .map(([key, item]) => [key, withoutUndefined(item)]),
+        .map(([key, item]) => [key, withoutUndefined(item)])
     ) as T;
   }
   return value;
@@ -200,7 +200,7 @@ export async function runPerf(manager: SessionManager, options: PerfRunOptions):
 async function runPerfMatrix(
   manager: SessionManager,
   spec: PerfSpec,
-  options: PerfRunOptions,
+  options: PerfRunOptions
 ): Promise<PerfMatrixResult> {
   const profiles = spec.profiles!;
   if (profiles.length > 1 && (options.baseline !== undefined || options.writeBaseline !== undefined)) {
@@ -211,10 +211,16 @@ async function runPerfMatrix(
   for (const profile of profiles) {
     if (options.signal?.aborted) throw new TuiLensError("ABORTED", "性能运行已取消");
     try {
-      runs.push(await runPerfSingle(manager, {
-        ...base,
-        launch: { ...base.launch, terminalProfile: profile } as LaunchOptions,
-      }, options));
+      runs.push(
+        await runPerfSingle(
+          manager,
+          {
+            ...base,
+            launch: { ...base.launch, terminalProfile: profile } as LaunchOptions,
+          },
+          options
+        )
+      );
     } catch (error) {
       if (options.signal?.aborted) throw error;
       runs.push({
@@ -222,8 +228,11 @@ async function runPerfMatrix(
         reportPath: null,
         profile,
         environment: {
-          platform: process.platform, node: process.version, arch: process.arch,
-          cols: base.launch.cols ?? 160, rows: base.launch.rows ?? 50,
+          platform: process.platform,
+          node: process.version,
+          arch: process.arch,
+          cols: base.launch.cols ?? 160,
+          rows: base.launch.rows ?? 50,
           terminalProfile: profile,
         },
         error: describeError(error),
@@ -264,11 +273,7 @@ async function runPerfMatrix(
   return result;
 }
 
-async function runPerfSingle(
-  manager: SessionManager,
-  spec: PerfSpec,
-  options: PerfRunOptions,
-): Promise<PerfResult> {
+async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: PerfRunOptions): Promise<PerfResult> {
   // zod 的可选字段会带显式 undefined，而 LaunchOptions 在
   // exactOptionalPropertyTypes 下只接受缺省字段；这里统一剥离。
   const launch = withoutUndefined(spec.launch) as LaunchOptions;
@@ -313,7 +318,10 @@ async function runPerfSingle(
         });
       }
       const startupMs = rounded(performance.now() - started);
-      if (warmup) { warmupStartupMs = startupMs; continue; }
+      if (warmup) {
+        warmupStartupMs = startupMs;
+        continue;
+      }
       if (spec.measure?.processTree !== false) {
         sampler = new ProcessTreeSampler(session.pid, 1000);
         sampler.start();
@@ -335,7 +343,9 @@ async function runPerfSingle(
           }
           const name = sample.name ?? describeSample(sample);
           metrics.push({
-            phase: phase.name, name, elapsedMs: summarize(elapsed),
+            phase: phase.name,
+            name,
+            elapsedMs: summarize(elapsed),
             ...(paint.length ? { paintMs: summarize(paint) } : {}),
             samples: elapsed.length,
           });
@@ -366,8 +376,11 @@ async function runPerfSingle(
         rssIntervalMs = sampled.intervalMs;
       }
       if (sessionId) {
-        try { await manager.close(sessionId); }
-        catch (error) { errors.push({ round: roundNumber, error: describeError(error) }); }
+        try {
+          await manager.close(sessionId);
+        } catch (error) {
+          errors.push({ round: roundNumber, error: describeError(error) });
+        }
       }
     }
   }
@@ -376,11 +389,15 @@ async function runPerfSingle(
   }
 
   const merged = mergeRounds(collected).map((metric) => ({
-    ...metric, stability: stabilityOf(metric.elapsedMs),
+    ...metric,
+    stability: stabilityOf(metric.elapsedMs),
   }));
   const environment: Environment = {
-    platform: process.platform, node: process.version, arch: process.arch,
-    cols: spec.launch.cols ?? 160, rows: spec.launch.rows ?? 50,
+    platform: process.platform,
+    node: process.version,
+    arch: process.arch,
+    cols: spec.launch.cols ?? 160,
+    rows: spec.launch.rows ?? 50,
     terminalProfile,
     ...(renderer ? { renderer } : {}),
   };
@@ -388,39 +405,46 @@ async function runPerfSingle(
   const comparisons: MetricComparison[] = [];
   const regressions: string[] = [];
   if (baseline) {
-    const matches = baseline.environment.platform === environment.platform
-      && baseline.environment.cols === environment.cols
-      && baseline.environment.rows === environment.rows
-      && (baseline.environment.terminalProfile === undefined
-        || baseline.environment.terminalProfile === environment.terminalProfile)
-      && (baseline.environment.renderer === undefined
-        || baseline.environment.renderer === environment.renderer);
+    const matches =
+      baseline.environment.platform === environment.platform &&
+      baseline.environment.cols === environment.cols &&
+      baseline.environment.rows === environment.rows &&
+      (baseline.environment.terminalProfile === undefined ||
+        baseline.environment.terminalProfile === environment.terminalProfile) &&
+      (baseline.environment.renderer === undefined || baseline.environment.renderer === environment.renderer);
     if (!matches && options.allowEnvironmentMismatch !== true) {
       throw new TuiLensError("PERF_ENVIRONMENT_MISMATCH", "基线环境与当前运行不一致，不能直接比较", {
-        baseline: baseline.environment, current: environment,
+        baseline: baseline.environment,
+        current: environment,
         hint: pick(
           "Use the same platform and grid, or explicitly allow cross-environment comparison.",
-          "确认平台与网格一致，或在选项中显式允许跨环境比较",
+          "确认平台与网格一致，或在选项中显式允许跨环境比较"
         ),
       });
     }
     for (const metric of merged) {
-      const previous = baseline.metrics.find(
-        (item) => item.phase === metric.phase && item.name === metric.name);
+      const previous = baseline.metrics.find((item) => item.phase === metric.phase && item.name === metric.name);
       if (!previous) continue;
       const change = previous.p50 > 0 ? (metric.elapsedMs.p50 - previous.p50) / previous.p50 : 0;
       const regression = change > maxRegression;
       comparisons.push({
-        phase: metric.phase, name: metric.name,
-        baselineP50: previous.p50, currentP50: metric.elapsedMs.p50, changeRatio: rounded(change),
-        baselineP95: previous.p95, currentP95: metric.elapsedMs.p95, regression,
+        phase: metric.phase,
+        name: metric.name,
+        baselineP50: previous.p50,
+        currentP50: metric.elapsedMs.p50,
+        changeRatio: rounded(change),
+        baselineP95: previous.p95,
+        currentP95: metric.elapsedMs.p95,
+        regression,
       });
       if (regression) {
-        regressions.push(`${metric.phase}/${metric.name}: p50 ${previous.p50} → ${metric.elapsedMs.p50} ms`
-          + pick(
-            ` (+${Math.round(change * 100)}%, threshold ${Math.round(maxRegression * 100)}%)`,
-            ` (+${Math.round(change * 100)}%，阈值 ${Math.round(maxRegression * 100)}%)`,
-          ));
+        regressions.push(
+          `${metric.phase}/${metric.name}: p50 ${previous.p50} → ${metric.elapsedMs.p50} ms` +
+            pick(
+              ` (+${Math.round(change * 100)}%, threshold ${Math.round(maxRegression * 100)}%)`,
+              ` (+${Math.round(change * 100)}%，阈值 ${Math.round(maxRegression * 100)}%)`
+            )
+        );
       }
     }
   }
@@ -434,7 +458,11 @@ async function runPerfSingle(
     metrics: merged,
     warmupStartupMs,
     processTree: {
-      peakRssBytes: peakRss, peakProcesses, samples: rssSamples, intervalMs: rssIntervalMs, approximate: true,
+      peakRssBytes: peakRss,
+      peakProcesses,
+      samples: rssSamples,
+      intervalMs: rssIntervalMs,
+      approximate: true,
     },
     rounds: collected,
     comparisons,
@@ -448,8 +476,11 @@ async function runPerfSingle(
       createdAt: new Date().toISOString(),
       environment,
       metrics: merged.map((metric) => ({
-        phase: metric.phase, name: metric.name,
-        p50: metric.elapsedMs.p50, p95: metric.elapsedMs.p95, p99: metric.elapsedMs.p99,
+        phase: metric.phase,
+        name: metric.name,
+        p50: metric.elapsedMs.p50,
+        p95: metric.elapsedMs.p95,
+        p99: metric.elapsedMs.p99,
       })),
     };
     await writeFile(resolve(options.writeBaseline), JSON.stringify(file, null, 2), { mode: 0o644 });
@@ -483,11 +514,14 @@ function mergeRounds(rounds: PerfRound[]): MetricSummary[] {
   const buckets = new Map<string, { phase: string; name: string; elapsed: number[]; paint: number[] }>();
   for (const round of rounds) {
     // 只在原始采样缺失时（例如旧报告）退回到聚合值，绝不凭空制造样本。
-    const source = round.raw ?? round.metrics.map((metric) => ({
-      phase: metric.phase, name: metric.name,
-      elapsed: metric.elapsedMs.count > 0 ? [metric.elapsedMs.p50] : [],
-      ...(metric.paintMs ? { paint: [metric.paintMs.p50] } : {}),
-    }));
+    const source =
+      round.raw ??
+      round.metrics.map((metric) => ({
+        phase: metric.phase,
+        name: metric.name,
+        elapsed: metric.elapsedMs.count > 0 ? [metric.elapsedMs.p50] : [],
+        ...(metric.paintMs ? { paint: [metric.paintMs.p50] } : {}),
+      }));
     for (const item of source) {
       const key = `${item.phase}\u0000${item.name}`;
       let bucket = buckets.get(key);
@@ -517,7 +551,7 @@ async function runSetup(
   id: string,
   steps: NonNullable<PerfSpec["phases"][number]["setup"]>,
   sequence: { value: number },
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<void> {
   const control = signal ? { signal } : {};
   for (const step of steps) {
@@ -526,21 +560,31 @@ async function runSetup(
         sequence.value += 1;
         await manager.input(id, step.action as InputAction, undefined, control);
         break;
-      case "resize": await manager.resize(id, step.cols, step.rows, control); break;
-      case "wait": await manager.wait(id, {
-        conditions: substituteSequence(step.conditions as WaitCondition[], sequence.value),
-        ...(step.timeoutMs === undefined ? {} : { timeoutMs: step.timeoutMs }),
-        ...control,
-      }); break;
+      case "resize":
+        await manager.resize(id, step.cols, step.rows, control);
+        break;
+      case "wait":
+        await manager.wait(id, {
+          conditions: substituteSequence(step.conditions as WaitCondition[], sequence.value),
+          ...(step.timeoutMs === undefined ? {} : { timeoutMs: step.timeoutMs }),
+          ...control,
+        });
+        break;
       case "repeat": {
         for (let index = 0; index < step.times; index += 1) {
           sequence.value += 1;
-          await manager.inputAndWait(id, step.input as InputAction, undefined, {
-            ...(step.observe
-              ? { conditions: substituteSequence(step.observe as WaitCondition[], sequence.value) }
-              : {}),
-            ...(step.timeoutMs === undefined ? {} : { timeoutMs: step.timeoutMs }),
-          }, control);
+          await manager.inputAndWait(
+            id,
+            step.input as InputAction,
+            undefined,
+            {
+              ...(step.observe
+                ? { conditions: substituteSequence(step.observe as WaitCondition[], sequence.value) }
+                : {}),
+              ...(step.timeoutMs === undefined ? {} : { timeoutMs: step.timeoutMs }),
+            },
+            control
+          );
         }
         break;
       }
@@ -559,15 +603,19 @@ async function measureSample(
   id: string,
   sample: PerfSample,
   sequence: { value: number },
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<{ elapsed: number; paintMs?: number }> {
   sequence.value += 1;
-  const result = await manager.inputAndWait(id, sample.input as InputAction, undefined, {
-    ...(sample.observe
-      ? { conditions: substituteSequence(sample.observe as WaitCondition[], sequence.value) }
-      : {}),
-    timeoutMs: sample.timeoutMs ?? 30_000,
-  }, signal ? { signal } : {});
+  const result = await manager.inputAndWait(
+    id,
+    sample.input as InputAction,
+    undefined,
+    {
+      ...(sample.observe ? { conditions: substituteSequence(sample.observe as WaitCondition[], sequence.value) } : {}),
+      timeoutMs: sample.timeoutMs ?? 30_000,
+    },
+    signal ? { signal } : {}
+  );
   const paint = await manager.paint(id, signal ? { signal } : {});
   return {
     elapsed: rounded(result.elapsedMs),
@@ -583,9 +631,7 @@ async function measureSample(
  * 因此要求被等待的证据同样随输入单调变化（例如 `TURN_{{seq}}`）。
  */
 function substituteSequence(conditions: WaitCondition[], seq: number): WaitCondition[] {
-  return conditions.map((condition) => (
-    condition.kind === "text"
-      ? { ...condition, text: condition.text.replaceAll("{{seq}}", String(seq)) }
-      : condition
-  ));
+  return conditions.map((condition) =>
+    condition.kind === "text" ? { ...condition, text: condition.text.replaceAll("{{seq}}", String(seq)) } : condition
+  );
 }
