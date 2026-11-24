@@ -83,8 +83,11 @@ export interface PerfResult {
   warmupStartupMs: number | null;
   processTree: {
     peakRssBytes: number;
+    peakRootRssBytes: number;
     peakProcesses: number;
     samples: number;
+    errors: number;
+    lastError?: string;
     intervalMs: number;
     /** 采样频率有限，峰值是下界而不是精确值。 */
     approximate: true;
@@ -289,8 +292,11 @@ async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: P
   const collected: PerfRound[] = [];
   const errors: PerfError[] = [];
   let peakRss = 0;
+  let peakRootRss = 0;
   let peakProcesses = 0;
   let rssSamples = 0;
+  let rssErrors = 0;
+  let rssLastError: string | undefined;
   let rssIntervalMs = 0;
   let warmupStartupMs: number | null = null;
   let terminalProfile = spec.launch.terminalProfile ?? "xterm-256color";
@@ -371,8 +377,11 @@ async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: P
       if (sampler) {
         const sampled = await sampler.stop();
         peakRss = Math.max(peakRss, sampled.peakRssBytes);
+        peakRootRss = Math.max(peakRootRss, sampled.peakRootRssBytes);
         peakProcesses = Math.max(peakProcesses, sampled.peakProcesses);
         rssSamples += sampled.samples;
+        rssErrors += sampled.errors;
+        if (sampled.lastError !== undefined) rssLastError = sampled.lastError;
         rssIntervalMs = sampled.intervalMs;
       }
       if (sessionId) {
@@ -459,8 +468,11 @@ async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: P
     warmupStartupMs,
     processTree: {
       peakRssBytes: peakRss,
+      peakRootRssBytes: peakRootRss,
       peakProcesses,
       samples: rssSamples,
+      errors: rssErrors,
+      ...(rssLastError === undefined ? {} : { lastError: rssLastError }),
       intervalMs: rssIntervalMs,
       approximate: true,
     },

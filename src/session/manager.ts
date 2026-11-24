@@ -83,7 +83,7 @@ function getEnv(env: Record<string, string>, key: string): string | undefined {
 /** 应用服务同时供 CLI 与 MCP 使用，不依赖具体传输协议。 */
 export class SessionManager {
   private readonly sessions = new Map<string, ManagedSession>();
-  private readonly pendingLaunches = new Set<Promise<SessionInfo>>();
+  private readonly pendingLaunches = new Set<Promise<{ info: SessionInfo; session: ManagedSession }>>();
   private readonly closedIds = new Set<string>();
   private readonly launchCleanupErrors: unknown[] = [];
   private readonly offline = new Map<Promise<unknown>, AbortController>();
@@ -116,16 +116,18 @@ export class SessionManager {
     launchOptions(options);
     if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
     const release = await this.reserveSlot(`最多同时保留 ${this.maxSessions} 个会话，请先关闭不再使用的会话`);
+    const pending = this.launchProcess(options);
+    this.pendingLaunches.add(pending);
+    // 槽位已由 pendingLaunches 占用；释放准入锁，让其他启动可以并行准备引擎。
+    release();
     try {
-      const pending = this.launchProcess(options);
-      this.pendingLaunches.add(pending);
-      try {
-        return await pending;
-      } finally {
-        this.pendingLaunches.delete(pending);
-      }
-    } finally {
-      release();
+      const launched = await pending;
+      this.pendingLaunches.delete(pending);
+      this.sessions.set(launched.info.id, launched.session);
+      return launched.info;
+    } catch (error) {
+      this.pendingLaunches.delete(pending);
+      throw error;
     }
   }
 
@@ -178,7 +180,7 @@ export class SessionManager {
     }
   }
 
-  private async launchProcess(options: LaunchOptions): Promise<SessionInfo> {
+  private async launchProcess(options: LaunchOptions): Promise<{ info: SessionInfo; session: ManagedSession }> {
     const cwd = resolve(options.cwd ?? process.cwd());
     try {
       if (!(await stat(cwd)).isDirectory()) throw new Error("不是目录");
@@ -306,8 +308,7 @@ export class SessionManager {
         options.protocolReplies,
         profile
       );
-      this.sessions.set(info.id, session);
-      return session.info();
+      return { info: session.info(), session };
     } catch (error) {
       const cleanupErrors: unknown[] = [];
       try {

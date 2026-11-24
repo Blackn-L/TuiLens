@@ -108,6 +108,7 @@ export class ProcessTreeSampler {
   private readonly started = performance.now();
   private inFlight: Promise<void> | undefined;
   private peak = 0;
+  private peakRoot = 0;
   private peakProcesses = 0;
   private errors = 0;
   private lastError: string | undefined;
@@ -156,6 +157,7 @@ export class ProcessTreeSampler {
       if (rssBytes > this.peak) this.peak = rssBytes;
       this.peakProcesses = Math.max(this.peakProcesses, tree.length);
       const root = tree.find((record) => record.pid === this.rootPid);
+      if ((root?.rssBytes ?? 0) > this.peakRoot) this.peakRoot = root?.rssBytes ?? 0;
       this.samples.push({
         atMs: Math.round(performance.now() - this.started),
         rootRssBytes: root?.rssBytes ?? 0,
@@ -171,6 +173,7 @@ export class ProcessTreeSampler {
 
   result(): {
     peakRssBytes: number;
+    peakRootRssBytes: number;
     peakProcesses: number;
     samples: number;
     errors: number;
@@ -180,6 +183,7 @@ export class ProcessTreeSampler {
   } {
     return {
       peakRssBytes: this.peak,
+      peakRootRssBytes: this.peakRoot,
       peakProcesses: this.peakProcesses,
       samples: this.samples.length,
       errors: this.errors,

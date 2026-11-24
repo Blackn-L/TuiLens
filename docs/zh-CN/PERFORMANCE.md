@@ -20,6 +20,8 @@ node dist/src/interfaces/cli.js perf --file examples/perf.json --baseline artifa
 | `elapsedMs.p50/p95/p99` | 输入发出 → 目标条件成立；测量期间不截图、不读整屏字符格 |
 | `stability` | `max ÷ p50`；小于 1.25 稳定，小于 2 有抖动，否则不稳定 |
 | `processTree.peakRssBytes` | **被测程序**进程树的 RSS 峰值，每秒采样一次 |
+| `processTree.peakRootRssBytes` | 仅根进程的 RSS 峰值 |
+| `processTree.errors` / `lastError` | 采样失败次数与最近一次失败原因 |
 | `startupMs` | 启动到声明的 `ready` 条件成立 |
 | `session` | 每轮的接收/应用字节与写入批次 |
 | `comparisons` | 每个指标相对基线的变化；没有基线时为空 |

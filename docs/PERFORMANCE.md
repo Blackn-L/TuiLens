@@ -21,6 +21,8 @@ node dist/src/interfaces/cli.js perf --file examples/perf.json --baseline artifa
 | `elapsedMs.p50/p95/p99` | Input sent → target condition satisfied, measured with no screenshots and no full-grid reads |
 | `stability` | `max ÷ p50`; < 1.25 stable, < 2 noisy, otherwise unstable |
 | `processTree.peakRssBytes` | Peak RSS of the **application's** process tree, sampled once per second |
+| `processTree.peakRootRssBytes` | Peak RSS of the root process only |
+| `processTree.errors` / `lastError` | Failed process-tree samples and the most recent failure reason |
 | `startupMs` | Launch through the declared `ready` condition |
 | `session` | Received/applied bytes and write batches per round |
 | `comparisons` | Change against the baseline, per metric; empty without a baseline |

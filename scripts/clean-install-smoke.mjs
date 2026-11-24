@@ -72,6 +72,27 @@ try {
   const cli = join(consumer, "node_modules", "tuilens", "dist", "src", "interfaces", "cli.js");
   const printed = execFileSync(process.execPath, [cli, "--version"], { cwd: consumer, encoding: "utf8" }).trim();
   if (printed !== packageJson.version) throw new Error(`CLI --version returned ${printed}`);
+
+  const home = join(temporary, "home");
+  await mkdir(home, { recursive: true });
+  const doctorOutput = execFileSync(process.execPath, [cli, "doctor"], {
+    cwd: consumer,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      TUILENS_HOME: home,
+      TUILENS_BROWSER_PATH: process.execPath,
+      TUILENS_LANG: "en",
+    },
+  });
+  const doctor = JSON.parse(doctorOutput);
+  if (!doctor.ok || !doctor.data?.ok) {
+    throw new Error("Clean install doctor reported an error");
+  }
+  for (const code of ["browser", "pty", "storage"]) {
+    const check = doctor.data.checks?.find((item) => item.code === code);
+    if (check?.status !== "ok") throw new Error(`Doctor check ${code} did not pass: ${check?.status ?? "missing"}`);
+  }
   console.log(`Clean install smoke passed for tuilens ${packageJson.version}.`);
 } finally {
   await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

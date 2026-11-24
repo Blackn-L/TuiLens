@@ -48,6 +48,7 @@ export interface ScreenSnapshot {
 
 const SCREEN_EXCERPT_LINES = 24;
 const SCREEN_EXCERPT_CHARS = 4000;
+const MIN_FAILURE_SCREENSHOT_TIMEOUT_MS = 5_000;
 
 function excerpt(observation: Observation): string {
   const lines = observation.snapshot.lines.slice(0, SCREEN_EXCERPT_LINES);
@@ -122,29 +123,49 @@ export class Terminal {
   async expectNoText(text: string, options: ExpectOptions = {}): Promise<void> {
     const timeoutMs = options.timeoutMs ?? 1000;
     const deadline = performance.now() + timeoutMs;
-    let observed = "";
+    let observed = false;
+    let lastError: unknown;
     while (performance.now() < deadline) {
-      const observation = await this.manager.observe(this.id, { screenshot: false, cells: false });
-      observed = observation.snapshot.text;
-      const present = options.region
-        ? observation.snapshot.lines
-            .slice(options.region.y, options.region.y + options.region.height)
-            .some((line) => line.includes(text))
-        : observed.includes(text);
-      if (present) {
-        const wanted = JSON.stringify(text);
-        throw await this.fail(
-          "EXPECT_NO_TEXT_FAILED",
-          pick(`Expected screen not to contain ${wanted}, but it appeared`, `期望画面不包含 ${wanted}，但已出现`),
-          pick(`not contain ${wanted}`, `不包含 ${wanted}`),
-          pick(`contains ${wanted}`, `包含 ${wanted}`)
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) break;
+      try {
+        const matches = await this.manager.find(
+          this.id,
+          text,
+          options.region,
+          { timeoutMs: Math.max(1, remaining) },
+          { selection: "all", ...(options.style ? { style: options.style } : {}) }
         );
+        observed = true;
+        if (matches.length > 0) {
+          const wanted = JSON.stringify(text);
+          throw await this.fail(
+            "EXPECT_NO_TEXT_FAILED",
+            pick(`Expected screen not to contain ${wanted}, but it appeared`, `期望画面不包含 ${wanted}，但已出现`),
+            pick(`not contain ${wanted}`, `不包含 ${wanted}`),
+            pick(`contains ${wanted}`, `包含 ${wanted}`)
+          );
+        }
+      } catch (error) {
+        if (!(error instanceof TuiLensError) || !["FRAME_PENDING", "OPERATION_TIMEOUT"].includes(error.code))
+          throw error;
+        lastError = error;
       }
       // 仅在剩余时间内继续观察；不为了凑满窗口而空转。
-      const remaining = deadline - performance.now();
-      if (remaining > 0) {
-        await new Promise<void>((resolve) => setTimeout(resolve, Math.min(50, remaining)));
+      const nextRemaining = deadline - performance.now();
+      if (nextRemaining > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, Math.min(50, nextRemaining)));
       }
+    }
+    if (!observed) {
+      const wanted = JSON.stringify(text);
+      throw await this.fail(
+        "EXPECT_NO_TEXT_FAILED",
+        pick(`Could not observe the screen to assert absence of ${wanted}`, `无法读取画面以断言不包含 ${wanted}`),
+        pick(`not contain ${wanted}`, `不包含 ${wanted}`),
+        pick("could not observe the screen", "无法读取画面"),
+        lastError
+      );
     }
   }
 
@@ -276,7 +297,11 @@ export class Terminal {
     let artifact: string | undefined;
     let screen: string | undefined;
     try {
-      const observation = await this.manager.observe(this.id, { cells: false }, { timeoutMs: 2000 });
+      const observation = await this.manager.observe(
+        this.id,
+        { cells: false },
+        { timeoutMs: MIN_FAILURE_SCREENSHOT_TIMEOUT_MS }
+      );
       artifact = observation.screenshot?.path;
       screen = excerpt(observation);
     } catch {

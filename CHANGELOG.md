@@ -7,6 +7,17 @@
   `peakProcesses` no longer collapse to zero.
 - Multi-condition waits retry `FRAME_PENDING`, advance backoff once per poll, and perform a final
   check after a deadline-truncated sleep.
+- `Terminal.expectNoText()` now honors region column bounds and style filters; assertion failure
+  screenshots use the same 5 second lower bound as other evidence captures.
+- Concurrent `launch()` calls prepare engines in parallel while pending launches retain their slot;
+  the admission lock is released after the pending launch is registered.
+- `watch --control` serializes forwarded input so fast keystrokes cannot overtake each other, and
+  `watch` exits after the monitored session has exited.
+- Performance reports retain process-tree sampling `errors`, `lastError` and `peakRootRssBytes`
+  instead of silently reducing failures to zero.
+- Scenario observation and failure evidence skip character grids and use a 5 second evidence timeout.
+- IPC treats `SHUTTING_DOWN` as recoverable during auto-start, and startup-lock rollback verifies the
+  created file identity before unlinking.
 - Browser host disposal waits for an in-flight launch before deciding whether to close the browser.
 - Local IPC removes the per-request preflight ping, uses an owner-token autostart lock, cleans stale
   macOS sockets after an inode-checked bind failure, and uses constant-time token comparison.
@@ -20,6 +31,8 @@
 - `src/version.ts` is generated from `package.json`; mismatch checks run in the quality gate.
 - Timeout evidence screenshots now use the same 5 second lower bound as confirmed-input screenshots.
 - Dispatcher params are validated once; process-tree lookup uses pid/parent maps.
+- Clean-install smoke now runs `doctor` and verifies browser/PTY/storage module loading, not only
+  package version and CLI entry.
 
 ### Added
 - Tag-driven npm publish/provenance, GitHub Release, version/tag validation and clean-install smoke

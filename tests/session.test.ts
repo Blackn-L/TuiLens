@@ -550,6 +550,58 @@ test("closeAll 等待正在创建的引擎完成清理，不遗漏迟到启动",
   assert.deepEqual(manager.list(), []);
 });
 
+test("并发 launch 不再被首个引擎准备阶段串行阻塞", { timeout: 10_000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tuilens-concurrent-launch-"));
+  const firstStarted = deferred<void>();
+  const secondStarted = deferred<void>();
+  const releaseFirst = deferred<void>();
+  let calls = 0;
+  const manager = new SessionManager({
+    artifactDir: directory,
+    maxSessions: 2,
+    engineFactory: async () => {
+      calls += 1;
+      if (calls === 1) {
+        firstStarted.resolve();
+        await releaseFirst.promise;
+      } else if (calls === 2) {
+        secondStarted.resolve();
+      }
+      return memoryEngine().engine;
+    },
+  });
+  try {
+    const first = manager.launch({ command: process.execPath, args: ["-e", "setInterval(()=>{}, 1000)"] });
+    await firstStarted.promise;
+    const second = manager.launch({ command: process.execPath, args: ["-e", "setInterval(()=>{}, 1000)"] });
+    await Promise.race([
+      secondStarted.promise,
+      new Promise<never>((_resolve, reject) =>
+        setTimeout(() => reject(new Error("第二个 launch 被首个启动串行阻塞")), 1000)
+      ),
+    ]);
+    assert.deepEqual(manager.runtimeStats(), {
+      sessions: 0,
+      pendingLaunches: 2,
+      offline: 0,
+      disposed: false,
+    });
+    releaseFirst.resolve();
+    const [one, two] = await Promise.all([first, second]);
+    assert.deepEqual(
+      manager
+        .list()
+        .map((session) => session.id)
+        .sort(),
+      [one.id, two.id].sort()
+    );
+  } finally {
+    releaseFirst.resolve();
+    await manager.closeAll();
+    await rm(directory, { recursive: true, force: true, maxRetries: 5 });
+  }
+});
+
 test("真实 PTY 退出等待只读取最终快照且保留最后标记", { timeout: 15000 }, async () => {
   const memory = memoryEngine();
   const manager = new SessionManager({ artifactDir: tmpdir(), engineFactory: async () => memory.engine });
