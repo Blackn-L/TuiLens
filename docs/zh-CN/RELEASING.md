@@ -17,7 +17,9 @@ npm run test:coverage
 npm run smoke:install
 ```
 
-`smoke:install` 会构建、打包、在全新临时项目安装 tarball、导入 SDK 并运行 `tuilens --version`。
+`smoke:install` 会构建、打包、在全新临时项目安装 tarball、导入 SDK 并运行 `tuilens --version`
+和 `tuilens doctor`。它需要真实的 Playwright Chromium 安装，使 doctor 的浏览器检查解析到打包产物中的
+`playwright-core` 路径；CI 的 `package-smoke` 会在运行前安装 Chromium。
 本地覆盖率阈值为行 70%、分支 65%、函数 70%。
 
 ## 版本与 tag

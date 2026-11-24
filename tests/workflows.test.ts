@@ -191,3 +191,10 @@ tick();
     await rm(directory, { recursive: true, force: true, maxRetries: 5 });
   }
 });
+
+test("发布冒烟使用真实 Chromium 路径而不是伪造浏览器", async () => {
+  const workflow = await readFile(".github/workflows/checks.yml", "utf8");
+  const smoke = await readFile("scripts/clean-install-smoke.mjs", "utf8");
+  assert.match(workflow, /package-smoke:[\s\S]*npx playwright-core install --with-deps chromium/u);
+  assert.doesNotMatch(smoke, /TUILENS_BROWSER_PATH/u);
+});
