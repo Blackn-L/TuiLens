@@ -192,7 +192,7 @@ test("AbortSignal 中断启动锁等待", { timeout: 5000 }, async () => {
   }
 });
 
-test("autoStart:false 将 IPC_CLOSED/ECONNRESET/SHUTTING_DOWN 统一为 DAEMON_UNAVAILABLE", {
+test("autoStart:false 将断连与 SHUTTING_DOWN 统一为 DAEMON_UNAVAILABLE", {
   timeout: 10000,
 }, async () => {
   const home = await mkdtemp(join(tmpdir(), "tuilens-auto-start-"));
@@ -205,6 +205,7 @@ test("autoStart:false 将 IPC_CLOSED/ECONNRESET/SHUTTING_DOWN 统一为 DAEMON_U
     await writeFile(paths.state, JSON.stringify({ token: "test-token", pid: process.pid }));
     assert.equal(isDaemonUnavailable({ code: "IPC_CLOSED" }), true);
     assert.equal(isDaemonUnavailable({ code: "ECONNRESET" }), true);
+    assert.equal(isDaemonUnavailable({ code: "EPIPE" }), true);
 
     server = await startIpcStub(paths.socket, (socket) => socket.destroy());
     await assert.rejects(request("ping", {}, { autoStart: false }), { code: "DAEMON_UNAVAILABLE" });

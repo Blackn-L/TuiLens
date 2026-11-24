@@ -40,6 +40,7 @@ export function isDaemonUnavailable(error: unknown): boolean {
     code === "ENOENT" ||
     code === "ECONNREFUSED" ||
     code === "ECONNRESET" ||
+    code === "EPIPE" ||
     code === "ENOTSOCK"
   );
 }
