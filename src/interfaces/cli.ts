@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { setTimeout as sleep } from "node:timers/promises";
 import { errorRecord, TuiLensError } from "../core/errors.js";
 import { isDaemonUnavailable, request } from "../transport/client.js";
 import { methodSchemas, type Method } from "./schemas.js";
@@ -43,7 +42,7 @@ replay <recording> [--speed 0]       replay output offline; does not execute inp
 doctor                               diagnose runtime, browser, PTY, storage and daemon state
 probe [--font-file <path>] [--font-family <css>] [--strict-font]
                                      render fixed glyph samples and report font/grid fingerprints
-watch <id> [--interval 250] [--timeout 0] [--control]  JSONL live screen stream; --control forwards terminal input
+watch <id> [--interval 250] [--timeout 0] [--control]  daemon-pushed JSONL screen stream; --control forwards terminal input
 scenario --file <JSON>               run a declarative scenario, retain failure evidence and release the session
                                      the spec may include profiles:[...] to run a terminal matrix
 perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>]
@@ -97,7 +96,7 @@ replay <录制文件> [--speed 0]        离线回放输出，不执行输入或
 doctor                               诊断运行时、浏览器、PTY、存储和 daemon 状态
 probe [--font-file <路径>] [--font-family <CSS>] [--strict-font]
                                      渲染固定字形样本并报告字体/网格指纹
-watch <id> [--interval 250] [--timeout 0] [--control]  JSONL 实时画面流；--control 转发终端输入
+watch <id> [--interval 250] [--timeout 0] [--control]  服务端推送的 JSONL 实时画面流；--control 转发终端输入
 scenario --file <JSON>              执行声明式场景，失败留证并释放会话
                                     规格可含 profiles:[...]，按终端 profile 运行矩阵
 perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>]
@@ -689,38 +688,37 @@ async function runWatch(
       process.stdin.pause();
     };
   }
-  const started = performance.now();
   let lastFrame = -1;
   let frames = 0;
+  let stoppedPrinted = false;
   const stopped = (): void => {
+    if (stoppedPrinted) return;
+    stoppedPrinted = true;
     process.stdout.write(JSON.stringify({ ok: true, data: { stopped: true, frames } }) + "\n");
   };
   try {
-    while (!abort.signal.aborted) {
-      if (timeout > 0 && performance.now() - started >= timeout) break;
-      const data = await request(
-        "observe",
-        {
-          id,
-          screenshot: false,
-          compact: true,
+    await request(
+      "watch",
+      {
+        id,
+        intervalMs: interval,
+        ...(timeout > 0 ? { timeoutMs: timeout } : {}),
+      },
+      {
+        signal: abort.signal,
+        onEvent: (event, data) => {
+          if (event !== "frame") return;
+          const observation = data as {
+            snapshot: { frameId: number };
+            session: { status?: "running" | "exited" | "closed" };
+          };
+          if (observation.snapshot.frameId === lastFrame) return;
+          lastFrame = observation.snapshot.frameId;
+          frames += 1;
+          process.stdout.write(JSON.stringify({ ok: true, data }) + "\n");
         },
-        { signal: abort.signal }
-      );
-      const observation = data as {
-        snapshot: { frameId: number };
-        session: { status?: "running" | "exited" | "closed" };
-      };
-      if (observation.snapshot.frameId !== lastFrame) {
-        lastFrame = observation.snapshot.frameId;
-        frames += 1;
-        process.stdout.write(JSON.stringify({ ok: true, data }) + "\n");
       }
-      if (observation.session.status === "exited" || observation.session.status === "closed") break;
-      const remaining = timeout > 0 ? timeout - (performance.now() - started) : interval;
-      if (remaining <= 0) break;
-      await sleep(Math.min(interval, remaining), undefined, { signal: abort.signal });
-    }
+    );
     stopped();
   } catch (error) {
     if (abort.signal.aborted) {

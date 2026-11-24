@@ -284,6 +284,13 @@ export const methodSchemas = {
       cursor: z.enum(["hide", "show"]).optional(),
     })
     .strict(),
+  watch: z
+    .object({
+      id: idSchema,
+      intervalMs: z.number().int().min(50).max(60_000),
+      timeoutMs: z.number().int().min(0).max(86_400_000).optional(),
+    })
+    .strict(),
   compare: z.object({ id: idSchema, options: visualOptionsSchema }).strict(),
   input: z.object({ id: idSchema, action: inputSchema, guard: guardSchema.optional() }).strict(),
   inputAndWait: z

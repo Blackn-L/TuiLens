@@ -17,7 +17,7 @@ TuiLens 提供面向 Agent 的终端运行环境。会话默认使用零浏览�
 - `src/profiles/`：内置终端 preset、JSON profile 继承、能力与应答解析。
 - `src/session/`：PTY、可选 PTY worker、输出顺序、观察屏障、等待、进程退出和证据。
 - `src/recording/`、`src/visual/`、`src/scenario/`：有界录制回放、视觉比较和声明式场景。
-- `src/transport/`：本机 IPC 与守护进程；CLI 多次调用共享会话。
+- `src/transport/`：持久化本机 IPC v2 与守护进程；一次鉴权、多路复用请求，并由服务端推送 watch/scenario/perf 事件。
 - `src/interfaces/`：JSON CLI 与 MCP stdio，调用相同应用服务。
 - `src/doctor.ts`：本地诊断运行时、浏览器、PTY、存储和 daemon 状态，不启动 daemon。
 - `src/probe.ts`：固定字形渲染探针，输出字体/网格指纹。

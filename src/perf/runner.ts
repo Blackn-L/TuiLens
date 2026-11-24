@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { readBoundedFile } from "../core/bounded-file.js";
 import { errorRecord, TuiLensError, type ErrorRecord } from "../core/errors.js";
 import { pick } from "../core/i18n.js";
-import type { InputAction, LaunchOptions, RendererKind, WaitCondition } from "../core/types.js";
+import type { InputAction, LaunchOptions, ProgressReporter, RendererKind, WaitCondition } from "../core/types.js";
 import type { SessionManager } from "../session/manager.js";
 import { ProcessTreeSampler } from "./resource.js";
 import { perfSpecSchema, type PerfSample, type PerfSpec } from "./schema.js";
@@ -149,6 +149,8 @@ export interface PerfRunOptions {
   maxRegression?: number;
   /** 环境指纹不一致时仍然比较，但在结果中保留对比数据。 */
   allowEnvironmentMismatch?: boolean;
+  /** 每个轮次结束后推送真实进度。 */
+  onProgress?: ProgressReporter;
   signal?: AbortSignal;
 }
 
@@ -213,6 +215,12 @@ async function runPerfMatrix(
   const runs: PerfMatrixRun[] = [];
   for (const profile of profiles) {
     if (options.signal?.aborted) throw new TuiLensError("ABORTED", "性能运行已取消");
+    const runOptions = options.onProgress
+      ? {
+          ...options,
+          onProgress: (progress: Parameters<ProgressReporter>[0]) => options.onProgress?.({ ...progress, profile }),
+        }
+      : options;
     try {
       runs.push(
         await runPerfSingle(
@@ -221,7 +229,7 @@ async function runPerfMatrix(
             ...base,
             launch: { ...base.launch, terminalProfile: profile } as LaunchOptions,
           },
-          options
+          runOptions
         )
       );
     } catch (error) {
@@ -391,6 +399,13 @@ async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: P
           errors.push({ round: roundNumber, error: describeError(error) });
         }
       }
+      options.onProgress?.({
+        kind: "perf",
+        ...(terminalProfile ? { profile: terminalProfile } : {}),
+        current: round,
+        total: rounds + warmupRounds,
+        elapsedMs: Math.round(performance.now() - started),
+      });
     }
   }
   if (!collected.length) {

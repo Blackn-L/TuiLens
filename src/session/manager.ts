@@ -19,6 +19,7 @@ import type {
   MatchOptions,
   Observation,
   ObserveOptions,
+  ProgressReporter,
   Region,
   SessionInfo,
   TextMatch,
@@ -390,8 +391,8 @@ export class SessionManager {
       release();
     }
   }
-  scenario(specification: unknown, signal?: AbortSignal) {
-    return runScenario(this, specification, this.options.artifactDir, signal);
+  scenario(specification: unknown, signal?: AbortSignal, onProgress?: ProgressReporter) {
+    return runScenario(this, specification, this.options.artifactDir, signal, onProgress);
   }
   perf(options: Omit<PerfRunOptions, "directory"> & { directory?: string }) {
     return runPerf(this, { ...options, directory: options.directory ?? this.options.artifactDir });
@@ -417,6 +418,16 @@ export class SessionManager {
 
   observe(id: string, options?: ObserveOptions, control?: OperationControl): Promise<Observation> {
     return this.session(id).observe(options, control);
+  }
+
+  watch(
+    id: string,
+    intervalMs: number,
+    control: OperationControl,
+    emit: (event: "frame" | "exit", data: unknown) => void,
+    timeoutMs?: number
+  ) {
+    return this.session(id).watch(intervalMs, control, emit, timeoutMs);
   }
 
   paint(id: string, control?: OperationControl): Promise<{ paintMs: number } | undefined> {

@@ -15,7 +15,7 @@
 | `src/scenario` | Declarative execution and failure reports |
 | `src/perf` | Performance scenarios, process-tree sampling, statistics and baseline comparison |
 | `src/testing` | Playwright-style assertions and JUnit XML rendering |
-| `src/transport` | Authenticated local IPC daemon/client and shared dispatch |
+| `src/transport` | Authenticated persistent IPC v2 daemon/client, multiplexed dispatch and server-pushed events |
 | `src/interfaces` | CLI and MCP stdio |
 | `src/doctor.ts` | Local diagnostics for runtime, browser, PTY, storage and daemon state without starting the daemon |
 | `src/probe.ts` | Fixed-glyph rendering probe and font/grid fingerprint report |

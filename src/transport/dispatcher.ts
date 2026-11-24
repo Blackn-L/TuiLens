@@ -15,12 +15,14 @@ import { VERSION } from "../version.js";
 import type { z } from "zod";
 
 type Params<M extends Method> = z.infer<(typeof methodSchemas)[M]>;
+export type DispatchEmit = (event: "progress" | "frame" | "exit", data: unknown) => void;
 
 export async function dispatch(
   manager: SessionManager,
   method: string,
   params: unknown,
-  signal: AbortSignal
+  signal: AbortSignal,
+  emit: DispatchEmit = () => {}
 ): Promise<unknown> {
   if (!Object.hasOwn(methodSchemas, method)) throw new TuiLensError("UNKNOWN_METHOD", "未知命令");
   const result = methodSchemas[method as Method].safeParse(params);
@@ -75,6 +77,18 @@ export async function dispatch(
         args.includeCells ?? false
       );
     }
+    case "watch": {
+      const args = result.data as Params<"watch">;
+      return manager.watch(
+        args.id,
+        args.intervalMs,
+        { signal },
+        (event, data) => {
+          emit(event, event === "frame" ? presentObservation(data as Observation, false) : data);
+        },
+        args.timeoutMs
+      );
+    }
     case "input": {
       const args = result.data as Params<"input">;
       await manager.input(args.id, args.action as InputAction, args.guard as InputGuard | undefined, { signal });
@@ -125,12 +139,15 @@ export async function dispatch(
       return { ...replayed, snapshot };
     }
     case "scenario":
-      return manager.scenario((result.data as Params<"scenario">).specification, signal);
+      return manager.scenario((result.data as Params<"scenario">).specification, signal, (progress) =>
+        emit("progress", progress)
+      );
     case "perf": {
       const args = result.data as Params<"perf">;
       return manager.perf({
         spec: args.specification,
         signal,
+        onProgress: (progress) => emit("progress", progress),
         ...(args.baseline ? { baseline: args.baseline } : {}),
         ...(args.writeBaseline ? { writeBaseline: args.writeBaseline } : {}),
         ...(args.maxRegression === undefined ? {} : { maxRegression: args.maxRegression }),

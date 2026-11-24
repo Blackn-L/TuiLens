@@ -5,6 +5,30 @@
 CLI payloads use `--json`, `--file`, or `--stdin`. MCP tool arguments use the same object.
 Session IDs are returned by launch. Coordinates are zero-based cells unless a field explicitly says pixels.
 
+## Local IPC v2
+
+The daemon accepts only persistent NDJSON connections. The first frame authenticates the connection:
+
+```json
+{"type":"auth","version":2,"token":"<hex>"}
+```
+
+The daemon answers `auth_ok` with its pid and version, or `auth_error` and closes the connection. The
+default handshake timeout is 15 seconds. After authentication, one connection multiplexes requests:
+
+```json
+{"type":"req","id":"<uuid>","method":"observe","params":{},"stream":true}
+{"type":"cancel","id":"<uuid>"}
+{"type":"event","id":"<uuid>","event":"frame","data":{}}
+{"type":"res","id":"<uuid>","ok":true,"data":{}}
+```
+
+Requests are limited to 1 MiB per line and 64 in-flight requests per connection. Cancelling an id
+only aborts that request. Reusing an in-flight request ID is a connection-level protocol violation
+and closes the connection without a second terminal response. `watch` is a server-pushed stream
+(`frame` and `exit` events); the CLI no longer polls `observe`. `scenario` and `perf` use `progress`
+events with `{kind,profile,current,total,elapsedMs}`.
+
 ## Exact targeting
 
 ```json

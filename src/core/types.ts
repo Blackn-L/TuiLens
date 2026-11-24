@@ -414,6 +414,16 @@ export interface WaitResult {
   elapsedMs: number;
 }
 
+export interface OperationProgress {
+  kind: "scenario" | "perf";
+  profile?: string;
+  current: number;
+  total: number;
+  elapsedMs: number;
+}
+
+export type ProgressReporter = (progress: OperationProgress) => void;
+
 export interface InputWaitOptions {
   /** 为空时只等待输入后至少一个新 frameId。 */
   conditions?: WaitCondition[];

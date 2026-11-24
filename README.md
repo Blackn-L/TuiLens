@@ -377,7 +377,9 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 
 Tests use independent fixtures. Generated captures, recordings, reports, and build outputs are ignored by Git.
 The daemon uses a local named pipe on Windows, an abstract Unix socket on Linux and a private Unix socket on macOS,
-authenticated by a local token. `TUILENS_IPC_TIMEOUT_MS` optionally sets an IPC timeout; no fixed five-minute cap is applied by default.
+using persistent IPC v2 connections authenticated by a local token. One connection multiplexes requests,
+streams `watch` frames and real `scenario`/`perf` progress, and enforces 64 in-flight requests per connection.
+`TUILENS_IPC_TIMEOUT_MS` optionally sets an IPC timeout; no fixed five-minute cap is applied by default.
 Set `TUILENS_HOME` to isolate its state directory (default: `~/.tuilens`). No public HTTP control server is exposed.
 
 ## Documentation
