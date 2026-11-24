@@ -99,6 +99,18 @@ SIXEL/Kitty 内联图片子集、区域截图与视觉比较、拖拽和修饰�
 
 退出条件：同一观察契约覆盖 Agent 主循环、显式字符格检查和有界增量 Diff，不再每轮返回整屏。
 
+### 0.6.0 PR-4 Agent 原生 MCP v2（已落地）
+
+- wait、inputAndWait、replay、scenario 和 perf 转发真实 daemon 进度，移除假心跳，并写清
+  compact -> inputAndWait -> diff 主循环。
+- 新增 `tuilens://` 会话、画面、截图、metrics 和 artifact 资源，读取有界并严格限制 artifact
+  路径与符号链接。
+- 新增中英文缺陷复现/视觉回归 Prompt，以及面向 Codex、Claude Code、Cursor、Gemini CLI
+  和通用 JSON 客户端的 `tuilens mcp-config`。
+- 把 npm 安装改为首屏接入路径，补充 pnpm 批准 node-pty 的说明，并把浏览器要求限定在视觉功能。
+
+退出条件：长任务上报真实进度，资源和 Prompt 可被发现，路径穿越被拒绝，客户端无需手写绝对路径。
+
 ## 后续
 
 - 扩展有测试覆盖的图片协议语义，不宣称未实现能力。

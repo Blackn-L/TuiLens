@@ -86,6 +86,8 @@ Node.js 22+，Windows ConPTY 与 Linux PTY；真实验收分别记录。
 CLI 返回结构化 JSON，MCP 使用 stdio。没有远程公开 HTTP 控制服务。
 纯文本只依赖 `@xterm/headless`；截图与图片协议通过 Playwright 使用已安装的 Chrome/Chromium。
 新增命令复用 core/session 接口，避免在 CLI 与 MCP 内复制业务逻辑。
+MCP 资源读取对截图设 32 MiB、artifact 设 16 MiB 上限，artifact 列表最多 256 项；
+长任务进度经过节流，每个操作最多 100 条通知。
 
 浏览器视觉模式不作为低干扰性能宿主；纯文本路径已与浏览器解耦。性能设计与后续边界见
 [性能边界](PERFORMANCE.md) 和 [后续迭代](ROADMAP.md)。

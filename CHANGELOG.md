@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+- MCP v2 exposes bounded `tuilens://` resources for sessions, compact screens, PNG screenshots,
+  metrics and artifacts, plus `tui_reproduce_bug` and `tui_visual_regression` prompts.
+- `tuilens mcp-config` generates JSON, Codex TOML and Claude Code commands for global, npx and
+  absolute executable modes.
+
 ### Changed
 - Text sessions now use a browser-free `@xterm/headless` terminal core by default.
   Chromium and the xterm.js DOM/WebGL surface load lazily for explicit renderers, image protocols,
@@ -15,6 +21,10 @@
   requests, per-id cancellation, bounded in-flight requests and server-pushed `watch` frames.
 - `scenario` and `perf` emit real progress events, and the CLI `watch` consumes daemon events instead
   of polling `observe`.
+- MCP forwards real daemon progress for `wait`, `inputAndWait`, `replay`, `scenario` and `perf`;
+  timed heartbeats are removed.
+- MCP instructions and tool descriptions document the compact -> inputAndWait -> diff observation
+  loop and keep screenshots explicit.
 - `observe` now uses `view: "compact" | "full" | "cells" | "diff"`. `diff` requires `fromFrameId`,
   returns changed lines plus a wide-character-aware bounding region, and falls back to compact text
   after the 16-frame lightweight history is exhausted.
@@ -36,6 +46,7 @@
 - Removed `observe.compact`, `includeCells`, CLI `--compact`, `--cells` and `--no-screenshot`.
 - Removed `launch.images`, CLI `--images`, `ImageProfile` and `imageProfileGraphics`.
   Use `terminalProfile` capabilities or orthogonal `graphics` options.
+- Removed MCP progress heartbeats.
 
 ## 0.5.5
 

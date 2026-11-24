@@ -101,6 +101,7 @@ export async function dispatch(
         {
           ...(args.wait?.conditions ? { conditions: args.wait.conditions as WaitCondition[] } : {}),
           ...(args.wait?.timeoutMs === undefined ? {} : { timeoutMs: args.wait.timeoutMs }),
+          onProgress: (progress) => emit("progress", progress),
         },
         { signal },
         args.screenshot ?? false
@@ -117,6 +118,7 @@ export async function dispatch(
       const waited = await manager.wait(args.id, {
         conditions: args.conditions as WaitCondition[],
         signal,
+        onProgress: (progress) => emit("progress", progress),
         ...(args.afterFrameId === undefined ? {} : { afterFrameId: args.afterFrameId }),
         ...(args.timeoutMs === undefined ? {} : { timeoutMs: args.timeoutMs }),
       });
@@ -130,6 +132,7 @@ export async function dispatch(
       const args = result.data as Params<"replay">;
       const replayed = await manager.replay(args.path, {
         signal,
+        onProgress: (progress) => emit("progress", progress),
         ...(args.speed === undefined ? {} : { speed: args.speed }),
         ...(args.allowTruncated === undefined ? {} : { allowTruncated: args.allowTruncated }),
       });

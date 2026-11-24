@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -10,11 +10,20 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { Observation, SessionInfo } from "../src/core/types.js";
+import { progressTracker } from "../src/interfaces/mcp.js";
+import { buildMcpConfig, MCP_CONFIG_CLIENTS, MCP_CONFIG_MODES } from "../src/interfaces/mcp-config.js";
+import { readArtifactResource } from "../src/interfaces/mcp-resources.js";
 import { VERSION } from "../src/version.js";
 
 const run = promisify(execFile);
 const cli = fileURLToPath(new URL("../src/interfaces/cli.js", import.meta.url));
 const fixture = fileURLToPath(new URL("./fixtures/terminal.js", import.meta.url));
+
+interface McpProgress {
+  progress: number;
+  total?: number;
+  message?: string;
+}
 
 test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话", { timeout: 90000 }, async () => {
   const home = await mkdtemp(join(tmpdir(), "tuilens-interface-"));
@@ -190,6 +199,13 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     ];
     assert.equal(tools.tools.length, 15);
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), expectedTools.sort());
+    const launchTool = tools.tools.find((tool) => tool.name === "terminal_launch");
+    const observeTool = tools.tools.find((tool) => tool.name === "terminal_observe");
+    assert.ok(launchTool);
+    assert.ok(observeTool);
+    assert.equal((launchTool.inputSchema.properties as Record<string, unknown> | undefined)?.images, undefined);
+    assert.match(observeTool.description ?? "", /fromFrameId/u);
+    assert.match(observeTool.description ?? "", /inputAndWait/u);
     const launch = await client.callTool({
       name: "terminal_launch",
       arguments: { command: process.execPath, args: [fixture], cols: 60, rows: 12, colorMode: "truecolor" },
@@ -197,17 +213,20 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     const launchContent = launch.content as { type: string; text?: string }[];
     assert.notEqual(launch.isError, true, launchContent[0]?.text ?? "MCP launch failed");
     const mcpSession = JSON.parse(launchContent[0]!.text!) as SessionInfo;
-    const progress: unknown[] = [];
+    const progress: McpProgress[] = [];
     const waiting = await client.callTool(
       {
         name: "terminal_wait",
         arguments: { id: mcpSession.id, conditions: [{ kind: "text", text: "TUILENS_READY" }] },
       },
       undefined,
-      { onprogress: (item) => progress.push(item) }
+      { onprogress: (item) => progress.push(item as McpProgress) }
     );
     assert.notEqual(waiting.isError, true);
     assert.ok(progress.length >= 1);
+    assert.equal(progress[0]?.progress, 0);
+    assert.equal(progress[0]?.total, 10_000);
+    assert.match(progress[0]?.message ?? "", /wait/u);
     const abort = new AbortController();
     const cancelled = client.callTool(
       {
@@ -219,16 +238,24 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     );
     setTimeout(() => abort.abort(), 100);
     await assert.rejects(cancelled, (error: unknown) => error instanceof Error);
-    const confirmed = await client.callTool({
-      name: "terminal_inputAndWait",
-      arguments: {
-        id: mcpSession.id,
-        action: { type: "text", text: "PING" },
-        wait: { conditions: [{ kind: "text", text: "INPUT_RECEIVED" }], timeoutMs: 5000 },
-        screenshot: true,
+    const inputProgress: McpProgress[] = [];
+    const confirmed = await client.callTool(
+      {
+        name: "terminal_inputAndWait",
+        arguments: {
+          id: mcpSession.id,
+          action: { type: "text", text: "PING" },
+          wait: { conditions: [{ kind: "text", text: "INPUT_RECEIVED" }], timeoutMs: 5000 },
+          screenshot: true,
+        },
       },
-    });
+      undefined,
+      { onprogress: (item) => inputProgress.push(item as McpProgress) }
+    );
     assert.notEqual(confirmed.isError, true);
+    assert.ok(inputProgress.length >= 1);
+    assert.ok(inputProgress.every((item) => item.total !== undefined && item.total > 0));
+    assert.ok(inputProgress.some((item) => item.message?.includes("inputAndWait")));
     const confirmedContent = confirmed.content as { type: string; text?: string }[];
     assert.ok(confirmedContent.some((item) => item.type === "image"));
     const confirmedData = JSON.parse(confirmedContent[0]!.text!) as {
@@ -242,7 +269,85 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
       arguments: { id: mcpSession.id, screenshot: true },
     });
     assert.notEqual(captured.isError, true);
-    assert.ok((captured.content as { type: string }[]).some((item) => item.type === "image"));
+    const capturedContent = captured.content as { type: string; text?: string }[];
+    assert.ok(capturedContent.some((item) => item.type === "image"));
+    const capturedData = JSON.parse(capturedContent[0]!.text!) as Observation;
+
+    const resources = await client.listResources();
+    const resourceUris = new Set(resources.resources.map((resource) => resource.uri));
+    assert.ok(resourceUris.has("tuilens://sessions"));
+    assert.ok(resourceUris.has(`tuilens://sessions/${mcpSession.id}/screen`));
+    assert.ok(resourceUris.has(`tuilens://sessions/${mcpSession.id}/screenshot`));
+    assert.ok(resourceUris.has(`tuilens://sessions/${mcpSession.id}/metrics`));
+    assert.ok(resources.resources.some((resource) => resource.uri.startsWith("tuilens://artifacts/")));
+    const templates = await client.listResourceTemplates();
+    assert.deepEqual(
+      templates.resourceTemplates.map((template) => template.uriTemplate).sort(),
+      [
+        "tuilens://artifacts/{name}",
+        "tuilens://sessions/{id}/metrics",
+        "tuilens://sessions/{id}/screen",
+        "tuilens://sessions/{id}/screenshot",
+      ].sort()
+    );
+
+    const readText = async (uri: string): Promise<string> => {
+      const result = await client!.readResource({ uri });
+      const first = result.contents[0]!;
+      assert.ok("text" in first, `resource ${uri} should return text`);
+      return first.text;
+    };
+    const sessionList = JSON.parse(await readText("tuilens://sessions")) as Record<string, unknown>[];
+    const safeSession = sessionList.find((item) => item.id === mcpSession.id);
+    assert.ok(safeSession);
+    assert.equal("resolvedCommand" in safeSession, false);
+    assert.equal("recordingPath" in safeSession, false);
+    assert.match(await readText(`tuilens://sessions/${mcpSession.id}/screen`), /INPUT_RECEIVED/u);
+    const resourceMetrics = JSON.parse(await readText(`tuilens://sessions/${mcpSession.id}/metrics`)) as {
+      receivedBytes: number;
+    };
+    assert.ok(resourceMetrics.receivedBytes > 0);
+    const screenshotResource = await client.readResource({
+      uri: `tuilens://sessions/${mcpSession.id}/screenshot`,
+    });
+    const screenshotPart = screenshotResource.contents[0]!;
+    assert.ok("blob" in screenshotPart);
+    assert.deepEqual([...Buffer.from(screenshotPart.blob, "base64").subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    assert.ok(capturedData.screenshot);
+    const artifactName = basename(capturedData.screenshot.path);
+    const artifactResource = await client.readResource({
+      uri: `tuilens://artifacts/${encodeURIComponent(artifactName)}`,
+    });
+    const artifactPart = artifactResource.contents[0]!;
+    assert.ok("blob" in artifactPart);
+    assert.deepEqual([...Buffer.from(artifactPart.blob, "base64").subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    await assert.rejects(client.readResource({ uri: "tuilens://artifacts/..%2Fdaemon.json" }));
+    await assert.rejects(client.readResource({ uri: "tuilens://artifacts/%2Fetc%2Fpasswd" }));
+
+    const prompts = await client.listPrompts();
+    assert.deepEqual(prompts.prompts.map((prompt) => prompt.name).sort(), [
+      "tui_reproduce_bug",
+      "tui_visual_regression",
+    ]);
+    const reproduce = await client.getPrompt({
+      name: "tui_reproduce_bug",
+      arguments: { description: "The menu never opens", command: "node tui.js" },
+    });
+    const reproduceContent = reproduce.messages[0]!.content;
+    assert.equal(reproduceContent.type, "text");
+    assert.match("text" in reproduceContent ? reproduceContent.text : "", /terminal_launch/u);
+
+    const replayProgress: McpProgress[] = [];
+    const replayedMcp = await client.callTool(
+      { name: "terminal_replay", arguments: { path: session.recordingPath } },
+      undefined,
+      { onprogress: (item) => replayProgress.push(item as McpProgress) }
+    );
+    assert.notEqual(replayedMcp.isError, true);
+    assert.ok(replayProgress.length >= 2);
+    assert.ok(replayProgress.every((item) => item.total !== undefined && item.total > 0));
+    assert.equal(replayProgress.at(-1)?.progress, replayProgress.at(-1)?.total);
+    assert.ok(replayProgress.some((item) => item.message?.includes("replay")));
     const lateLaunch = client
       .callTool({
         name: "terminal_launch",
@@ -285,6 +390,146 @@ test("CLI scroll 拒绝顶/底与方向或数量冲突", async () => {
     assert.equal(payload.ok, false);
     assert.equal(payload.error?.code, "INVALID_ARGUMENT");
   } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("mcp-config 覆盖所有客户端与启动模式并输出可粘贴格式", async () => {
+  for (const client of MCP_CONFIG_CLIENTS) {
+    for (const mode of MCP_CONFIG_MODES) {
+      const result = buildMcpConfig({ client, mode });
+      assert.equal(result.client, client);
+      assert.equal(result.mode, mode);
+      if (client === "codex") {
+        assert.equal(result.format, "toml");
+        assert.match(result.content, /^\[mcp_servers\.tuilens\]\n/u);
+        assert.match(result.content, /^args = \[/mu);
+      } else if (client === "claude-code") {
+        assert.equal(result.format, "command");
+        assert.match(result.content, /^claude mcp add --scope user tuilens -- /u);
+      } else {
+        assert.equal(result.format, "json");
+        const parsed = JSON.parse(result.content) as {
+          mcpServers: { tuilens: { command: string; args: string[] } };
+        };
+        const server = parsed.mcpServers.tuilens;
+        if (mode === "global") {
+          assert.deepEqual(server, { command: "tuilens", args: ["mcp"] });
+        } else if (mode === "npx") {
+          assert.deepEqual(server, { command: "npx", args: ["-y", "tuilens", "mcp"] });
+        } else {
+          assert.equal(server.command, process.execPath);
+          assert.match(server.args[0]!, /cli\.js$/u);
+          assert.deepEqual(server.args.slice(1), ["mcp"]);
+        }
+      }
+    }
+  }
+  const absolute = buildMcpConfig({
+    client: "claude-code",
+    mode: "absolute",
+    execPath: "C:\\Program Files\\nodejs\\node.exe",
+    cliPath: "C:\\Tui Lens\\dist\\src\\interfaces\\cli.js",
+  });
+  assert.match(absolute.content, /"C:\\Program Files\\nodejs\\node\.exe"/u);
+  assert.match(absolute.content, /"C:\\Tui Lens\\dist\\src\\interfaces\\cli\.js" mcp$/u);
+  assert.throws(() => buildMcpConfig({ client: "unknown" }), { code: "INVALID_ARGUMENT" });
+  assert.throws(() => buildMcpConfig({ mode: "unknown" }), { code: "INVALID_ARGUMENT" });
+
+  const cliResult = await run(process.execPath, [cli, "mcp-config", "--client", "codex", "--mode", "global"], {
+    maxBuffer: 1024 * 1024,
+  });
+  assert.match(cliResult.stdout, /^\[mcp_servers\.tuilens\]\n/u);
+  assert.doesNotMatch(cliResult.stdout, /^\{/u);
+});
+
+test("MCP 进度去重按 profile 重新计数而不丢弃矩阵后续 profile", () => {
+  const shouldForward = progressTracker();
+  const event = (profile: string, current: number) => ({
+    kind: "scenario" as const,
+    profile,
+    current,
+    total: 2,
+    elapsedMs: current * 10,
+  });
+  assert.equal(shouldForward(event("headless", 1)), true);
+  assert.equal(shouldForward(event("headless", 2)), true);
+  assert.equal(shouldForward(event("headless", 1)), false);
+  assert.equal(shouldForward(event("dom", 1)), true);
+  assert.equal(shouldForward(event("dom", 2)), true);
+});
+
+test("artifact 资源拒绝路径穿越、符号链接和超限文件", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "tuilens-artifact-root-"));
+  const outside = await mkdtemp(join(tmpdir(), "tuilens-artifact-outside-"));
+  try {
+    const artifacts = join(root, "artifacts");
+    await mkdir(artifacts);
+    await writeFile(join(artifacts, "ok.txt"), "OK");
+    assert.equal((await readArtifactResource("ok.txt", artifacts)).data.toString("utf8"), "OK");
+    await assert.rejects(readArtifactResource("../daemon.json", artifacts), { code: "INVALID_ARGUMENT" });
+    await assert.rejects(readArtifactResource("%2e%2e%2Fdaemon.json", artifacts), { code: "INVALID_ARGUMENT" });
+    await assert.rejects(readArtifactResource("/etc/passwd", artifacts), { code: "INVALID_ARGUMENT" });
+    await assert.rejects(readArtifactResource("C:\\Windows\\win.ini", artifacts), { code: "INVALID_ARGUMENT" });
+
+    const secret = join(outside, "secret.txt");
+    await writeFile(secret, "SECRET");
+    try {
+      await symlink(secret, join(artifacts, "escape.txt"));
+      await assert.rejects(readArtifactResource("escape.txt", artifacts), { code: "INVALID_ARGUMENT" });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EPERM" || code === "EACCES") {
+        try {
+          await symlink(outside, join(artifacts, "escape-dir"), "junction");
+          await assert.rejects(readArtifactResource("escape-dir/secret.txt", artifacts), {
+            code: "INVALID_ARGUMENT",
+          });
+        } catch (junctionError) {
+          const junctionCode = (junctionError as NodeJS.ErrnoException).code;
+          if (junctionCode === "EPERM" || junctionCode === "EACCES") {
+            t.diagnostic("Symlink and junction creation are unavailable on this Windows host.");
+          } else {
+            throw junctionError;
+          }
+        }
+      } else {
+        throw error;
+      }
+    }
+
+    await writeFile(join(artifacts, "large.txt"), "");
+    await truncate(join(artifacts, "large.txt"), 16 * 1024 * 1024 + 1);
+    await assert.rejects(readArtifactResource("large.txt", artifacts), { code: "FILE_LIMIT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  }
+});
+
+test("MCP prompts 随 TUILENS_LANG 提供中文文案", async () => {
+  const home = await mkdtemp(join(tmpdir(), "tuilens-mcp-prompts-"));
+  const client = new Client({ name: "tuilens-prompts-test", version: "1" });
+  try {
+    const env = Object.fromEntries(
+      Object.entries({ ...process.env, TUILENS_HOME: home, TUILENS_LANG: "zh-CN" }).filter(
+        (entry): entry is [string, string] => entry[1] !== undefined
+      )
+    );
+    await client.connect(
+      new StdioClientTransport({ command: process.execPath, args: [cli, "mcp"], env, stderr: "pipe" })
+    );
+    const prompts = await client.listPrompts();
+    assert.match(prompts.prompts.find((prompt) => prompt.name === "tui_reproduce_bug")?.description ?? "", /复现/u);
+    const result = await client.getPrompt({
+      name: "tui_visual_regression",
+      arguments: { scenario: "主菜单显示正常", baseline: "baseline.png" },
+    });
+    const content = result.messages[0]!.content;
+    assert.equal(content.type, "text");
+    assert.match("text" in content ? content.text : "", /视觉回归/u);
+  } finally {
+    await client.close();
     await rm(home, { recursive: true, force: true });
   }
 });

@@ -374,6 +374,8 @@ export interface WaitOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   afterFrameId?: number;
+  /** 服务端进度回调；由 IPC/MCP 适配层设置，SDK 调用方通常不需要。 */
+  onProgress?: ProgressReporter;
 }
 
 export interface BrowserEngineOptions {
@@ -441,7 +443,7 @@ export interface WaitResult {
 }
 
 export interface OperationProgress {
-  kind: "scenario" | "perf";
+  kind: "scenario" | "perf" | "wait" | "inputAndWait" | "replay";
   profile?: string;
   current: number;
   total: number;
@@ -455,6 +457,8 @@ export interface InputWaitOptions {
   conditions?: WaitCondition[];
   /** 仅限制等待；截图启用时另有独立的最小采集预算。 */
   timeoutMs?: number;
+  /** 服务端进度回调；由 IPC/MCP 适配层设置。 */
+  onProgress?: ProgressReporter;
 }
 
 export interface InputAndWaitResult {
