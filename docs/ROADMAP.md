@@ -111,6 +111,20 @@ or shutdown leaves no pending requests or live handles.
 Exit: one observation contract covers agent loops, explicit grid inspection and bounded incremental
 diff without returning the full viewport on every turn.
 
+### 0.6.0 PR-4 agent-native MCP v2 (landed)
+
+- Forward real daemon progress for wait, inputAndWait, replay, scenario and perf; remove fake
+  heartbeats and document the compact -> inputAndWait -> diff loop.
+- Add `tuilens://` session, screen, screenshot, metrics and artifact resources with bounded reads and
+  strict artifact containment checks.
+- Add bilingual bug-reproduction and visual-regression prompts plus `tuilens mcp-config` for Codex,
+  Claude Code, Cursor, Gemini CLI and generic JSON clients.
+- Make npm installation the primary onboarding path, document pnpm node-pty approval and keep the
+  browser requirement limited to visual features.
+
+Exit: long calls report real progress, resources and prompts are discoverable, artifact traversal is
+rejected, and client setup works without hand-writing absolute paths.
+
 ## Later
 
 - Expand tested image protocol semantics without advertising unsupported behavior.

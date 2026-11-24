@@ -1,13 +1,15 @@
-import { readFile } from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { CallToolResult, ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
-import type { Observation, SessionInfo } from "../core/types.js";
+import type { Observation, OperationProgress, SessionInfo } from "../core/types.js";
+import { readBoundedFile } from "../core/bounded-file.js";
 import { errorRecord } from "../core/errors.js";
 import { request } from "../transport/client.js";
 import { methodSchemas } from "./schemas.js";
 import { mcpInstructions, mcpTools, type McpMethod } from "./mcp-tools.js";
+import { MCP_SCREENSHOT_MAX_BYTES, registerMcpPrompts, registerMcpResources } from "./mcp-resources.js";
+import { McpProgressForwarder } from "./mcp-progress.js";
 import { VERSION } from "../version.js";
 import { pick } from "../core/i18n.js";
 
@@ -21,10 +23,12 @@ export async function startMcp(): Promise<void> {
       instructions: mcpInstructions(),
     }
   );
+  registerMcpResources(server);
+  registerMcpPrompts(server);
   const tools = mcpTools();
   const owned = new Set<string>();
   const disconnect = new AbortController();
-  const pending = new Set<Promise<unknown>>();
+  const pending = new Set<Promise<CallToolResult>>();
   for (const method of Object.keys(tools) as McpMethod[]) {
     const description = tools[method];
     server.registerTool(
@@ -37,47 +41,50 @@ export async function startMcp(): Promise<void> {
         args: Record<string, unknown>,
         extra: RequestHandlerExtra<ServerRequest, ServerNotification>
       ): Promise<CallToolResult> => {
-        try {
-          const operation = withProgress(
-            method,
-            extra,
-            request(method, args, { signal: AbortSignal.any([extra.signal, disconnect.signal]) })
-          );
-          pending.add(operation);
-          let data: unknown;
+        // Track the whole handler, not only the daemon request. Otherwise disconnect cleanup can
+        // snapshot `owned` after launch resolves but before this handler records the new session.
+        const task = (async (): Promise<CallToolResult> => {
           try {
-            data = await operation;
-          } finally {
-            pending.delete(operation);
+            const data = await requestWithProgress(
+              method,
+              args,
+              extra,
+              AbortSignal.any([extra.signal, disconnect.signal])
+            );
+            // 连接断开与启动返回竞争时，不能把迟到会话加到已经清空的 owned 中。
+            if (method === "launch" && disconnect.signal.aborted) {
+              await request("close", { id: (data as SessionInfo).id }, { autoStart: false });
+              return {
+                isError: true,
+                content: [
+                  {
+                    type: "text",
+                    text: pick(
+                      "MCP connection closed; the late session was released.",
+                      "MCP 连接已关闭，迟到会话已释放"
+                    ),
+                  },
+                ],
+              };
+            }
+            if (method === "launch") owned.add((data as SessionInfo).id);
+            if (method === "close") owned.delete((args as { id: string }).id);
+            const content: CallToolResult["content"] = [{ type: "text", text: JSON.stringify(data) }];
+            const observation = imageObservation(method, data);
+            if (observation?.screenshot) {
+              content.push(await mcpImageContent(observation.screenshot.path));
+            }
+            const failed = data !== null && typeof data === "object" && "pass" in data && data.pass === false;
+            return { content, ...(failed ? { isError: true } : {}) };
+          } catch (error) {
+            return { isError: true, content: [{ type: "text", text: JSON.stringify(errorRecord(error)) }] };
           }
-          // 连接断开与启动返回竞争时，不能把迟到会话加到已经清空的 owned 中。
-          if (method === "launch" && disconnect.signal.aborted) {
-            await request("close", { id: (data as SessionInfo).id }, { autoStart: false });
-            return {
-              isError: true,
-              content: [
-                {
-                  type: "text",
-                  text: pick("MCP connection closed; the late session was released.", "MCP 连接已关闭，迟到会话已释放"),
-                },
-              ],
-            };
-          }
-          if (method === "launch") owned.add((data as SessionInfo).id);
-          if (method === "close") owned.delete((args as { id: string }).id);
-          const content: CallToolResult["content"] = [{ type: "text", text: JSON.stringify(data) }];
-          const observation = imageObservation(method, data);
-          if (observation?.screenshot) {
-            content.push({
-              type: "image",
-              mimeType: "image/png",
-              data: (await readFile(observation.screenshot.path)).toString("base64"),
-            });
-          }
-          const failed = data !== null && typeof data === "object" && "pass" in data && data.pass === false;
-          return { content, ...(failed ? { isError: true } : {}) };
-        } catch (error) {
-          return { isError: true, content: [{ type: "text", text: JSON.stringify(errorRecord(error)) }] };
+        })();
+        pending.add(task);
+        try {
+          return await task;
+        } finally {
+          pending.delete(task);
         }
       }
     );
@@ -114,47 +121,81 @@ export async function startMcp(): Promise<void> {
 }
 
 /**
- * MCP 没有为普通工具提供强类型进度 API，但客户端通过 `_meta.progressToken`
- * 请求时可以发送标准 notifications/progress。这里用心跳而不是伪造百分比；
- * 真正取消仍由 extra.signal 驱动，并会一路传到 daemon 请求。
+ * 客户端通过 `_meta.progressToken` 请求时，把 daemon 的真实 progress 事件
+ * 转成 MCP notifications/progress。没有服务端进度就不发心跳。
  */
-async function withProgress<T>(
+async function requestWithProgress(
   method: McpMethod,
+  args: Record<string, unknown>,
   extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
-  operation: Promise<T>
-): Promise<T> {
+  signal: AbortSignal
+): Promise<unknown> {
   const token = extra._meta?.progressToken;
-  if (token === undefined || !PROGRESS_METHODS.has(method)) return operation;
-  let progress = 0;
+  if (token === undefined || !PROGRESS_METHODS.has(method)) return request(method, args, { signal });
   let stopped = false;
   let sending = Promise.resolve();
-  const notify = (): void => {
-    if (stopped) return;
-    progress += 1;
-    const value = progress;
+  const forwarder = new McpProgressForwarder((progress) => {
     sending = sending
       .then(() =>
         extra.sendNotification({
           method: "notifications/progress",
           params: {
             progressToken: token,
-            progress: value,
-            message: pick(`${method} is still running`, `${method} 仍在运行`),
+            progress: progress.current,
+            total: progress.total,
+            message: progressMessage(progress),
           },
         })
       )
       .catch(() => undefined);
+  });
+  const onEvent = (event: string, data: unknown): void => {
+    if (stopped || event !== "progress" || !isOperationProgress(data)) return;
+    forwarder.offer(data);
   };
-  notify();
-  const timer = setInterval(notify, 1000);
-  timer.unref();
   try {
-    return await operation;
+    return await request(method, args, { signal, onEvent });
   } finally {
     stopped = true;
-    clearInterval(timer);
+    forwarder.finish();
     await sending;
   }
+}
+
+/** Keep tool image content on the same bounded path as screenshot resources. */
+export async function mcpImageContent(path: string): Promise<{ type: "image"; mimeType: "image/png"; data: string }> {
+  const png = await readBoundedFile(path, MCP_SCREENSHOT_MAX_BYTES);
+  return {
+    type: "image",
+    mimeType: "image/png",
+    data: png.toString("base64"),
+  };
+}
+
+function isOperationProgress(value: unknown): value is OperationProgress {
+  if (value === null || typeof value !== "object") return false;
+  const progress = value as Partial<OperationProgress>;
+  return (
+    ["scenario", "perf", "wait", "inputAndWait", "replay"].includes(progress.kind ?? "") &&
+    typeof progress.current === "number" &&
+    Number.isFinite(progress.current) &&
+    progress.current >= 0 &&
+    typeof progress.total === "number" &&
+    Number.isFinite(progress.total) &&
+    progress.total > 0 &&
+    typeof progress.elapsedMs === "number" &&
+    Number.isFinite(progress.elapsedMs) &&
+    progress.elapsedMs >= 0
+  );
+}
+
+function progressMessage(progress: OperationProgress): string {
+  const profile = progress.profile ? ` (${progress.profile})` : "";
+  const suffix = progress.kind === "wait" || progress.kind === "inputAndWait" ? " ms" : "";
+  return pick(
+    `${progress.kind}${profile}: ${progress.current}/${progress.total}${suffix}`,
+    `${progress.kind}${profile}：${progress.current}/${progress.total}${suffix}`
+  );
 }
 
 function imageObservation(method: McpMethod, data: unknown): Observation | undefined {

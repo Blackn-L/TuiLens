@@ -2,209 +2,265 @@
 
 [English](MCP-SETUP.md) · [简体中文](zh-CN/MCP-SETUP.md)
 
-TuiLens exposes terminal automation through an MCP stdio server. The MCP client starts the
-server as a child process; there is no URL or port to connect to. Each user runs TuiLens on
-the machine where the terminal sessions should execute.
+TuiLens exposes terminal automation through an MCP stdio server. The MCP client starts `tuilens mcp`
+as a child process; there is no URL or port to connect to. Install TuiLens on the machine where the
+terminal sessions should run.
 
 ## Requirements
 
-- Node.js 22 or newer and npm.
-- Windows or Linux.
-- Git, when installing from source.
-- No browser is required for text-only sessions; Google Chrome, Microsoft Edge, or Playwright Chromium
-  is required for screenshots and image protocols.
+- Node.js 22 or newer.
+- Windows, Linux, or macOS (experimental).
+- **Text-only sessions need no browser.**
+- Screenshots, image protocols and visual comparisons need Chrome, Edge or Chromium. Install Playwright
+  Chromium only when no system browser is available:
+
+  ```sh
+  npx playwright-core install chromium
+  ```
+
 - Platform C++ build tools if `node-pty` cannot use a prebuilt binary.
 
-## Build the server
+## Install
 
-TuiLens is currently built from source. `dist/` is generated and is not committed,
-so downloading a source archive is not enough.
+Global install:
 
-```powershell
-git clone https://github.com/Blackn-L/TuiLens.git
-cd TuiLens
-npm ci
-npm run build
+```sh
+npm install -g tuilens
+tuilens doctor
 ```
 
-For visual output, install the browser only when no system browser is available:
+Or run without a global install:
 
-```powershell
-npx playwright-core install chromium
+```sh
+npx -y tuilens doctor
+npx -y tuilens mcp
 ```
 
-`TUILENS_BROWSER_PATH` can select a browser explicitly.
-`TUILENS_FONT_FILE` can pin the capture font; `TUILENS_FONT_FAMILY` overrides the fallback stack.
-Restart the MCP client and stop an existing daemon after changing either value.
+With pnpm 10+, approve the native `node-pty` build after installing:
 
-Run a launch/observe/close smoke test from the repository root before configuring the MCP
-client:
-
-```powershell
-node .\dist\src\interfaces\cli.js launch --cols 80 --rows 16 -- node .\examples\echo-tui.mjs
-node .\dist\src\interfaces\cli.js observe <session-id>
-node .\dist\src\interfaces\cli.js close <session-id>
+```sh
+pnpm add -g tuilens
+pnpm approve-builds -g
 ```
 
-Replace `<session-id>` with `data.id` from the launch result. `observe` should return the
-`READY` screen and a PNG path. Fix build or browser errors before debugging the MCP connection.
+Select `node-pty` in the prompt. In a project that depends on TuiLens, run `pnpm approve-builds` in
+that project instead.
 
-## Configure the client
+`tuilens doctor` checks Node.js, platform support, browser discovery, `node-pty`, storage permissions
+and daemon state without starting a daemon. Exit code 1 means an error-level check failed.
 
-Use the absolute path to the built CLI and pass `mcp` as the first argument. Do not point
-the client at a directory or at a source `.ts` file.
+## Generate the client configuration
+
+Do not hand-write command paths if `mcp-config` can produce them:
+
+```sh
+tuilens mcp-config --client codex
+tuilens mcp-config --client claude-code
+tuilens mcp-config --client cursor
+tuilens mcp-config --client gemini
+tuilens mcp-config --client json
+```
+
+Modes:
+
+- `--mode global` (default): command `tuilens`, args `["mcp"]`. Use after a global install.
+- `--mode npx`: command `npx`, args `["-y", "tuilens", "mcp"]`. No global install required.
+- `--mode absolute`: prints `process.execPath` and the installed `cli.js` absolute path. Use this for
+  Cursor, Claude Desktop and other GUI clients that do not inherit the shell `PATH`.
+
+Example:
+
+```sh
+tuilens mcp-config --client codex --mode global
+tuilens mcp-config --client json --mode absolute
+```
+
+## Client setup
 
 ### Codex
 
-Edit `%USERPROFILE%\.codex\config.toml` on Windows (or `~/.codex/config.toml` on Linux):
+```sh
+tuilens mcp-config --client codex
+```
+
+Put the TOML output in `%USERPROFILE%\.codex\config.toml` on Windows or `~/.codex/config.toml` on
+Linux/macOS:
 
 ```toml
 [mcp_servers.tuilens]
-command = "node"
-args = ['C:\Users\<user>\TuiLens\dist\src\interfaces\cli.js', "mcp"]
+command = "tuilens"
+args = ["mcp"]
 ```
 
-On Linux:
+For a GUI or sandboxed Codex process that cannot find `tuilens`, use:
 
-```toml
-[mcp_servers.tuilens]
-command = "node"
-args = ["/home/<user>/TuiLens/dist/src/interfaces/cli.js", "mcp"]
+```sh
+tuilens mcp-config --client codex --mode absolute
 ```
 
-If a GUI client cannot find `node`, use its absolute path:
+Restart Codex after changing the file.
 
-```powershell
-(Get-Command node).Source
+### Claude Code
+
+```sh
+tuilens mcp-config --client claude-code
 ```
 
-Set that path as `command`.
+The command form is:
 
-### Other MCP clients
+```sh
+claude mcp add --scope user tuilens -- tuilens mcp
+```
 
-For clients that accept the common `mcpServers` JSON shape:
+Use `--mode npx` or `--mode absolute` to generate the corresponding command. Restart Claude Code or
+start a new session after adding the server.
+
+### Cursor
+
+```sh
+tuilens mcp-config --client cursor
+```
+
+Paste the JSON into `~/.cursor/mcp.json`, or into `.cursor/mcp.json` for a project-scoped server:
 
 ```json
 {
   "mcpServers": {
     "tuilens": {
-      "command": "node",
-      "args": [
-        "C:\\Users\\<user>\\TuiLens\\dist\\src\\interfaces\\cli.js",
-        "mcp"
-      ]
+      "command": "tuilens",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-The exact configuration file and restart procedure depend on the client; keep the same
-command and arguments. If the client supports environment variables, `TUILENS_BROWSER_PATH`
-can point to a specific browser executable, and `TUILENS_FONT_FILE` can pin a font file.
+Cursor is a GUI client. If it reports `spawn tuilens ENOENT`, regenerate with
+`--mode absolute`.
+
+### Gemini CLI
+
+```sh
+tuilens mcp-config --client gemini
+```
+
+Paste the `mcpServers` JSON into `~/.gemini/settings.json` (user scope) or
+`.gemini/settings.json` (project scope). The same configuration shape also works for clients that
+accept the common `mcpServers` object.
+
+### Other clients
+
+```sh
+tuilens mcp-config --client json
+```
+
+Keep `command` and `args` unchanged; only the surrounding file location differs by client.
+
+## Recommended agent loop
+
+The MCP initialization instructions and tool descriptions tell agents to use:
+
+```text
+terminal_launch
+  -> terminal_observe(view:"compact")       # remember snapshot.frameId
+  -> terminal_inputAndWait                  # send once and wait for evidence
+  -> terminal_observe(view:"diff",
+       fromFrameId:<previous frameId>)      # only changes and metadata
+  -> terminal_close
+```
+
+Pass `screenshot:true` only for an explicit visual check. Use `terminal_scenario` for repeatable flows
+and `terminal_perf` for latency or memory measurements. A normal shell remains the right choice for
+simple non-interactive commands.
+
+## Resources and prompts
+
+The server exposes read-only resources:
+
+| URI | Content |
+| --- | --- |
+| `tuilens://sessions` | Safe session metadata; no environment variables or credentials. |
+| `tuilens://sessions/{id}/screen` | Compact text screen, browser-free. |
+| `tuilens://sessions/{id}/screenshot` | Current PNG, 32 MiB cap. |
+| `tuilens://sessions/{id}/metrics` | Backpressure, queue and protocol-reply counters. |
+| `tuilens://artifacts/{name}` | Report, diff image, screenshot or recording; 16 MiB cap. |
+
+Artifact names are relative to `TUILENS_HOME/artifacts`. Absolute paths, `..`, NUL bytes and symlink
+escapes are rejected after both `resolve` and `realpath` containment checks.
+
+Prompts:
+
+- `tui_reproduce_bug`
+- `tui_visual_regression`
+
+Prompt text and descriptions follow `TUILENS_LANG` (`en` by default, `zh-CN` for Chinese).
+
+## Progress and cancellation
+
+When the client supplies `_meta.progressToken`, TuiLens forwards real server progress for `wait`,
+`inputAndWait`, `replay`, `scenario` and `perf`. Notifications include `progress` and `total`;
+there is no fixed heartbeat. Cancelling the MCP request aborts the matching daemon operation.
 
 ## Verify the connection
 
-After restarting the client, TuiLens should expose tools including `terminal_launch`,
-`terminal_observe`, `terminal_find`, `terminal_input`, `terminal_inputAndWait`,
-`terminal_wait`, `terminal_clickText`, `terminal_compare`, `terminal_replay`,
-`terminal_scenario`, `terminal_perf`, and `terminal_close`.
+After restarting the client:
 
-A minimal smoke test:
-
-1. Call `terminal_launch` with the absolute path to the sample TUI:
+1. Confirm the tools appear, including `terminal_launch`, `terminal_observe`,
+   `terminal_inputAndWait`, `terminal_wait`, `terminal_compare`, `terminal_scenario`,
+   `terminal_perf` and `terminal_close`.
+2. Launch a small TUI:
 
    ```json
    {
      "command": "node",
-     "args": ["C:\\Users\\<user>\\TuiLens\\examples\\echo-tui.mjs"],
+     "args": ["-e", "process.stdout.write('READY\\n');setInterval(()=>{},1000)"],
      "cols": 80,
      "rows": 16
    }
    ```
 
-2. Save the returned `id`.
-3. Call `terminal_observe` with `{"id":"<session-id>"}`.
-4. Call `terminal_close` with the same ID.
+3. Save `data.id`, call `terminal_observe` with `{"id":"<session-id>"}`, then call
+   `terminal_close`.
+4. Optionally read `tuilens://sessions/<session-id>/screen` and
+   `tuilens://sessions/<session-id>/metrics`.
 
-Clients that support MCP image content receive a PNG screenshot as well as text metadata.
-Clients without image rendering can still use the terminal text and snapshot metadata.
-
-## Make agents select TuiLens
-
-When the MCP client initializes the connection, TuiLens returns an `instructions` field that
-describes when to use the server and the normal launch/observe/input/close flow. Codex and
-other clients that support MCP server instructions read this automatically. The individual
-tool descriptions also state the user intent that should trigger them.
-
-Server instructions improve selection but do not force a tool call; model routing remains
-probabilistic. If a particular agent still falls back to raw shell commands, add a
-client-level rule or skill that says to use TuiLens for interactive terminal/TUI work. A
-Codex `AGENTS.md` rule can be explicit:
-
-```text
-For interactive terminal/TUI work, use the tuilens MCP tools before falling back to raw
-shell commands. Start with terminal_launch, inspect with terminal_observe or terminal_wait,
-interact with terminal_input or terminal_inputAndWait, and finish with terminal_close.
-```
-
-Keep simple non-interactive commands on the normal shell path so the agent does not launch a
-browser-backed session unnecessarily.
+Text observation works without a browser. A screenshot request activates Chromium and reports the
+live `renderer`; if no browser is installed, the screenshot fails while text observation remains
+available.
 
 ## Multi-agent use
 
-Main and subagents in the same conversation can use TuiLens at the same time, but TuiLens
-isolates work by terminal session ID, not by agent identity. All MCP connections share one
-daemon; `terminal_list` returns every session, and any caller with a valid ID can use
-`terminal_observe`, `terminal_input`, and `terminal_close`.
+TuiLens isolates terminal sessions by ID, not by agent identity. All MCP connections share one daemon.
+`terminal_list` returns every session, and any caller with a valid ID can observe or close it.
 
-Follow these rules to avoid interference:
+- Each agent should launch and close its own session.
+- Keep one writer per session.
+- Treat a handoff as an explicit ownership transfer.
+- Do not use `terminal_list` to take over another agent's running session.
+- Disconnecting an MCP connection releases only sessions created by that connection.
 
-- Each agent should call `terminal_launch` for its own terminal, use only the returned ID,
-  and call `terminal_close` when its task is complete. Do not pick a running session from
-  `terminal_list` and take it over.
-- Do not let two agents drive the same ID concurrently. Low-level operations on one
-  terminal are serialized by its session queue, but their order depends on arrival time.
-  `terminal_wait` and `terminal_inputAndWait` do not hold an agent-level lock for the whole
-  workflow, so another input can still change the screen and cause a false result or
-  `STALE_FRAME`.
-- Treat a handoff as an explicit ownership transfer: the original agent stops sending
-  input, resizing, and closing; the receiving agent confirms before continuing. Keep one
-  writer per session. `terminal_close` does not check ownership, so closing a session makes
-  it fail for every caller holding that ID.
-- Different terminals may run in parallel. They share the daemon, browser, and the default
-  budget of eight sessions (configurable with `TUILENS_MAX_SESSIONS`). When the budget is
-  full, only the oldest exited sessions are reclaimed; running sessions are never
-  preempted.
-- Disconnecting an MCP connection releases only sessions created by that connection. Do
-  not rely on a disconnect to clean up another agent's sessions; manage the lifecycle
-  explicitly when handing work off.
-
-The MCP initialization `instructions` and the `terminal_launch`, `terminal_list`, and
-`terminal_close` tool descriptions also carry these constraints. If a client does not
-surface server instructions, repeat the same rules in `AGENTS.md` or its system prompt.
+The default session budget is eight and can be changed with `TUILENS_MAX_SESSIONS`. When full, only
+the oldest exited sessions are reclaimed; running sessions are never preempted.
 
 ## Troubleshooting
 
 | Symptom | Likely cause | Action |
 | --- | --- | --- |
-| `Cannot find module .../cli.js` | The project was downloaded but not built, or the path is wrong | Run `npm run build` and use the absolute path to `dist/src/interfaces/cli.js` |
-| `spawn node ENOENT` | The MCP client does not inherit the shell `PATH` | Set `command` to the absolute `node` executable |
-| No tools appear after restart | Client configuration was not reloaded, or the server failed to start | Check the client's MCP logs, verify the path, and restart the client |
-| `node-pty` install failure | Unsupported Node version or missing native build tools | Use Node.js 22 or newer, run `npm ci`, and install the platform C++ toolchain if needed |
-| Browser launch failure | No Chrome/Edge installation was detected | Run `npx playwright-core install chromium` or set `TUILENS_BROWSER_PATH` |
-| Relative file or command not found | The client's working directory differs from the shell's | Pass an absolute `cwd` and absolute program or script paths in tool arguments |
-| The `mcp` command appears to hang with no output | This is a stdio server waiting for JSON-RPC input | Test it through an MCP client, not as an interactive terminal command |
-| Environment readiness is unclear | Browser, PTY, storage or daemon state may be missing or invalid | Run `node dist/src/interfaces/cli.js doctor`; exit code 1 means an error-level check failed |
-| Session processes remain after a tool failure | A session was not closed explicitly | Call `terminal_close`; disconnecting an MCP connection also releases sessions it created |
-| Session budget stays full after repeated demos | The PTY exited, but TuiLens still retains its final frame as a session | Call `terminal_close` for immediate release; a new launch reclaims the oldest exited sessions when the budget is full |
+| `spawn tuilens ENOENT` | GUI client does not inherit shell `PATH` | Use `tuilens mcp-config --client <client> --mode absolute` |
+| `Cannot find module .../cli.js` | Absolute configuration points at a removed install | Reinstall TuiLens and regenerate with `--mode absolute` |
+| No tools after restart | Client did not reload MCP configuration | Restart the client or start a new session |
+| `node-pty` install failure | pnpm/npm blocked the build script or C++ tools are missing | Approve `node-pty` with `pnpm approve-builds -g`, or install build tools |
+| Browser launch failure | No Chrome/Edge/Chromium detected | Install a browser or run `npx playwright-core install chromium` |
+| Relative command not found | Client working directory differs from the shell | Pass absolute `cwd` and program paths in tool arguments |
+| `mcp` appears to hang | stdio server is waiting for JSON-RPC input | Test through an MCP client, not as an interactive command |
+| Environment unclear | Runtime, PTY, storage or daemon state is invalid | Run `tuilens doctor` |
 
-## Security and remote use
+## Security
 
-The MCP server can start arbitrary local programs with the permissions of the user running
-the MCP client. Install only a trusted checkout, and review a scenario before running it.
+The MCP server can start arbitrary local programs with the permissions of the user running the MCP
+client. Install only trusted packages and review scenario files before running them.
 
-The transport is local: Windows uses a named pipe and Linux uses an abstract Unix socket,
-with a local authentication token. There is no public HTTP/SSE control endpoint. Install a
-separate local copy for each user; do not expose the local daemon socket to another machine.
+The transport is local: Windows uses a named pipe, Linux uses an abstract Unix socket, and macOS uses
+a private Unix socket with a local token. There is no public HTTP/SSE control endpoint. Do not expose
+the daemon socket to another machine.
 
-See [protocol examples](PROTOCOL.md) for tool and CLI argument shapes.
+See [protocol examples](PROTOCOL.md) for CLI and MCP argument shapes.

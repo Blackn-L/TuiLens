@@ -45,40 +45,73 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 ## 环境要求
 
 - Node.js **22 或更高版本**。
-- Windows、Linux 或 macOS（实验性）。纯文本会话不需要浏览器；截图与图片协议需要本机 Chrome/Chromium 或 Playwright Chromium。
+- Windows、Linux 或 macOS（实验性）。
+- 纯文本会话**不需要浏览器**；截图与图片协议需要本机 Chrome、Edge 或 Chromium
+  （也可以安装 Playwright Chromium）。
 - node-pty 无可用预编译包时，需要相应平台的 C++ 构建工具。
 
 ## 安装
 
-当前从源码安装。满足上述环境要求后执行：
+安装 npm 包并验证运行环境：
 
 ```sh
-git clone https://github.com/Blackn-L/TuiLens.git
-cd TuiLens
-npm ci
-npm run build
+npm install -g tuilens
+tuilens doctor
 ```
 
-需要视觉输出时，TuiLens 默认检测系统 Chrome/Edge；也可以安装 Playwright Chromium：
+不想全局安装时可直接使用：
 
 ```sh
-npx playwright-core install chromium
+npx -y tuilens doctor
+npx -y tuilens mcp
 ```
 
-通过 `TUILENS_BROWSER_PATH` 指定浏览器。
+pnpm 10+ 默认阻止依赖运行构建脚本，安装后需要批准 `node-pty`：
+
+```sh
+pnpm add -g tuilens
+pnpm approve-builds -g
+```
+
+在提示中选择 `node-pty`。项目内安装时，在该项目的 pnpm 构建策略中允许同一包，或在项目目录运行
+`pnpm approve-builds`。
+
 使用 npm 12+ 将 TuiLens 安装为依赖时，需要在消费项目允许 `node-pty` 的原生安装脚本：
 
 ```json
 "allowScripts": { "node-pty@1.2.0-beta.18": true }
 ```
 
-## 诊断
-
-构建后运行本地诊断：
+纯文本会话现在即可使用。截图或图片协议会优先查找系统 Chrome/Edge/Chromium；没有时再安装：
 
 ```sh
+npx playwright-core install chromium
+```
+
+通过 `TUILENS_BROWSER_PATH` 指定浏览器。
+
+### 从源码开发
+
+只有开发 TuiLens 本身时才需要源码流程：
+
+```sh
+git clone https://github.com/Blackn-L/TuiLens.git
+cd TuiLens
+npm ci
+npm run build
 node dist/src/interfaces/cli.js doctor
-node dist/src/interfaces/cli.js probe
+```
+
+源码仓库通过 `node dist/src/interfaces/cli.js` 提供同一组命令；日常使用以发布的 `tuilens`
+可执行文件为准。
+
+## 诊断
+
+运行本地诊断：
+
+```sh
+tuilens doctor
+tuilens probe
 ```
 
 它会检查 Node.js 与平台支持、浏览器发现、`node-pty`、存储权限和 daemon 状态，
@@ -97,13 +130,13 @@ node dist/src/interfaces/cli.js probe
 先查看 CLI 帮助：
 
 ```sh
-node dist/src/interfaces/cli.js --help
+tuilens --help
 ```
 
 然后从仓库根目录运行独立场景：
 
 ```sh
-node dist/src/interfaces/cli.js scenario --file examples/scenario.json
+tuilens scenario --file examples/scenario.json
 ```
 
 JSON 结果包含报告路径和步骤证据。场景或视觉比较失败时退出码为 1。
@@ -111,7 +144,7 @@ JSON 结果包含报告路径和步骤证据。场景或视觉比较失败时退
 启动交互会话：
 
 ```sh
-node dist/src/interfaces/cli.js launch --record --cols 80 --rows 16 -- node examples/echo-tui.mjs
+tuilens launch --record --cols 80 --rows 16 -- node examples/echo-tui.mjs
 ```
 
 用 `--terminal-profile kitty`、`wezterm`、`iterm2` 或 JSON profile 路径选择终端身份。
@@ -120,16 +153,16 @@ node dist/src/interfaces/cli.js launch --record --cols 80 --rows 16 -- node exam
 将返回的 `data.id` 替换到下面的 `SESSION_ID`：
 
 ```sh
-node dist/src/interfaces/cli.js observe SESSION_ID
-node dist/src/interfaces/cli.js type SESSION_ID g
-node dist/src/interfaces/cli.js wait SESSION_ID --text UPDATED
-node dist/src/interfaces/cli.js input-wait SESSION_ID PING --text INPUT_RECEIVED
-node dist/src/interfaces/cli.js drag SESSION_ID 2 3 20 3 --shift
-node dist/src/interfaces/cli.js observe SESSION_ID --region 0,7,30,4
-node dist/src/interfaces/cli.js key SESSION_ID Ctrl+q
-node dist/src/interfaces/cli.js wait SESSION_ID --exited
-node dist/src/interfaces/cli.js close SESSION_ID
-node dist/src/interfaces/cli.js shutdown
+tuilens observe SESSION_ID
+tuilens type SESSION_ID g
+tuilens wait SESSION_ID --text UPDATED
+tuilens input-wait SESSION_ID PING --text INPUT_RECEIVED
+tuilens drag SESSION_ID 2 3 20 3 --shift
+tuilens observe SESSION_ID --region 0,7,30,4
+tuilens key SESSION_ID Ctrl+q
+tuilens wait SESSION_ID --exited
+tuilens close SESSION_ID
+tuilens shutdown
 ```
 
 坐标从 **0** 起算，单位为字符格。普通输入返回表示已送达；需要确认渲染结果时使用
@@ -137,14 +170,37 @@ node dist/src/interfaces/cli.js shutdown
 终端自动应答默认使用 `--protocol-replies auto`，只转发及时且存在查询匹配的已知应答。
 若应用在 TTY 已回显时查询，使用 `--protocol-replies suppress` 或应用侧探测开关。
 
+## MCP 接入
+
+用 `mcp-config` 生成客户端配置，不必手写路径：
+
+```sh
+tuilens mcp-config --client codex
+tuilens mcp-config --client json --mode absolute
+tuilens mcp-config --client claude-code --mode npx
+```
+
+客户端可选 `json`、`codex`、`claude-code`、`cursor`、`gemini`；模式可选 `global`
+（已安装 `tuilens`）、`npx`（免全局安装）和 `absolute`（当前 `process.execPath` 加已安装
+`cli.js`，适合不继承 shell `PATH` 的 GUI 客户端）。
+
+MCP 服务提供 launch/observe/input/wait/compare/scenario/perf 工具，只读
+`tuilens://` 会话/画面/截图/metrics/artifact 资源，以及 `tui_reproduce_bug`、
+`tui_visual_regression` 两个 Prompt。推荐主循环：
+`terminal_launch` -> `terminal_observe(view:"compact")` -> `terminal_inputAndWait` ->
+`terminal_observe(view:"diff",fromFrameId:<上一次 frameId>)`；截图必须显式开启。
+
+Codex、Claude Code、Cursor、Gemini CLI 配置、验收、排错和本机安全说明见
+[MCP 接入指南](docs/zh-CN/MCP-SETUP.md)。
+
 ## 接口
 
 所有接口共用同一套 PTY 引擎和会话状态。按调用方需要选择最小接口。
 
 | 接口 | 适用场景 | 入口 | 详情 |
 | --- | --- | --- | --- |
-| CLI | Shell 脚本、CI 任务和手动探测 | `node dist/src/interfaces/cli.js <command>` | [快速开始](#快速开始) · [协议示例](docs/zh-CN/PROTOCOL.md) |
-| MCP | 需要工具调用和图片内容的 Agent | 通过 stdio 启动 `node /absolute/path/to/TuiLens/dist/src/interfaces/cli.js mcp` | [MCP 接入指南](docs/zh-CN/MCP-SETUP.md) |
+| CLI | Shell 脚本、CI 任务和手动探测 | `tuilens <command>` 或 `npx -y tuilens <command>` | [快速开始](#快速开始) · [协议示例](docs/zh-CN/PROTOCOL.md) |
+| MCP | 需要工具、资源和 Prompt 的 Agent | 通过 stdio 启动 `tuilens mcp`（用 `mcp-config` 生成配置） | [MCP 接入指南](docs/zh-CN/MCP-SETUP.md) |
 | TypeScript SDK | 测试套件和内嵌自动化 | `import { SessionManager, terminal } from "./dist/src/index.js"` | [测试断言](#测试断言) · [SDK 示例](#typescript-sdk) |
 
 ## 语言
@@ -185,10 +241,10 @@ WebGL 无法启动时会回退 DOM 并回传 `dom`，不会静默声称使用了
 开始，在首次截图后返回 `dom`；若有界回放窗口丢弃了重建画面所需历史，会设置 `visualSyncDegraded`。
 
 ```sh
-node dist/src/interfaces/cli.js observe SESSION_ID --screenshot --region 0,0,40,10
-node dist/src/interfaces/cli.js observe SESSION_ID --view cells
-node dist/src/interfaces/cli.js observe SESSION_ID --view diff --from-frame 42
-node dist/src/interfaces/cli.js compare SESSION_ID --baseline baseline.png --region 0,0,40,10
+tuilens observe SESSION_ID --screenshot --region 0,0,40,10
+tuilens observe SESSION_ID --view cells
+tuilens observe SESSION_ID --view diff --from-frame 42
+tuilens compare SESSION_ID --baseline baseline.png --region 0,0,40,10
 ```
 
 截图和状态共享 `frameId`。区域裁剪只改变 PNG，状态仍包含完整视口。
@@ -202,10 +258,10 @@ node dist/src/interfaces/cli.js compare SESSION_ID --baseline baseline.png --reg
 ## 定位与等待
 
 ```sh
-node dist/src/interfaces/cli.js find SESSION_ID Run --unique
-node dist/src/interfaces/cli.js click-text SESSION_ID Run --nth 1
-node dist/src/interfaces/cli.js click-text --json '{"id":"SESSION_ID","text":"Collapse","options":{"hitbox":{"right":3},"point":"right"}}'
-node dist/src/interfaces/cli.js wait SESSION_ID --stable 250 --region 0,0,40,10
+tuilens find SESSION_ID Run --unique
+tuilens click-text SESSION_ID Run --nth 1
+tuilens click-text --json '{"id":"SESSION_ID","text":"Collapse","options":{"hitbox":{"right":3},"point":"right"}}'
+tuilens wait SESSION_ID --stable 250 --region 0,0,40,10
 ```
 
 `click-text` 默认要求唯一匹配；发现文字不等于识别业务按钮。
@@ -234,8 +290,8 @@ JSON 接口还支持 `style`、`count`、`afterFrameId` 和输入保护条件。
 默认上限 16 MiB，可配置 4 KiB–64 MiB，达到上限会明确标注截断。
 
 ```sh
-node dist/src/interfaces/cli.js replay path/to/session.recording.jsonl
-node dist/src/interfaces/cli.js replay path/to/session.recording.jsonl --speed 2
+tuilens replay path/to/session.recording.jsonl
+tuilens replay path/to/session.recording.jsonl --speed 2
 ```
 
 回放只将输出和 resize 应用到新引擎，不重新运行程序、命令或输入。
@@ -251,10 +307,10 @@ TuiLens 仓库不提交基线：测量结果依赖被测程序、平台、网格
 
 ```sh
 # 为你的工作负载生成基线，路径由你决定。
-node dist/src/interfaces/cli.js perf --file examples/perf.json --write-baseline artifacts/perf-baseline.json
+tuilens perf --file examples/perf.json --write-baseline artifacts/perf-baseline.json
 
 # 后续运行与基线比较。
-node dist/src/interfaces/cli.js perf --file examples/perf.json \
+tuilens perf --file examples/perf.json \
   --baseline artifacts/perf-baseline.json --max-regression 0.15 --junit artifacts/junit-perf.xml
 ```
 
@@ -310,20 +366,20 @@ await tui.expectNoText("Error", { timeoutMs: 500 });
 
 ## MCP
 
-先构建 TuiLens，再让 MCP 客户端使用绝对路径启动 stdio 服务：
+用 `tuilens mcp-config` 直接生成客户端格式：
 
-```json
-{
-  "mcpServers": {
-    "tuilens": {
-      "command": "node",
-      "args": ["/absolute/path/to/TuiLens/dist/src/interfaces/cli.js", "mcp"]
-    }
-  }
-}
+```sh
+tuilens mcp-config --client codex
+tuilens mcp-config --client claude-code
+tuilens mcp-config --client json --mode absolute
+tuilens mcp-config --client cursor --mode npx
 ```
 
-安装、Codex 与 JSON 客户端配置、验收方法、排错和本机安全说明见
+`--mode global` 假定 `tuilens` 已在 `PATH` 中；`--mode npx` 输出
+`npx -y tuilens mcp`；GUI 客户端不继承 shell `PATH` 时使用 `--mode absolute`，
+它会输出当前 Node 可执行文件和已安装的 `cli.js` 绝对路径。
+
+Codex、Claude Code、Cursor、Gemini CLI 配置、验收、排错和本机安全说明见
 [MCP 接入指南](docs/zh-CN/MCP-SETUP.md)。
 
 MCP 服务还会在初始化时返回 `instructions`，提示 Agent 在交互式 TUI 任务中优先使用
@@ -334,8 +390,19 @@ TuiLens，并配合面向使用意图的工具描述。支持 server instruction
 `terminal_clickText`、`terminal_input`、`terminal_inputAndWait`、`terminal_resize`、`terminal_wait`、`terminal_compare`、
 `terminal_replay`、`terminal_scenario`、`terminal_perf`、`terminal_metrics`、`terminal_close`。
 观察、回放和启用截图的 inputAndWait 返回 PNG image content 和文字元数据；MCP 断开时回收该连接创建的会话。
-客户端请求 progress token 时，wait、inputAndWait、replay、scenario 和 perf 会发送进度心跳；
+客户端请求 progress token 时，wait、inputAndWait、replay、scenario 和 perf 会转发真实服务端进度；
 取消 MCP 请求会中止对应的 daemon 操作。
+
+只读资源：
+
+- `tuilens://sessions`：安全会话元数据。
+- `tuilens://sessions/{id}/screen`：无浏览器读取的 compact 文本。
+- `tuilens://sessions/{id}/screenshot`：按需截取的 PNG。
+- `tuilens://sessions/{id}/metrics`：背压与协议计数。
+- `tuilens://artifacts/{name}`：16 MiB 上限，严格防路径穿越与符号链接逃逸。
+
+Prompt：`tui_reproduce_bug`、`tui_visual_regression`（英文，或设置
+`TUILENS_LANG=zh-CN` 使用中文）。
 
 ## TypeScript SDK
 
@@ -371,7 +438,7 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 
 测试使用独立夹具，截图、录制、报告与编译产物均被 Git 忽略。
 后台服务在 Windows 使用本机命名管道、Linux 使用 abstract Unix socket、macOS 使用私有 Unix socket，并使用本地令牌认证。
-IPC v2 使用持久连接，一次鉴权后多路复用请求，并推送 `watch` 画面与真实的 `scenario`/`perf` 进度；
+IPC v2 使用持久连接，一次鉴权后多路复用请求，并推送 `watch` 画面与真实长任务进度；
 单连接在途请求上限为 64。
 `TUILENS_IPC_TIMEOUT_MS` 可设置 IPC 超时；默认不施加固定五分钟上限。
 `TUILENS_HOME` 可隔离状态目录，默认 `~/.tuilens`；没有公开 HTTP 控制端口。

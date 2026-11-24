@@ -26,8 +26,11 @@ default handshake timeout is 15 seconds. After authentication, one connection mu
 Requests are limited to 1 MiB per line and 64 in-flight requests per connection. Cancelling an id
 only aborts that request. Reusing an in-flight request ID is a connection-level protocol violation
 and closes the connection without a second terminal response. `watch` is a server-pushed stream
-(`frame` and `exit` events); the CLI no longer polls `observe`. `scenario` and `perf` use `progress`
-events with `{kind,profile,current,total,elapsedMs}`.
+(`frame` and `exit` events); the CLI no longer polls `observe`. `wait`, `inputAndWait`, `scenario`,
+`perf` and `replay` use `progress` events with `{kind,profile?,current,total,elapsedMs}`. Progress is
+only emitted from real operation progress. `wait`, `inputAndWait` and `replay` are throttled and
+capped at 100 daemon events; `scenario` and `perf` report each step/round, and the MCP adapter
+coalesces forwarded notifications to at most 100 per tool call.
 
 ## Exact targeting
 
@@ -214,6 +217,22 @@ When a line insertion or deletion changes its display width, `changedRegion` ext
 suffix to the end of the wider line. An explicitly requested `scrollback` is retained when a diff is
 available; otherwise the snapshot omits viewport text and cells.
 Regional text/style waits are evaluated in the engine before a light observation is returned.
+
+## MCP resources and prompts
+
+MCP clients can discover these read-only resources:
+
+| URI | MIME | Content |
+| --- | --- | --- |
+| `tuilens://sessions` | `application/json` | Safe session metadata, no environment variables or credentials. |
+| `tuilens://sessions/{id}/screen` | `text/plain` | Compact screen from the browser-free core. |
+| `tuilens://sessions/{id}/screenshot` | `image/png` | On-demand screenshot, 32 MiB read cap. |
+| `tuilens://sessions/{id}/metrics` | `application/json` | Backpressure and protocol counters. |
+| `tuilens://artifacts/{name}` | By extension | Artifact read, 16 MiB cap, strict containment. |
+
+Artifact names are relative to `TUILENS_HOME/artifacts`. Absolute paths, `..`, NUL bytes and symlink
+escapes are rejected after `resolve` and `realpath` checks. Prompts are `tui_reproduce_bug` and
+`tui_visual_regression`; their descriptions and text follow `TUILENS_LANG`.
 
 ## Automatic terminal replies
 

@@ -43,41 +43,75 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 ## Requirements
 
 - Node.js **22 or newer**.
-- Windows, Linux, or macOS (experimental). Text-only sessions need no browser; screenshots and image protocols need local Chrome/Chromium or Playwright's Chromium.
+- Windows, Linux, or macOS (experimental).
+- Text-only sessions need **no browser**. Screenshots and image protocols need a local Chrome, Edge or
+  Chromium installation (or Playwright Chromium).
 - Platform build tools if `node-pty` cannot use a prebuilt binary.
 
 ## Installation
 
-TuiLens is currently run from source. After meeting the requirements above:
+Install the published package and verify the runtime:
 
 ```sh
-git clone https://github.com/Blackn-L/TuiLens.git
-cd TuiLens
-npm ci
-npm run build
+npm install -g tuilens
+tuilens doctor
 ```
 
-For visual output, TuiLens detects a system Chrome/Edge installation. Alternatively:
+Prefer a one-off command without a global install:
+
+```sh
+npx -y tuilens doctor
+npx -y tuilens mcp
+```
+
+With pnpm 10+, approve `node-pty`'s native build script after installation:
+
+```sh
+pnpm add -g tuilens
+pnpm approve-builds -g
+```
+
+Select `node-pty` in the prompt. For a project-local dependency, allow the same package in the
+consumer's pnpm build policy, or run `pnpm approve-builds` in that project.
+
+When installing TuiLens as an npm dependency with npm 12+, allow `node-pty`'s native install script in
+the consuming project:
+
+```json
+"allowScripts": { "node-pty@1.2.0-beta.18": true }
+```
+
+Text sessions are ready now. For screenshots or image protocols, TuiLens first looks for a system
+Chrome/Edge/Chromium. If none is available:
 
 ```sh
 npx playwright-core install chromium
 ```
 
 Set `TUILENS_BROWSER_PATH` to select a specific browser executable.
-When installing TuiLens as a dependency with npm 12+, allow `node-pty`'s native install script in the
-consuming project:
 
-```json
-"allowScripts": { "node-pty@1.2.0-beta.18": true }
+### From source
+
+Use the source workflow when developing TuiLens itself:
+
+```sh
+git clone https://github.com/Blackn-L/TuiLens.git
+cd TuiLens
+npm ci
+npm run build
+node dist/src/interfaces/cli.js doctor
 ```
+
+Source checkouts expose the same commands through `node dist/src/interfaces/cli.js`. The published
+`tuilens` binary is the supported entry point for normal use.
 
 ## Diagnostics
 
-Run the local diagnostic check after building:
+Run the local diagnostic check:
 
 ```sh
-node dist/src/interfaces/cli.js doctor
-node dist/src/interfaces/cli.js probe
+tuilens doctor
+tuilens probe
 ```
 
 It checks Node.js and platform support, browser discovery, `node-pty`, storage permissions,
@@ -98,13 +132,13 @@ The default renderer injects circled-numeral-only local faces from `Noto Sans`, 
 Inspect the CLI:
 
 ```sh
-node dist/src/interfaces/cli.js --help
+tuilens --help
 ```
 
 Run the self-contained scenario from the repository root:
 
 ```sh
-node dist/src/interfaces/cli.js scenario --file examples/scenario.json
+tuilens scenario --file examples/scenario.json
 ```
 
 The JSON result contains a report path and step artifacts. A failed scenario or visual comparison exits with code 1.
@@ -112,7 +146,7 @@ The JSON result contains a report path and step artifacts. A failed scenario or 
 For an interactive session:
 
 ```sh
-node dist/src/interfaces/cli.js launch --record --cols 80 --rows 16 -- node examples/echo-tui.mjs
+tuilens launch --record --cols 80 --rows 16 -- node examples/echo-tui.mjs
 ```
 
 Select a terminal identity with `--terminal-profile kitty`, `wezterm`, `iterm2`, or a JSON profile path.
@@ -121,16 +155,16 @@ See [terminal profiles](docs/PROFILES.md) for all presets, inheritance and matri
 Copy the returned `data.id` into the commands below:
 
 ```sh
-node dist/src/interfaces/cli.js observe SESSION_ID
-node dist/src/interfaces/cli.js type SESSION_ID g
-node dist/src/interfaces/cli.js wait SESSION_ID --text UPDATED
-node dist/src/interfaces/cli.js input-wait SESSION_ID PING --text INPUT_RECEIVED
-node dist/src/interfaces/cli.js drag SESSION_ID 2 3 20 3 --shift
-node dist/src/interfaces/cli.js observe SESSION_ID --region 0,7,30,4
-node dist/src/interfaces/cli.js key SESSION_ID Ctrl+q
-node dist/src/interfaces/cli.js wait SESSION_ID --exited
-node dist/src/interfaces/cli.js close SESSION_ID
-node dist/src/interfaces/cli.js shutdown
+tuilens observe SESSION_ID
+tuilens type SESSION_ID g
+tuilens wait SESSION_ID --text UPDATED
+tuilens input-wait SESSION_ID PING --text INPUT_RECEIVED
+tuilens drag SESSION_ID 2 3 20 3 --shift
+tuilens observe SESSION_ID --region 0,7,30,4
+tuilens key SESSION_ID Ctrl+q
+tuilens wait SESSION_ID --exited
+tuilens close SESSION_ID
+tuilens shutdown
 ```
 
 `SESSION_ID` is a placeholder for the returned UUID. Coordinates are **zero-based character cells**.
@@ -138,14 +172,37 @@ Plain input confirms delivery only; use `input-wait` or an explicit wait for a r
 Automatic terminal replies default to `--protocol-replies auto`: only timely, query-matched known replies are forwarded.
 If an application probes while its TTY already echoes, use `--protocol-replies suppress` or the application's own probe switch.
 
+## MCP setup
+
+Generate a client configuration instead of hand-writing paths:
+
+```sh
+tuilens mcp-config --client codex
+tuilens mcp-config --client json --mode absolute
+tuilens mcp-config --client claude-code --mode npx
+```
+
+Clients are `json`, `codex`, `claude-code`, `cursor` and `gemini`. Modes are `global` (installed
+`tuilens`), `npx` (no global install) and `absolute` (`process.execPath` plus the installed `cli.js`,
+for GUI clients that do not inherit `PATH`).
+
+The server exposes tools for launch/observe/input/wait/compare/scenario/perf, read-only
+`tuilens://` resources for sessions, screens, screenshots, metrics and artifacts, and the
+`tui_reproduce_bug` / `tui_visual_regression` prompts. The recommended agent loop is:
+`terminal_launch` -> `terminal_observe(view:"compact")` -> `terminal_inputAndWait` ->
+`terminal_observe(view:"diff",fromFrameId:<previous frameId>)`. Screenshots are explicit.
+
+See [MCP client setup](docs/MCP-SETUP.md) for Claude Code, Codex, Cursor, Gemini CLI,
+verification, troubleshooting and local-only security notes.
+
 ## Interfaces
 
 All interfaces share the same PTY engine and session state. Use the smallest surface that fits the caller.
 
 | Surface | Best for | Entry point | Details |
 | --- | --- | --- | --- |
-| CLI | Shell scripts, CI jobs, and manual probes | `node dist/src/interfaces/cli.js <command>` | [Quick start](#quick-start) · [Protocol examples](docs/PROTOCOL.md) |
-| MCP | Agents that need tool calls and image content | `node /absolute/path/to/TuiLens/dist/src/interfaces/cli.js mcp` over stdio | [MCP client setup](docs/MCP-SETUP.md) |
+| CLI | Shell scripts, CI jobs, and manual probes | `tuilens <command>` or `npx -y tuilens <command>` | [Quick start](#quick-start) · [Protocol examples](docs/PROTOCOL.md) |
+| MCP | Agents that need tools, resources and prompts | `tuilens mcp` over stdio (use `mcp-config` for client JSON/TOML) | [MCP client setup](docs/MCP-SETUP.md) |
 | TypeScript SDK | Test suites and embedded automation | `import { SessionManager, terminal } from "./dist/src/index.js"` | [Testing API](#testing-api) · [SDK example](#typescript-sdk) |
 
 ## Language
@@ -188,10 +245,10 @@ silently claiming WebGL. A session can start as `headless` and report `dom` afte
 `visualSyncDegraded` is set if the bounded replay window discarded history needed to reconstruct the screen.
 
 ```sh
-node dist/src/interfaces/cli.js observe SESSION_ID --screenshot --region 0,0,40,10
-node dist/src/interfaces/cli.js observe SESSION_ID --view cells
-node dist/src/interfaces/cli.js observe SESSION_ID --view diff --from-frame 42
-node dist/src/interfaces/cli.js compare SESSION_ID --baseline baseline.png --region 0,0,40,10
+tuilens observe SESSION_ID --screenshot --region 0,0,40,10
+tuilens observe SESSION_ID --view cells
+tuilens observe SESSION_ID --view diff --from-frame 42
+tuilens compare SESSION_ID --baseline baseline.png --region 0,0,40,10
 ```
 
 A screenshot and its state share a `frameId`. Region capture crops the PNG; terminal state still describes
@@ -205,10 +262,10 @@ See [image support](docs/IMAGES.md) and [visual comparisons](docs/VISUAL.md) for
 ## Targeting and waiting
 
 ```sh
-node dist/src/interfaces/cli.js find SESSION_ID Run --unique
-node dist/src/interfaces/cli.js click-text SESSION_ID Run --nth 1
-node dist/src/interfaces/cli.js click-text --json '{"id":"SESSION_ID","text":"Collapse","options":{"hitbox":{"right":3},"point":"right"}}'
-node dist/src/interfaces/cli.js wait SESSION_ID --stable 250 --region 0,0,40,10
+tuilens find SESSION_ID Run --unique
+tuilens click-text SESSION_ID Run --nth 1
+tuilens click-text --json '{"id":"SESSION_ID","text":"Collapse","options":{"hitbox":{"right":3},"point":"right"}}'
+tuilens wait SESSION_ID --stable 250 --region 0,0,40,10
 ```
 
 `click-text` requires a unique match unless a selection is explicit. Finding text does not imply a business control.
@@ -238,8 +295,8 @@ Recordings contain terminal output and input content; use them only when appropr
 The default cap is 16 MiB, configurable between 4 KiB and 64 MiB. Truncated recordings are explicitly marked.
 
 ```sh
-node dist/src/interfaces/cli.js replay path/to/session.recording.jsonl
-node dist/src/interfaces/cli.js replay path/to/session.recording.jsonl --speed 2
+tuilens replay path/to/session.recording.jsonl
+tuilens replay path/to/session.recording.jsonl --speed 2
 ```
 
 Replay applies output and resize events to a fresh engine. It does not rerun the application,
@@ -256,10 +313,10 @@ application, platform, grid and runner.
 
 ```sh
 # Generate a baseline for your workload. The path is yours to choose.
-node dist/src/interfaces/cli.js perf --file examples/perf.json --write-baseline artifacts/perf-baseline.json
+tuilens perf --file examples/perf.json --write-baseline artifacts/perf-baseline.json
 
 # Later runs can compare against it.
-node dist/src/interfaces/cli.js perf --file examples/perf.json \
+tuilens perf --file examples/perf.json \
   --baseline artifacts/perf-baseline.json --max-regression 0.15 --junit artifacts/junit-perf.xml
 ```
 
@@ -316,22 +373,21 @@ Scenarios and performance runs can emit JUnit XML with `--junit <path>` for CI r
 
 ## MCP
 
-Build TuiLens first, then configure your MCP client to launch this stdio server using an
-**absolute path**:
+Use `tuilens mcp-config` to produce the client format directly:
 
-```json
-{
-  "mcpServers": {
-    "tuilens": {
-      "command": "node",
-      "args": ["/absolute/path/to/TuiLens/dist/src/interfaces/cli.js", "mcp"]
-    }
-  }
-}
+```sh
+tuilens mcp-config --client codex
+tuilens mcp-config --client claude-code
+tuilens mcp-config --client json --mode absolute
+tuilens mcp-config --client cursor --mode npx
 ```
 
-See [MCP client setup](docs/MCP-SETUP.md) for source installation, Codex and JSON client
-configuration, verification, troubleshooting, and local-only security notes.
+`--mode global` assumes `tuilens` is on `PATH`. Use `--mode npx` for `npx -y tuilens mcp`, or
+`--mode absolute` when a GUI client does not inherit the shell `PATH`; absolute mode prints the current
+Node executable and installed `cli.js`.
+
+See [MCP client setup](docs/MCP-SETUP.md) for Codex, Claude Code, Cursor, Gemini CLI,
+verification, troubleshooting, and local-only security notes.
 
 The server also publishes MCP initialization instructions that tell agents to prefer TuiLens
 for interactive TUI work, alongside task-oriented tool descriptions. Clients that support
@@ -343,8 +399,18 @@ Available tools: `terminal_launch`, `terminal_list`, `terminal_observe`, `termin
 `terminal_replay`, `terminal_scenario`, `terminal_perf`, `terminal_metrics`, and `terminal_close`.
 `terminal_observe`, `terminal_replay`, and screenshot-enabled `terminal_inputAndWait` return PNG image content as well as text metadata.
 Disconnecting releases sessions created by that MCP connection.
-Long-running wait, inputAndWait, replay, scenario and perf calls emit progress heartbeats when the client
-requests a progress token; cancelling the MCP request aborts the matching daemon operation.
+Long-running wait, inputAndWait, replay, scenario and perf calls forward real server progress when the
+client requests a progress token; cancelling the MCP request aborts the matching daemon operation.
+
+Read-only resources:
+
+- `tuilens://sessions` — safe session metadata.
+- `tuilens://sessions/{id}/screen` — compact text with no browser.
+- `tuilens://sessions/{id}/screenshot` — PNG captured on demand.
+- `tuilens://sessions/{id}/metrics` — backpressure and protocol counters.
+- `tuilens://artifacts/{name}` — bounded 16 MiB artifact read with path-traversal and symlink containment.
+
+Prompts: `tui_reproduce_bug` and `tui_visual_regression` (English or `TUILENS_LANG=zh-CN`).
 
 ## TypeScript SDK
 
@@ -381,7 +447,7 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 Tests use independent fixtures. Generated captures, recordings, reports, and build outputs are ignored by Git.
 The daemon uses a local named pipe on Windows, an abstract Unix socket on Linux and a private Unix socket on macOS,
 using persistent IPC v2 connections authenticated by a local token. One connection multiplexes requests,
-streams `watch` frames and real `scenario`/`perf` progress, and enforces 64 in-flight requests per connection.
+streams `watch` frames and real long-task progress, and enforces 64 in-flight requests per connection.
 `TUILENS_IPC_TIMEOUT_MS` optionally sets an IPC timeout; no fixed five-minute cap is applied by default.
 Set `TUILENS_HOME` to isolate its state directory (default: `~/.tuilens`). No public HTTP control server is exposed.
 

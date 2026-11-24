@@ -5,8 +5,10 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 import { TuiLensError } from "../core/errors.js";
 import { readBoundedFile } from "../core/bounded-file.js";
+import { progressEmitter } from "../core/progress.js";
 import type {
   ManagerOptions,
+  ProgressReporter,
   RendererKind,
   ResolvedTerminalProfile,
   TerminalEngine,
@@ -61,6 +63,8 @@ export interface ReplayOptions {
   speed?: number;
   allowTruncated?: boolean;
   signal?: AbortSignal;
+  /** 服务端进度回调；由 IPC/MCP 适配层设置。 */
+  onProgress?: ProgressReporter;
 }
 
 function aborted(): TuiLensError {
@@ -185,6 +189,9 @@ export async function replayRecording(
   checkAbort(options.signal);
   const { start, events, truncated } = parseRecording(data.toString("utf8"), options.allowTruncated ?? false);
   checkAbort(options.signal);
+  const replayStarted = performance.now();
+  const report = progressEmitter("replay", events.length, options.onProgress);
+  report(0, 0, true);
   const engine = await (manager.engineFactory ?? createBrowserEngine)({
     cols: start.cols,
     rows: start.rows,
@@ -212,6 +219,7 @@ export async function replayRecording(
   const artifacts: string[] = [];
   try {
     checkAbort(options.signal);
+    let processed = 0;
     for (const item of events) {
       checkAbort(options.signal);
       const delay = speed ? (item.atMs - previous) / speed : 0;
@@ -229,8 +237,11 @@ export async function replayRecording(
         await cancellable(engine.resize(item.cols, item.rows), options.signal);
         frameId += 1;
       }
+      processed += 1;
+      report(processed, performance.now() - replayStarted);
       checkAbort(options.signal);
     }
+    report(events.length, performance.now() - replayStarted, true);
     checkAbort(options.signal);
     const snapshot = await cancellable(engine.snapshot(frameId), options.signal);
     checkAbort(options.signal);

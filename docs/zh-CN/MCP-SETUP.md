@@ -2,195 +2,257 @@
 
 [English](../MCP-SETUP.md) · [简体中文](MCP-SETUP.md)
 
-TuiLens 通过 MCP stdio 服务提供终端自动化能力。MCP 客户端会把这个服务作为子进程启动，
-不存在可连接的 URL 或端口。每个使用者都需要在终端会话实际运行的机器上安装一份 TuiLens。
+TuiLens 通过 MCP stdio 服务提供终端自动化能力。MCP 客户端会把 `tuilens mcp` 作为子进程启动，
+不存在可连接的 URL 或端口。请在终端会话实际运行的机器上安装 TuiLens。
 
 ## 环境要求
 
-- Node.js 22 或更高版本，以及 npm。
-- Windows 或 Linux。
-- 从源码安装时需要 Git。
-- 纯文本会话不需要浏览器；截图和图片协议需要本机 Chrome、Edge，或 Playwright Chromium。
-- 如果 `node-pty` 没有可用的预编译包，需要对应平台的 C++ 构建工具。
+- Node.js 22 或更高版本。
+- Windows、Linux 或 macOS（实验性）。
+- **纯文本会话不需要浏览器。**
+- 截图、图片协议和视觉比较需要 Chrome、Edge 或 Chromium。没有系统浏览器时再安装 Playwright
+  Chromium：
 
-## 构建服务
+  ```sh
+  npx playwright-core install chromium
+  ```
 
-当前需要从源码构建。`dist/` 是生成目录，不在 Git 仓库中；
-因此只下载源码压缩包不够，还必须安装依赖并构建。
+- `node-pty` 没有可用预编译包时，需要对应平台的 C++ 构建工具。
 
-```powershell
-git clone https://github.com/Blackn-L/TuiLens.git
-cd TuiLens
-npm ci
-npm run build
+## 安装
+
+全局安装：
+
+```sh
+npm install -g tuilens
+tuilens doctor
 ```
 
-系统没有可用的浏览器时再安装：
+免全局安装：
 
-```powershell
-npx playwright-core install chromium
+```sh
+npx -y tuilens doctor
+npx -y tuilens mcp
 ```
 
-也可以通过 `TUILENS_BROWSER_PATH` 明确指定浏览器路径。
-`TUILENS_FONT_FILE` 可固定截图字体，`TUILENS_FONT_FAMILY` 可覆盖回退字体栈；
-修改后需重启 MCP 客户端，并先停止已有 daemon。
+pnpm 10+ 默认阻止依赖运行构建脚本。安装后批准 `node-pty`：
 
-配置 MCP 客户端前，在仓库根目录运行一次 launch/observe/close 冒烟测试：
-
-```powershell
-node .\dist\src\interfaces\cli.js launch --cols 80 --rows 16 -- node .\examples\echo-tui.mjs
-node .\dist\src\interfaces\cli.js observe <会话 ID>
-node .\dist\src\interfaces\cli.js close <会话 ID>
+```sh
+pnpm add -g tuilens
+pnpm approve-builds -g
 ```
 
-把 `<会话 ID>` 替换为 `launch` 返回的 `data.id`。`observe` 应返回包含 `READY` 的画面和 PNG
-路径。先解决构建或浏览器问题，再排查 MCP 连接。
+在提示中选择 `node-pty`。如果 TuiLens 是项目依赖，在项目目录运行 `pnpm approve-builds`。
 
-## 配置客户端
+`tuilens doctor` 会检查 Node.js、平台支持、浏览器发现、`node-pty`、存储权限和 daemon 状态，
+但不会启动 daemon。退出码 1 表示存在错误级检查失败。
 
-使用构建后 CLI 的绝对路径，并把 `mcp` 作为第一个参数。不要把客户端指向目录，也不要指向
-源码 `.ts` 文件。
+## 生成客户端配置
+
+优先让 `mcp-config` 生成命令和路径：
+
+```sh
+tuilens mcp-config --client codex
+tuilens mcp-config --client claude-code
+tuilens mcp-config --client cursor
+tuilens mcp-config --client gemini
+tuilens mcp-config --client json
+```
+
+启动模式：
+
+- `--mode global`（默认）：命令 `tuilens`，参数 `["mcp"]`。适用于全局安装。
+- `--mode npx`：命令 `npx`，参数 `["-y", "tuilens", "mcp"]`。不需要全局安装。
+- `--mode absolute`：输出 `process.execPath` 和已安装 `cli.js` 的绝对路径。适用于 Cursor、
+  Claude Desktop 等不继承 shell `PATH` 的 GUI 客户端。
+
+示例：
+
+```sh
+tuilens mcp-config --client codex --mode global
+tuilens mcp-config --client json --mode absolute
+```
+
+## 客户端配置
 
 ### Codex
 
-Windows 编辑 `%USERPROFILE%\.codex\config.toml`，Linux 编辑 `~/.codex/config.toml`：
+```sh
+tuilens mcp-config --client codex
+```
+
+把输出的 TOML 写入 Windows 的 `%USERPROFILE%\.codex\config.toml`，或 Linux/macOS 的
+`~/.codex/config.toml`：
 
 ```toml
 [mcp_servers.tuilens]
-command = "node"
-args = ['C:\Users\<用户名>\TuiLens\dist\src\interfaces\cli.js', "mcp"]
+command = "tuilens"
+args = ["mcp"]
 ```
 
-Linux 示例：
+如果 GUI 或沙箱化的 Codex 进程找不到 `tuilens`，改用：
 
-```toml
-[mcp_servers.tuilens]
-command = "node"
-args = ["/home/<用户名>/TuiLens/dist/src/interfaces/cli.js", "mcp"]
+```sh
+tuilens mcp-config --client codex --mode absolute
 ```
 
-如果 GUI 客户端找不到 `node`，先查询它的绝对路径：
+修改后重启 Codex。
 
-```powershell
-(Get-Command node).Source
+### Claude Code
+
+```sh
+tuilens mcp-config --client claude-code
 ```
 
-然后把该路径填入 `command`。
+生成的命令形式：
 
-### 其他 MCP 客户端
+```sh
+claude mcp add --scope user tuilens -- tuilens mcp
+```
 
-如果客户端使用常见的 `mcpServers` JSON 配置：
+需要免全局安装或修复 GUI `PATH` 时，分别使用 `--mode npx` 或 `--mode absolute`。
+添加后重启 Claude Code 或新开会话。
+
+### Cursor
+
+```sh
+tuilens mcp-config --client cursor
+```
+
+把 JSON 粘贴到 `~/.cursor/mcp.json`，或项目级 `.cursor/mcp.json`：
 
 ```json
 {
   "mcpServers": {
     "tuilens": {
-      "command": "node",
-      "args": [
-        "C:\\Users\\<用户名>\\TuiLens\\dist\\src\\interfaces\\cli.js",
-        "mcp"
-      ]
+      "command": "tuilens",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-不同客户端的配置文件和重启方式不同，但 `command` 与 `args` 保持一致。如果客户端支持环境变量，
-可以通过 `TUILENS_BROWSER_PATH` 指定浏览器可执行文件，通过 `TUILENS_FONT_FILE` 固定字体文件。
+Cursor 是 GUI 客户端。如果报 `spawn tuilens ENOENT`，重新用 `--mode absolute` 生成配置。
+
+### Gemini CLI
+
+```sh
+tuilens mcp-config --client gemini
+```
+
+把 `mcpServers` JSON 粘贴到 `~/.gemini/settings.json`（用户级）或
+`.gemini/settings.json`（项目级）。接受标准 `mcpServers` 配置的其他客户端也可使用同样结构。
+
+### 其他客户端
+
+```sh
+tuilens mcp-config --client json
+```
+
+保持 `command` 与 `args` 不变，只替换配置文件位置即可。
+
+## 推荐 Agent 主循环
+
+MCP 初始化 instructions 和工具描述会提示 Agent 使用：
+
+```text
+terminal_launch
+  -> terminal_observe(view:"compact")       # 保存 snapshot.frameId
+  -> terminal_inputAndWait                  # 只发送一次输入并等待证据
+  -> terminal_observe(view:"diff",
+       fromFrameId:<上一次 frameId>)        # 只返回变化和元数据
+  -> terminal_close
+```
+
+只有明确的视觉检查才传 `screenshot:true`。可重复流程用 `terminal_scenario`，延迟或内存测量用
+`terminal_perf`。简单非交互命令仍应使用普通 shell。
+
+## Resources 与 Prompts
+
+MCP 服务提供只读资源：
+
+| URI | 内容 |
+| --- | --- |
+| `tuilens://sessions` | 安全会话元数据，不含环境变量或凭据。 |
+| `tuilens://sessions/{id}/screen` | 无浏览器的 compact 文本画面。 |
+| `tuilens://sessions/{id}/screenshot` | 当前 PNG，32 MiB 上限。 |
+| `tuilens://sessions/{id}/metrics` | 背压、队列与协议应答计数。 |
+| `tuilens://artifacts/{name}` | 报告、差异图、截图或录制，16 MiB 上限。 |
+
+artifact 名称必须相对于 `TUILENS_HOME/artifacts`。绝对路径、`..`、NUL 字节和符号链接逃逸会在
+`resolve` 与 `realpath` 两层包含检查后被拒绝。
+
+Prompts：
+
+- `tui_reproduce_bug`
+- `tui_visual_regression`
+
+Prompt 文案和描述跟随 `TUILENS_LANG`（默认英文，`zh-CN` 为中文）。
+
+## 进度与取消
+
+客户端提供 `_meta.progressToken` 时，`wait`、`inputAndWait`、`replay`、`scenario` 和 `perf`
+会转发真实服务端进度。通知包含 `progress` 与 `total`，不使用固定心跳。
+取消 MCP 请求会中止对应的 daemon 操作。
 
 ## 验证接入
 
-重启客户端后，应能看到 `terminal_launch`、`terminal_observe`、`terminal_find`、
-`terminal_input`、`terminal_inputAndWait`、`terminal_wait`、`terminal_clickText`、
-`terminal_compare`、`terminal_replay`、`terminal_scenario`、`terminal_perf` 和
-`terminal_close` 等工具。
+重启客户端后：
 
-最小验收步骤：
-
-1. 调用 `terminal_launch`，使用示例 TUI 的绝对路径：
+1. 确认工具列表包含 `terminal_launch`、`terminal_observe`、`terminal_inputAndWait`、
+   `terminal_wait`、`terminal_compare`、`terminal_scenario`、`terminal_perf` 和
+   `terminal_close`。
+2. 启动一个简单 TUI：
 
    ```json
    {
      "command": "node",
-     "args": ["C:\\Users\\<用户名>\\TuiLens\\examples\\echo-tui.mjs"],
+     "args": ["-e", "process.stdout.write('READY\\n');setInterval(()=>{},1000)"],
      "cols": 80,
      "rows": 16
    }
    ```
 
-2. 保存返回的 `id`。
-3. 用 `{"id":"<会话 ID>"}` 调用 `terminal_observe`。
-4. 用同一个 ID 调用 `terminal_close`。
+3. 保存 `data.id`，用 `{"id":"<会话 ID>"}` 调用 `terminal_observe`，再调用
+   `terminal_close`。
+4. 可选读取 `tuilens://sessions/<会话 ID>/screen` 和
+   `tuilens://sessions/<会话 ID>/metrics`。
 
-支持 MCP 图片内容的客户端会收到 PNG 截图和文字元数据；不支持图片渲染的客户端仍可使用终端文字
-和快照元数据。
-
-## 让 Agent 主动选择 TuiLens
-
-MCP 客户端初始化连接时，TuiLens 会返回 `instructions`，说明何时使用本服务以及
-launch/observe/input/close 的标准流程。Codex 和支持 MCP server instructions 的客户端会自动
-读取；每个工具的描述也写明了应触发它的用户意图。
-
-Server instructions 只能提高选择概率，不能强制模型发起工具调用。如果某个 Agent 仍会退回普通
-shell，再为它增加客户端级规则或 Skill。例如在 Codex 的 `AGENTS.md` 中明确写：
-
-```text
-交互式终端/TUI 任务优先使用 tuilens MCP 工具，不要先退回普通 shell。以 terminal_launch 开始，
-用 terminal_observe 或 terminal_wait 检查画面，用 terminal_input 或 terminal_inputAndWait
-操作，最后调用 terminal_close。
-```
-
-简单非交互命令仍走普通 shell，避免无谓地启动浏览器会话。
+纯文本观察不需要浏览器。截图请求会激活 Chromium 并返回实际 `renderer`；没有浏览器时截图失败，
+但文本观察仍然可用。
 
 ## 多 Agent 协作
 
-同一个对话里的主 Agent 和子 Agent 可以同时使用 TuiLens，但 TuiLens 的隔离边界是
-terminal 会话 ID，不是 Agent 身份。所有 MCP 连接共享同一个 daemon，`terminal_list`
-会返回全局会话；任何持有有效 ID 的调用者都能执行 `terminal_observe`、
-`terminal_input` 和 `terminal_close`。
+TuiLens 的隔离边界是 terminal 会话 ID，不是 Agent 身份。所有 MCP 连接共享同一个 daemon，
+`terminal_list` 返回全局会话，任何持有有效 ID 的调用者都能观察或关闭它。
 
-为避免互相抢占或串台，遵循以下约定：
+- 每个 Agent 应自行 launch 并 close 自己的会话。
+- 同一会话同一时刻只保留一个写者。
+- 交接视为显式所有权转移。
+- 不要从 `terminal_list` 接管其他 Agent 正在运行的会话。
+- MCP 连接断开时只回收该连接创建的会话。
 
-- 每个 Agent 自行 `terminal_launch`，只使用自己启动返回的 ID，并在任务结束时
-  `terminal_close`。不要从 `terminal_list` 挑一个运行中的会话直接接管。
-- 不要把同一个 ID 交给两个 Agent 并行驱动。同一个 terminal 的底层操作会按会话队列
-  串行，但执行顺序取决于请求到达时间；`terminal_wait` 和 `terminal_inputAndWait`
-  不会为整段逻辑持有 Agent 级锁，另一方的输入仍可能改变画面并造成误判或
-  `STALE_FRAME`。
-- 确需交接时，把它当作一次显式所有权转移：原 Agent 停止输入、resize 和 close，
-  接收方确认后再继续。同一时刻只保留一个写者。`terminal_close` 不校验调用者归属，
-  关闭后所有持有该 ID 的调用都会失败。
-- 不同 terminal 可以并行；它们共享 daemon、浏览器和默认 8 个会话额度（可用
-  `TUILENS_MAX_SESSIONS` 调整）。额度满时只自动回收最旧的已退出会话，不会抢占运行
-  中的会话。
-- MCP 连接断开时只回收该连接创建的会话。需要跨 Agent 保留会话时，不要依赖连接断开
-  清理，显式管理生命周期。
-
-MCP 初始化 `instructions` 和 `terminal_launch`、`terminal_list`、`terminal_close`
-的工具描述也会提示这些约束。如果客户端不展示 server instructions，建议在
-`AGENTS.md` 或系统提示中重复同样的协作规则。
+默认会话额度为 8，可用 `TUILENS_MAX_SESSIONS` 调整。额度满时只回收最旧的已退出会话，
+不会抢占运行中的会话。
 
 ## 常见问题
 
 | 现象 | 可能原因 | 处理方式 |
 | --- | --- | --- |
-| `Cannot find module .../cli.js` | 只下载了项目但没有构建，或路径错误 | 执行 `npm run build`，并使用 `dist/src/interfaces/cli.js` 的绝对路径 |
-| `spawn node ENOENT` | MCP 客户端没有继承 shell 的 `PATH` | 把 `command` 改成 `node` 可执行文件的绝对路径 |
-| 重启后看不到工具 | 客户端没有重新加载配置，或服务启动失败 | 查看客户端的 MCP 日志，核对路径，然后重启客户端 |
-| `node-pty` 安装失败 | Node 版本不满足要求，或缺少原生构建工具 | 使用 Node.js 22+，执行 `npm ci`；必要时安装平台 C++ 工具链 |
-| 浏览器启动失败 | 没有检测到 Chrome/Edge | 执行 `npx playwright-core install chromium`，或设置 `TUILENS_BROWSER_PATH` |
-| 相对路径的文件或命令找不到 | 客户端的工作目录与 shell 不同 | 在工具参数中传入绝对 `cwd`、程序路径或脚本路径 |
-| 直接运行 `mcp` 命令后一直没有输出 | stdio 服务正在等待 JSON-RPC 输入，这是正常行为 | 通过 MCP 客户端测试，不要把它当成交互式终端命令 |
-| 不确定环境是否就绪 | 浏览器、PTY、存储或 daemon 状态可能缺失或无效 | 运行 `node dist/src/interfaces/cli.js doctor`；退出码 1 表示存在错误级检查 |
-| 工具失败后仍有会话进程 | 没有显式关闭会话 | 调用 `terminal_close`；MCP 连接断开时也会回收该连接创建的会话 |
-| 连续演示后会话额度一直满 | PTY 已退出，但 TuiLens 仍保留最后画面作为会话 | 调用 `terminal_close` 可立即释放；新启动在额度满时优先回收最旧的已退出会话 |
+| `spawn tuilens ENOENT` | GUI 客户端没有继承 shell `PATH` | 使用 `tuilens mcp-config --client <客户端> --mode absolute` |
+| `Cannot find module .../cli.js` | 绝对配置指向已删除的安装 | 重新安装 TuiLens 并用 `--mode absolute` 重新生成 |
+| 重启后没有工具 | 客户端没有重新加载 MCP 配置 | 重启客户端或新开会话 |
+| `node-pty` 安装失败 | pnpm/npm 阻止了构建脚本，或缺少 C++ 工具 | 用 `pnpm approve-builds -g` 批准 `node-pty`，或安装构建工具 |
+| 浏览器启动失败 | 没有检测到 Chrome/Edge/Chromium | 安装浏览器或运行 `npx playwright-core install chromium` |
+| 相对命令找不到 | 客户端工作目录与 shell 不同 | 在工具参数中使用绝对 `cwd` 和程序路径 |
+| `mcp` 看起来一直挂起 | stdio 服务正在等待 JSON-RPC 输入 | 通过 MCP 客户端测试，不要当成交互式命令 |
+| 不确定环境是否就绪 | 运行时、PTY、存储或 daemon 状态异常 | 运行 `tuilens doctor` |
 
-## 安全与远程使用
+## 安全
 
-MCP 服务可以用当前用户权限启动任意本地程序。只安装可信的代码副本，并在运行场景前检查其内容。
+MCP 服务可以用当前用户权限启动任意本地程序。只安装可信包，并在运行场景前检查其内容。
 
-传输只在本机进行：Windows 使用命名管道，Linux 使用 abstract Unix socket，并通过本地令牌认证。
-没有公开的 HTTP/SSE 控制端点。每个使用者应各自安装一份 TuiLens，不要把本地守护进程 socket
-暴露给其他机器。
+传输只在本机进行：Windows 使用命名管道，Linux 使用 abstract Unix socket，macOS 使用带本地
+令牌的私有 Unix socket。没有公开的 HTTP/SSE 控制端点，不要把 daemon socket 暴露给其他机器。
 
-工具与 CLI 参数格式见[协议示例](PROTOCOL.md)。
+CLI 与 MCP 参数格式见[协议示例](PROTOCOL.md)。

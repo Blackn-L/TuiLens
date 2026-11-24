@@ -6,6 +6,7 @@ import { methodSchemas, type Method } from "./schemas.js";
 import { readBoundedFile } from "../core/bounded-file.js";
 import { VERSION } from "../version.js";
 import { pick, resolveLocale } from "../core/i18n.js";
+import { buildMcpConfig } from "./mcp-config.js";
 
 const HELP_EN = `TuiLens ${VERSION} - terminal observation and control for agents
 
@@ -53,6 +54,8 @@ perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>]
 close <id>                           release one session
 shutdown                             release all sessions and stop the local service
 mcp                                  start the MCP stdio interface
+mcp-config [--client json|codex|claude-code|cursor|gemini] [--mode global|npx|absolute]
+                                     print copy-paste MCP client configuration
 
 Environment: TUILENS_HOME sets runtime data; TUILENS_BROWSER_PATH selects Chrome/Chromium;
 TUILENS_FONT_FILE pins a screenshot font file; TUILENS_FONT_FAMILY overrides the fallback stack;
@@ -106,6 +109,8 @@ perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>]
 close <id>                          释放一个会话
 shutdown                            释放所有会话并关闭本机服务
 mcp                                 启动 MCP stdio 接口
+mcp-config [--client json|codex|claude-code|cursor|gemini] [--mode global|npx|absolute]
+                                     输出可直接复制的 MCP 客户端配置
 
 环境：TUILENS_HOME 指定运行数据；TUILENS_BROWSER_PATH 指定 Chrome/Chromium；
 TUILENS_FONT_FILE 固定截图字体文件；TUILENS_FONT_FAMILY 覆盖回退字体栈；
@@ -134,6 +139,18 @@ async function main(): Promise<void> {
   }
   if (command === "mcp") {
     await (await import("./mcp.js")).startMcp();
+    return;
+  }
+  if (command === "mcp-config") {
+    const { values } = parseArgs({
+      args: rest,
+      options: {
+        client: { type: "string", default: "json" },
+        mode: { type: "string", default: "global" },
+      },
+    });
+    const config = buildMcpConfig({ client: values.client, mode: values.mode });
+    process.stdout.write(`${config.content}\n`);
     return;
   }
   if (command === "doctor") {

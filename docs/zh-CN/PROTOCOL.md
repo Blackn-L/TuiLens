@@ -25,8 +25,10 @@ CLI 使用 `--json`、`--file` 或 `--stdin`；MCP 接收相同对象。
 
 单行请求上限 1 MiB，单连接在途请求上限 64。取消按 id 精确生效，不影响其他请求。复用仍在途的
 请求 ID 属于连接级协议错误，服务端会关闭连接且不会再发送第二个终态响应。`watch` 由服务端主动
-推送 `frame`/`exit` 事件，CLI 不再轮询 `observe`；`scenario`/`perf` 通过 `progress` 事件推送
-`{kind,profile,current,total,elapsedMs}`。
+推送 `frame`/`exit` 事件，CLI 不再轮询 `observe`；`wait`、`inputAndWait`、`scenario`、`perf`
+和 `replay` 通过 `progress` 事件推送 `{kind,profile?,current,total,elapsedMs}`。进度经过节流，
+且只来源于真实操作进度。`wait`、`inputAndWait` 和 `replay` 的 daemon 事件最多 100 条；
+`scenario`/`perf` 按 step/round 上报，MCP 转发层会把单个工具调用的通知合并到最多 100 条。
 
 ## 精确定位
 
@@ -190,6 +192,22 @@ observe/compare 的 cursor 可设为 hide（默认）或 show；快照始终返�
 `screenshot:true` 才会截图。行内插入或删除导致显示宽度变化时，`changedRegion` 会覆盖被右移的
 共同后缀直至较宽行的行尾。命中 diff 时仍保留调用方显式请求的 `scrollback`，否则快照省略
 视口文本与字符格。区域文本/样式等待先在引擎侧判断，命中后才返回轻量观察。
+
+## MCP 资源与 Prompt
+
+MCP 客户端可发现以下只读资源：
+
+| URI | MIME | 内容 |
+| --- | --- | --- |
+| `tuilens://sessions` | `application/json` | 安全会话元数据，不含环境变量或凭据。 |
+| `tuilens://sessions/{id}/screen` | `text/plain` | 无浏览器内核读取的 compact 画面。 |
+| `tuilens://sessions/{id}/screenshot` | `image/png` | 按需截图，读取上限 32 MiB。 |
+| `tuilens://sessions/{id}/metrics` | `application/json` | 背压与协议计数。 |
+| `tuilens://artifacts/{name}` | 按后缀 | artifact 读取，上限 16 MiB，严格路径限制。 |
+
+artifact 名称相对于 `TUILENS_HOME/artifacts`。绝对路径、`..`、NUL 字节和符号链接逃逸会在
+`resolve` 与 `realpath` 检查后被拒绝。Prompt 为 `tui_reproduce_bug` 与
+`tui_visual_regression`，其描述和正文跟随 `TUILENS_LANG`。
 
 ## 自动终端应答
 

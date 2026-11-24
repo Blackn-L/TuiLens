@@ -7,6 +7,7 @@ import { TuiLensError } from "../core/errors.js";
 import { findText, regionFingerprint } from "../core/locator.js";
 import { clickTarget } from "../core/click-target.js";
 import { resolveExecutable } from "../core/executable.js";
+import { progressEmitter } from "../core/progress.js";
 import type {
   ClickTextOptions,
   EngineFactory,
@@ -466,6 +467,9 @@ export class SessionManager {
           conditions: options.conditions ?? [],
           timeoutMs: remaining(),
           afterFrameId: accepted.frameId,
+          ...(options.onProgress
+            ? { onProgress: (progress) => options.onProgress!({ ...progress, kind: "inputAndWait" }) }
+            : {}),
           ...(control?.signal ? { signal: control.signal } : {}),
         },
         true
@@ -572,6 +576,8 @@ export class SessionManager {
     const session = this.session(id);
     const started = performance.now();
     const timeout = options.timeoutMs ?? 10_000;
+    const report = progressEmitter("wait", timeout, options.onProgress);
+    report(0, 0, true);
     const stable = new Map<number, { fingerprint: string; since: number }>();
     // 文本与稳定条件需要字符网格；尺寸、光标和退出条件只看轻量状态。
     const needsCells = options.conditions.some((condition) => condition.kind === "text" || condition.kind === "stable");
@@ -583,6 +589,7 @@ export class SessionManager {
     if (options.conditions.length > 0 && options.conditions.every((condition) => condition.kind === "exited")) {
       try {
         await session.waitForExit(remainingControl());
+        report(performance.now() - started, performance.now() - started, true);
         const observation = await session.observe({ view: "compact", screenshot: false }, remainingControl());
         if (options.afterFrameId !== undefined && observation.snapshot.frameId <= options.afterFrameId) {
           return this.timeoutEvidence(session, timeout, options.signal);
@@ -606,6 +613,7 @@ export class SessionManager {
       if (options.signal?.aborted) throw new TuiLensError("ABORTED", "等待已取消");
       const remaining = timeout - (performance.now() - started);
       if (remaining <= 0) break;
+      report(performance.now() - started, performance.now() - started);
       if (!firstPoll && pollDelay > 0) {
         try {
           // 最后一次等待按剩余时间截断，截断后仍执行一次检查。

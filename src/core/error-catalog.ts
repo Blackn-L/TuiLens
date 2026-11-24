@@ -62,6 +62,7 @@ export const ERROR_MESSAGES_EN: Readonly<Record<string, string>> = {
   REPLAY_FAILED: "The replay did not produce a result.",
   REQUEST_LIMIT: "The request payload exceeds the permitted size.",
   RESPONSE_LIMIT: "The response exceeds the permitted size.",
+  SCREENSHOT_FAILED: "The screenshot could not be produced.",
   SESSION_CLOSED: "The session is already closed.",
   SESSION_LIMIT: "The maximum number of concurrent sessions has been reached.",
   SESSION_NOT_FOUND: "No session exists with the given ID.",
