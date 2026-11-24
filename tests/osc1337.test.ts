@@ -294,7 +294,7 @@ test("IIP 经真实 PTY、启动协议与录制回放保持图片像素", { time
       recording: {},
     });
     await manager.wait(session.id, { conditions: [{ kind: "text", text: "IIP_READY" }] });
-    const captured = await manager.observe(session.id);
+    const captured = await manager.observe(session.id, { screenshot: true });
     assert.equal(redPixels(await readFile(captured.screenshot!.path)), 192);
     await manager.input(session.id, { type: "key", key: "Enter" });
     await manager.wait(session.id, { conditions: [{ kind: "exited" }] });

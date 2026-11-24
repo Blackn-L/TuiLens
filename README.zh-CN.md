@@ -31,7 +31,7 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 - **终端能力画像：** 内置 preset 或派生 JSON profile 统一驱动 `TERM`、DA1/DA2/XTVERSION/Kitty 查询应答、
   图片协议、键盘能力元数据和回滚缓冲；场景/性能测试可运行 profile 矩阵。
 - **回滚区断言：** `observe.scrollback` 返回视口上方的历史行，滚出屏幕的内容仍可断言。
-- **紧凑观察：** `observe --compact` 裁剪行尾、省略字符格且默认不截图；`watch` 以 JSONL 流式输出变化帧，`--control` 提供显式 TTY 接管。
+- **声明式观察：** `observe --view compact|full|cells|diff` 选择返回结构；`diff --from-frame` 仅返回变化行和元数据。截图需显式开启，`watch` 以 JSONL 流式输出紧凑帧。
 - **引擎侧探测：** 区域文本/样式等待在浏览器终端内判断，只有命中后才传输轻量快照。
 - **终端应答护栏：** 默认丢弃超时或无查询匹配的 DA1/DA2、CPR/DSR 等自动应答；`suppress` 保留普通输入。
 - **场景执行：** 声明式步骤、失败截图、报告和自动清理。
@@ -185,12 +185,15 @@ WebGL 无法启动时会回退 DOM 并回传 `dom`，不会静默声称使用了
 开始，在首次截图后返回 `dom`；若有界回放窗口丢弃了重建画面所需历史，会设置 `visualSyncDegraded`。
 
 ```sh
-node dist/src/interfaces/cli.js observe SESSION_ID --region 0,0,40,10
+node dist/src/interfaces/cli.js observe SESSION_ID --screenshot --region 0,0,40,10
+node dist/src/interfaces/cli.js observe SESSION_ID --view cells
+node dist/src/interfaces/cli.js observe SESSION_ID --view diff --from-frame 42
 node dist/src/interfaces/cli.js compare SESSION_ID --baseline baseline.png --region 0,0,40,10
 ```
 
 截图和状态共享 `frameId`。区域裁剪只改变 PNG，状态仍包含完整视口。
-`--cells` 可额外返回完整字符格；完整截图元数据也保存在本地。
+`compact` 为默认值；`full` 跳过 compact 行尾裁剪，`cells` 额外返回完整字符格，
+`diff` 与最近 16 帧中的一个轻量快照比较。完整截图元数据也保存在本地。
 基准图只读，接受新基准必须显式复制已审查的截图。
 比较遮罩以 **PNG 像素**计量，与字符格坐标不同。请固定字体、浏览器和网格以解释像素差异。
 

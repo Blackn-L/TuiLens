@@ -189,7 +189,7 @@ export class Terminal {
       });
     } catch (error) {
       const observation = await this.manager
-        .observe(this.id, { screenshot: false, cells: false })
+        .observe(this.id, { view: "compact", screenshot: false })
         .catch(() => undefined);
       throw await this.fail(
         "EXPECT_CURSOR_FAILED",
@@ -214,7 +214,7 @@ export class Terminal {
       });
     } catch (error) {
       const observation = await this.manager
-        .observe(this.id, { screenshot: false, cells: false })
+        .observe(this.id, { view: "compact", screenshot: false })
         .catch(() => undefined);
       throw await this.fail(
         "EXPECT_SIZE_FAILED",
@@ -232,7 +232,8 @@ export class Terminal {
   /** 截图并返回路径，供测试框架归档。 */
   async screenshot(options: { region?: Region } = {}): Promise<string | undefined> {
     const observation = await this.manager.observe(this.id, {
-      cells: false,
+      view: "compact",
+      screenshot: true,
       ...(options.region ? { region: options.region } : {}),
     });
     return observation.screenshot?.path;
@@ -240,7 +241,7 @@ export class Terminal {
 
   /** 当前画面（文本、行、光标），不截图也不返回字符网格。 */
   async screen(): Promise<ScreenSnapshot> {
-    const observation = await this.manager.observe(this.id, { screenshot: false, cells: false });
+    const observation = await this.manager.observe(this.id, { view: "compact", screenshot: false });
     return {
       text: observation.snapshot.text,
       lines: observation.snapshot.lines,
@@ -299,7 +300,7 @@ export class Terminal {
     try {
       const observation = await this.manager.observe(
         this.id,
-        { cells: false },
+        { view: "compact", screenshot: true },
         { timeoutMs: MIN_FAILURE_SCREENSHOT_TIMEOUT_MS }
       );
       artifact = observation.screenshot?.path;

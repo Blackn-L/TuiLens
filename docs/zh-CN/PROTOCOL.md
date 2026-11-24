@@ -183,8 +183,11 @@ inputAndWait 只发送一次输入，不自动重发。空条件时等待至少�
 
 cursor 条件可组合 x、y、visible、style、blink，全部字段按 AND 匹配。
 observe/compare 的 cursor 可设为 hide（默认）或 show；快照始终返回光标元数据。
-observe 还支持 `compact:true`：裁剪行尾、省略字符格，且除显式 `screenshot:true` 外不截图；
-区域文本/样式等待先在引擎侧判断，命中后才返回轻量观察。
+`observe.view` 可取 `compact`、`full`、`cells` 或 `diff`，默认 `compact`。`compact` 裁剪行尾且省略
+字符格，`full` 跳过 compact 行尾裁剪但不含字符格，`cells` 返回完整字符格。`diff` 必须提供 `fromFrameId`，
+返回 `diff.changedLines`、`diff.changedRegion` 以及 resize/光标/模式差异，不重复整屏文本；超出
+16 帧环缓存时降级为 compact 全文并设 `diff.fallbackFull:true`。所有视图都必须显式传
+`screenshot:true` 才会截图。区域文本/样式等待先在引擎侧判断，命中后才返回轻量观察。
 
 ## 自动终端应答
 

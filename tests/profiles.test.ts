@@ -57,13 +57,14 @@ function readProbe(observation: Observation): {
   environment: Record<string, string>;
   replies: Buffer;
 } {
-  const environment = /PROFILE_ENV ([A-Za-z0-9+/=]*) ([A-Za-z0-9+/=]*) ([A-Za-z0-9+/=]*) ([A-Za-z0-9+/=]*)/u.exec(
-    observation.snapshot.text
-  );
+  const environment =
+    /PROFILE_ENV ([A-Za-z0-9+/=]*)(?: ([A-Za-z0-9+/=]*))?(?: ([A-Za-z0-9+/=]*))?(?: ([A-Za-z0-9+/=]*))?/u.exec(
+      observation.snapshot.text
+    );
   const replies = /PROFILE_REPLY ([0-9a-f]*)/u.exec(observation.snapshot.text);
   assert.ok(environment, observation.snapshot.text);
   assert.ok(replies, observation.snapshot.text);
-  const decode = (value: string): string => Buffer.from(value, "base64").toString("utf8");
+  const decode = (value: string | undefined): string => (value ? Buffer.from(value, "base64").toString("utf8") : "");
   return {
     environment: {
       TERM: decode(environment[1]!),
@@ -261,7 +262,7 @@ test("profile 录制在源文件删除后仍保留图片能力", { timeout: 30_0
     });
     let sessionRed = 0;
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      const observation = await manager.observe(session.id);
+      const observation = await manager.observe(session.id, { screenshot: true });
       sessionRed = redPixels(await readFile(observation.screenshot!.path));
       if (sessionRed === 192) break;
       await new Promise((resolve) => setTimeout(resolve, 50));

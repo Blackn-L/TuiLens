@@ -101,6 +101,16 @@ quality gates pass.
 Exit: v2 is the only IPC protocol, watch and long-running work stream server events, and cancellation
 or shutdown leaves no pending requests or live handles.
 
+### 0.6.0 PR-3 declarative observation and incremental diff (landed)
+
+- Replace overlapping observation booleans with `view: compact | full | cells | diff`.
+- Retain 16 lightweight frame snapshots and return changed lines plus a wide-character-aware region.
+- Fall back to compact text when `fromFrameId` has been evicted, and make screenshots opt-in.
+- Keep whole-grid reads behind `view:"cells"` for precise style work.
+
+Exit: one observation contract covers agent loops, explicit grid inspection and bounded incremental
+diff without returning the full viewport on every turn.
+
 ## Later
 
 - Expand tested image protocol semantics without advertising unsupported behavior.

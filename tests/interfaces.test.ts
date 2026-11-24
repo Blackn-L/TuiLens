@@ -73,7 +73,7 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     const waitedPayload = JSON.parse(waitedInput.stdout) as { ok: boolean; error?: { code?: string } };
     assert.equal(waitedPayload.ok, true, waitedInput.stdout);
     assert.notEqual(waitedPayload.error?.code, "UNKNOWN_METHOD");
-    const observation = (await call("observe", { id: session.id })) as Observation;
+    const observation = (await call("observe", { id: session.id, screenshot: true })) as Observation;
     assert.equal(observation.session.renderer, "dom");
     assert.equal(observation.snapshot.frameId, observation.screenshot?.frameId);
     assert.match(observation.snapshot.text, /中文 🚀 A⠀B/u);
@@ -81,6 +81,18 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
       [...(await readFile(observation.screenshot!.path)).subarray(0, 8)],
       [137, 80, 78, 71, 13, 10, 26, 10]
     );
+    const diffObserve = await run(
+      process.execPath,
+      [cli, "observe", session.id, "--view", "diff", "--from-frame", String(observation.snapshot.frameId)],
+      { env, maxBuffer: 20 * 1024 * 1024 }
+    );
+    const diffPayload = JSON.parse(diffObserve.stdout) as {
+      ok: boolean;
+      data: { diff?: { omittedSnapshotText?: boolean }; snapshot: { text?: string } };
+    };
+    assert.equal(diffPayload.ok, true, diffObserve.stdout);
+    assert.equal(diffPayload.data.diff?.omittedSnapshotText, true);
+    assert.equal(diffPayload.data.snapshot.text, "");
     const watched = await run(process.execPath, [cli, "watch", session.id, "--interval", "50", "--timeout", "350"], {
       env,
       maxBuffer: 20 * 1024 * 1024,
@@ -122,6 +134,7 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     await call("close", { id: shortLived.id });
     const crop = (await call("observe", {
       id: session.id,
+      screenshot: true,
       region: { x: 0, y: 0, width: 12, height: 2 },
     })) as Observation;
     assert.ok(crop.screenshot!.width < observation.screenshot!.width);
@@ -224,7 +237,10 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     };
     assert.ok(confirmedData.observation.snapshot.frameId > confirmedData.inputFrameId);
     assert.match(confirmedData.observation.snapshot.text, /INPUT_RECEIVED/u);
-    const captured = await client.callTool({ name: "terminal_observe", arguments: { id: mcpSession.id } });
+    const captured = await client.callTool({
+      name: "terminal_observe",
+      arguments: { id: mcpSession.id, screenshot: true },
+    });
     assert.notEqual(captured.isError, true);
     assert.ok((captured.content as { type: string }[]).some((item) => item.type === "image"));
     const lateLaunch = client

@@ -4,6 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { IDisposable } from "node-pty";
 import { TuiLensError } from "../core/errors.js";
 import { compactSnapshot } from "../core/compact.js";
+import { diffSnapshots } from "../core/diff.js";
 import { encodeInput, encodeScrollBatches } from "../core/input.js";
 import type {
   CursorState,
@@ -11,8 +12,12 @@ import type {
   InputGuard,
   Observation,
   ObserveOptions,
+  ObserveView,
   SessionInfo,
+  SnapshotDiff,
+  SnapshotFrame,
   TerminalEngine,
+  TerminalSnapshot,
   FrameAccessOptions,
   MatchStyle,
   Region,
@@ -29,6 +34,7 @@ const MAX_PENDING_BYTES = 16 * 1024 * 1024;
 const MAX_BATCH_CHARS = 32 * 1024;
 const MAX_SESSION_SUBSCRIBERS = 16;
 const MAX_SUBSCRIBER_COALESCE_MS = 60_000;
+export const MAX_FRAME_HISTORY = 16;
 
 export interface SessionFrameEvent {
   type: "frame";
@@ -132,6 +138,7 @@ export class ManagedSession {
   private resolveExit: () => void = () => {};
   private readonly exitWaiters = new Set<() => void>();
   private readonly subscribers = new Set<SubscriberState>();
+  private readonly frameHistory = new Map<number, SnapshotFrame>();
   private exitPublished = false;
   private readonly closeController = new AbortController();
   private exited = false;
@@ -200,6 +207,28 @@ export class ManagedSession {
       pauseDurationMs:
         this.counters.pauseDurationMs + (this.pausedAt === undefined ? 0 : performance.now() - this.pausedAt),
     };
+  }
+
+  private rememberFrame(snapshot: TerminalSnapshot): SnapshotFrame {
+    const frame: SnapshotFrame = {
+      frameId: snapshot.frameId,
+      cols: snapshot.cols,
+      rows: snapshot.rows,
+      lines: snapshot.lines.map((line) => line.replace(/[ \t]+$/u, "")),
+      cursor: { ...snapshot.cursor },
+      modes: {
+        ...snapshot.modes,
+        ...(snapshot.modes.keyboard ? { keyboard: { ...snapshot.modes.keyboard } } : {}),
+      },
+    };
+    this.frameHistory.delete(frame.frameId);
+    this.frameHistory.set(frame.frameId, frame);
+    while (this.frameHistory.size > MAX_FRAME_HISTORY) {
+      const oldest = this.frameHistory.keys().next().value;
+      if (oldest === undefined) break;
+      this.frameHistory.delete(oldest);
+    }
+    return frame;
   }
 
   /**
@@ -470,7 +499,7 @@ export class ManagedSession {
         if (dirty) {
           dirty = false;
           try {
-            const observation = await this.observe({ compact: true, screenshot: false }, { signal });
+            const observation = await this.observe({ view: "compact", screenshot: false }, { signal });
             if (observation.snapshot.frameId !== lastFrame) {
               lastFrame = observation.snapshot.frameId;
               frames += 1;
@@ -561,6 +590,16 @@ export class ManagedSession {
     control: OperationControl,
     frame: FrameAccessOptions = {}
   ): Promise<Observation> {
+    const view: ObserveView = options.view ?? "compact";
+    if (!["compact", "diff", "full", "cells"].includes(view)) {
+      throw new TuiLensError("INVALID_ARGUMENT", "observe.view 必须是 compact、diff、full 或 cells");
+    }
+    if (view === "diff" && options.fromFrameId === undefined) {
+      throw new TuiLensError("INVALID_ARGUMENT", "observe view=diff 需要 fromFrameId");
+    }
+    if (options.fromFrameId !== undefined && (!Number.isInteger(options.fromFrameId) || options.fromFrameId < 0)) {
+      throw new TuiLensError("INVALID_ARGUMENT", "observe.fromFrameId 必须是非负整数");
+    }
     const deadline = performance.now() + (control.timeoutMs ?? 10_000);
     let lastError: unknown;
     const signal = control.signal
@@ -576,18 +615,45 @@ export class ManagedSession {
         if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
         const snapshot = await this.engine.snapshot(this.frameId, {
           ...frame,
-          ...(options.compact === true
-            ? { cells: false }
-            : options.cells === undefined
-              ? {}
-              : { cells: options.cells }),
+          cells: view === "cells",
           ...(options.scrollback === undefined ? {} : { scrollback: options.scrollback }),
         });
         if (options.region) regionWithin(options.region, snapshot.cols, snapshot.rows);
-        const visible = options.compact === true ? compactSnapshot(snapshot) : snapshot;
-        const observation: Observation = { session: this.info(), snapshot: visible, screenshot: null };
+        const base = view === "diff" ? this.frameHistory.get(options.fromFrameId!) : undefined;
+        const target = this.rememberFrame(snapshot);
+        let visible = snapshot;
+        let diff: SnapshotDiff | undefined;
+        if (view === "compact") {
+          visible = compactSnapshot(snapshot);
+        } else if (view === "full") {
+          visible = { ...snapshot, cells: [] };
+        } else if (view === "diff") {
+          if (base) {
+            diff = {
+              ...diffSnapshots(base, target),
+              omittedSnapshotText: true,
+            };
+            const { scrollback: _scrollback, scrollbackTruncated: _truncated, ...metadata } = snapshot;
+            visible = { ...metadata, text: "", lines: [], cells: [] };
+          } else {
+            diff = {
+              baseFrameId: options.fromFrameId!,
+              targetFrameId: snapshot.frameId,
+              unchanged: false,
+              changedLines: [],
+              fallbackFull: true,
+            };
+            visible = compactSnapshot(snapshot);
+          }
+        }
+        const observation: Observation = {
+          session: this.info(),
+          snapshot: visible,
+          screenshot: null,
+          ...(diff ? { diff } : {}),
+        };
         if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
-        if (options.compact === true ? options.screenshot === true : options.screenshot !== false) {
+        if (options.screenshot === true) {
           const capture = await this.engine.screenshot(options.region, { cursor: options.cursor ?? "hide" });
           if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
           const prefix = join(this.artifactDir, `${this.details.id}-${this.frameId}-${++this.observationId}`);
@@ -817,6 +883,7 @@ export class ManagedSession {
     }
     this.details.status = "closed";
     this.publishExit();
+    this.frameHistory.clear();
     for (const subscriber of this.subscribers) {
       if (subscriber.timer) clearTimeout(subscriber.timer);
     }

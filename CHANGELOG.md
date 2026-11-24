@@ -15,6 +15,10 @@
   requests, per-id cancellation, bounded in-flight requests and server-pushed `watch` frames.
 - `scenario` and `perf` emit real progress events, and the CLI `watch` consumes daemon events instead
   of polling `observe`.
+- `observe` now uses `view: "compact" | "full" | "cells" | "diff"`. `diff` requires `fromFrameId`,
+  returns changed lines plus a wide-character-aware bounding region, and falls back to compact text
+  after the 16-frame lightweight history is exhausted.
+- Screenshots are opt-in with `screenshot:true` for every observation view.
 
 ### Fixed
 - Visual replay now rebases its initial grid when evicted resize events are no longer available, and
@@ -25,6 +29,7 @@
 
 ### Removed
 - Removed the per-request short IPC connection protocol.
+- Removed `observe.compact`, `includeCells`, CLI `--compact`, `--cells` and `--no-screenshot`.
 - Removed `launch.images`, CLI `--images`, `ImageProfile` and `imageProfileGraphics`.
   Use `terminalProfile` capabilities or orthogonal `graphics` options.
 

@@ -402,7 +402,8 @@ export class SessionManager {
     const observation = await this.observe(
       id,
       {
-        cells: false,
+        view: "compact",
+        screenshot: true,
         ...(options.region ? { region: options.region } : {}),
         ...(options.cursor ? { cursor: options.cursor } : {}),
       },
@@ -471,7 +472,7 @@ export class SessionManager {
       );
       const observation = screenshot
         ? await session.observe(
-            { screenshot: true, cells: false },
+            { view: "compact", screenshot: true },
             {
               timeoutMs: Math.max(MIN_SCREENSHOT_TIMEOUT_MS, remaining()),
               ...(control?.signal ? { signal: control.signal } : {}),
@@ -512,7 +513,7 @@ export class SessionManager {
     control?: OperationControl,
     options?: MatchOptions
   ): Promise<TextMatch[]> {
-    const observation = await this.observe(id, { screenshot: false, cells: true }, control);
+    const observation = await this.observe(id, { view: "cells", screenshot: false }, control);
     return findText(observation.snapshot, text, region, options).map((match) => ({
       ...match,
       frameId: observation.snapshot.frameId,
@@ -529,7 +530,7 @@ export class SessionManager {
     control?: OperationControl
   ): Promise<SessionInfo> {
     clickTextOptions(options);
-    const observation = await this.session(id).observe({ screenshot: false }, control, {
+    const observation = await this.session(id).observe({ view: "cells", screenshot: false }, control, {
       allowPendingFrame: options.allowPendingFrame ?? false,
     });
     const {
@@ -582,7 +583,7 @@ export class SessionManager {
     if (options.conditions.length > 0 && options.conditions.every((condition) => condition.kind === "exited")) {
       try {
         await session.waitForExit(remainingControl());
-        const observation = await session.observe({ screenshot: false, cells: false }, remainingControl());
+        const observation = await session.observe({ view: "compact", screenshot: false }, remainingControl());
         if (options.afterFrameId !== undefined && observation.snapshot.frameId <= options.afterFrameId) {
           return this.timeoutEvidence(session, timeout, options.signal);
         }
@@ -623,7 +624,7 @@ export class SessionManager {
               only.count !== undefined ? probe.count === only.count : only.absent ? probe.count === 0 : probe.count > 0;
             const fresh = options.afterFrameId === undefined || probe.frameId > options.afterFrameId;
             if (satisfied && fresh) {
-              const observation = await session.observe({ screenshot: false, cells: false }, remainingControl());
+              const observation = await session.observe({ view: "compact", screenshot: false }, remainingControl());
               if (options.afterFrameId === undefined || observation.snapshot.frameId > options.afterFrameId) {
                 return { observation, elapsedMs: performance.now() - started };
               }
@@ -653,7 +654,10 @@ export class SessionManager {
       let observation: Observation;
       try {
         // 只等待尺寸、光标或退出时不需要整屏字符网格。
-        observation = await session.observe({ screenshot: false, cells: needsCells }, remainingControl());
+        observation = await session.observe(
+          { view: needsCells ? "cells" : "compact", screenshot: false },
+          remainingControl()
+        );
       } catch (error) {
         if (options.signal?.aborted) throw new TuiLensError("ABORTED", "等待已取消");
         if (error instanceof TuiLensError && error.code === "FRAME_PENDING") {
@@ -723,7 +727,7 @@ export class SessionManager {
     try {
       artifact = (
         await session.observe(
-          { cells: false },
+          { view: "compact", screenshot: true },
           {
             timeoutMs: MIN_SCREENSHOT_TIMEOUT_MS,
             ...(signal ? { signal } : {}),

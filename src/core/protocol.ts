@@ -245,13 +245,34 @@ export const conditionSchema = z.discriminatedUnion("kind", [
       message: pick("A cursor condition requires at least one field.", "cursor 条件至少需要一个字段"),
     }),
 ]);
+export const idSchema = z.string().uuid();
+export const observeViewSchema = z.enum(["compact", "diff", "full", "cells"]);
+export const observeSchema = z
+  .object({
+    id: idSchema,
+    view: observeViewSchema.optional(),
+    fromFrameId: z.number().int().min(0).optional(),
+    screenshot: z.boolean().optional(),
+    region: regionSchema.optional(),
+    scrollback: z.number().int().min(1).max(5000).optional(),
+    cursor: z.enum(["hide", "show"]).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.view === "diff" && value.fromFrameId === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: pick("view:diff requires fromFrameId.", "view:diff 需要 fromFrameId"),
+        path: ["fromFrameId"],
+      });
+    }
+  });
 const inputWaitSchema = z
   .object({
     conditions: z.array(conditionSchema).max(16).optional(),
     timeoutMs: z.number().int().min(1).max(300000).optional(),
   })
   .strict();
-export const idSchema = z.string().uuid();
 export const methodSchemas = {
   ping: z.object({}).strict(),
   launch: launchSchema,
@@ -273,17 +294,7 @@ export const methodSchemas = {
       options: clickTextOptionsSchema.optional(),
     })
     .strict(),
-  observe: z
-    .object({
-      id: idSchema,
-      screenshot: z.boolean().optional(),
-      includeCells: z.boolean().optional(),
-      compact: z.boolean().optional(),
-      region: regionSchema.optional(),
-      scrollback: z.number().int().min(1).max(5000).optional(),
-      cursor: z.enum(["hide", "show"]).optional(),
-    })
-    .strict(),
+  observe: observeSchema,
   watch: z
     .object({
       id: idSchema,

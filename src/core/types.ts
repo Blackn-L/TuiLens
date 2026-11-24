@@ -262,6 +262,7 @@ export interface SessionInfo {
 export interface Observation {
   session: SessionInfo;
   snapshot: TerminalSnapshot;
+  diff?: SnapshotDiff;
   screenshot: null | {
     path: string;
     width: number;
@@ -272,22 +273,47 @@ export interface Observation {
   };
 }
 
+export type ObserveView = "compact" | "diff" | "full" | "cells";
+
+export interface SnapshotFrame {
+  frameId: number;
+  cols: number;
+  rows: number;
+  lines: string[];
+  cursor: CursorState;
+  modes: TerminalModes;
+}
+
+export interface SnapshotLineChange {
+  y: number;
+  before: string;
+  after: string;
+}
+
+export interface SnapshotDiff {
+  baseFrameId: number;
+  targetFrameId: number;
+  unchanged: boolean;
+  resized?: boolean;
+  cursorChanged?: boolean;
+  modesChanged?: boolean;
+  changedLines: SnapshotLineChange[];
+  changedRegion?: Region;
+  fallbackFull?: boolean;
+  omittedSnapshotText?: boolean;
+}
+
 export interface ObserveOptions {
+  /** Observation payload shape; defaults to compact. */
+  view?: ObserveView;
+  /** Required when view is "diff"; must reference a retained frame. */
+  fromFrameId?: number;
+  /** Explicitly capture a PNG. Defaults to false for every view. */
   screenshot?: boolean;
-  /**
-   * 紧凑文本观察：去掉行尾空白并省略字符格。除非显式 screenshot:true，
-   * 否则也不生成截图。适合 Agent 的高频状态轮询。
-   */
-  compact?: boolean;
   /** 字符格裁剪，仅影响 PNG；状态仍返回完整 viewport。 */
   region?: Region;
   /** 默认隐藏截图光标，避免块状光标遮挡字符。 */
   cursor?: "hide" | "show";
-  /**
-   * 是否返回完整字符网格。默认为 true；只读取 text/lines/光标或仅需要截图时
-   * 置为 false，可以省掉整屏网格的跨进程传输。为 false 时 `cells` 是空数组。
-   */
-  cells?: boolean;
   /**
    * 同时返回视口上方的回滚行数（1–5000，从旧到新）。
    * 回滚内容只有文本；用于断言已滚出屏幕的历史消息。
