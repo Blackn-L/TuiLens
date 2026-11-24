@@ -369,6 +369,35 @@ test("observe view=diff 返回变化行并省略整屏文本", async () => {
   }
 });
 
+test("diff 命中缓存时保留显式请求的 scrollback", async () => {
+  const memory = memoryEngine();
+  const engine: TerminalEngine = {
+    ...memory.engine,
+    snapshot: async (frameId, options) => ({
+      ...(await memory.engine.snapshot(frameId, options)),
+      ...(options?.scrollback ? { scrollback: ["OLDER"] } : {}),
+    }),
+  };
+  const f = fixture(engine, tmpdir());
+  try {
+    f.emit("first");
+    const base = await f.session.observe({ view: "compact" });
+    f.emit("\nsecond");
+    const diff = await f.session.observe({
+      view: "diff",
+      fromFrameId: base.snapshot.frameId,
+      scrollback: 5,
+    });
+    assert.equal(diff.diff?.fallbackFull, undefined);
+    assert.equal(diff.snapshot.text, "");
+    assert.deepEqual(diff.snapshot.lines, []);
+    assert.deepEqual(diff.snapshot.cells, []);
+    assert.deepEqual(diff.snapshot.scrollback, ["OLDER"]);
+  } finally {
+    await f.session.close();
+  }
+});
+
 test("view=diff 缺少 fromFrameId 或历史被淘汰时明确失败/降级", async () => {
   const memory = memoryEngine();
   const f = fixture(memory.engine, tmpdir());

@@ -187,7 +187,9 @@ observe/compare 的 cursor 可设为 hide（默认）或 show；快照始终返�
 字符格，`full` 跳过 compact 行尾裁剪但不含字符格，`cells` 返回完整字符格。`diff` 必须提供 `fromFrameId`，
 返回 `diff.changedLines`、`diff.changedRegion` 以及 resize/光标/模式差异，不重复整屏文本；超出
 16 帧环缓存时降级为 compact 全文并设 `diff.fallbackFull:true`。所有视图都必须显式传
-`screenshot:true` 才会截图。区域文本/样式等待先在引擎侧判断，命中后才返回轻量观察。
+`screenshot:true` 才会截图。行内插入或删除导致显示宽度变化时，`changedRegion` 会覆盖被右移的
+共同后缀直至较宽行的行尾。命中 diff 时仍保留调用方显式请求的 `scrollback`，否则快照省略
+视口文本与字符格。区域文本/样式等待先在引擎侧判断，命中后才返回轻量观察。
 
 ## 自动终端应答
 

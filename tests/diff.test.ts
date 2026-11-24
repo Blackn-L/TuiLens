@@ -46,7 +46,12 @@ test("局部行变更返回前后文本和字符包围盒", () => {
 
 test("CJK 宽字符按显示列计算包围盒", () => {
   const diff = diffSnapshots(frame(1, ["A文B"]), frame(2, ["A中文B"]));
-  assert.deepEqual(diff.changedRegion, { x: 1, y: 0, width: 2, height: 1 });
+  assert.deepEqual(diff.changedRegion, { x: 1, y: 0, width: 5, height: 1 });
+});
+
+test("删除宽字符后共同后缀移位的左边界仍覆盖到行尾", () => {
+  const diff = diffSnapshots(frame(1, ["A中文B"]), frame(2, ["A文B"]));
+  assert.deepEqual(diff.changedRegion, { x: 1, y: 0, width: 5, height: 1 });
 });
 
 test("resize、光标和模式变化均单独报告", () => {
