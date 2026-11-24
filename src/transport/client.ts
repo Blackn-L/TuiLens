@@ -314,7 +314,10 @@ export class IpcClient {
   private readonly inflight = new Map<string, PendingRequest>();
   private idleTimer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly paths: RuntimePaths) {}
+  constructor(
+    private readonly paths: RuntimePaths,
+    private readonly connectSocket: typeof connect = connect
+  ) {}
 
   async call(method: Method, params: unknown, options: RequestOptions = {}): Promise<unknown> {
     if (options.signal?.aborted) throw abortError(options.signal);
@@ -551,7 +554,7 @@ export class IpcClient {
         reject(abortError(signal));
         return;
       }
-      const socket = connect(this.paths.socket);
+      const socket = this.connectSocket(this.paths.socket);
       this.socket = socket;
       this.buffer = "";
       this.authenticated = false;
@@ -559,6 +562,7 @@ export class IpcClient {
       socket.setNoDelay(true);
       let settled = false;
       let waiter: AuthWaiter | null = null;
+      let lastSocketError: NodeJS.ErrnoException | null = null;
       const cleanup = (): void => {
         if (!waiter) return;
         clearTimeout(waiter.timer);
@@ -596,10 +600,10 @@ export class IpcClient {
         socket.write(encodeFrame({ type: "auth", version: IPC_VERSION, token }));
       });
       socket.on("data", (chunk: string) => this.handleData(socket, chunk));
-      socket.on("error", () => {
-        /* close 事件统一清理鉴权和在途请求。 */
+      socket.on("error", (error: NodeJS.ErrnoException) => {
+        lastSocketError = error;
       });
-      socket.once("close", () => this.handleClose(socket));
+      socket.once("close", () => this.handleClose(socket, lastSocketError));
     });
   }
 
@@ -697,19 +701,29 @@ export class IpcClient {
     }
   }
 
-  private handleClose(socket: Socket): void {
+  private handleClose(socket: Socket, socketError: NodeJS.ErrnoException | null): void {
     if (this.socket !== socket) return;
     this.socket = null;
     this.authenticated = false;
     this.buffer = "";
+    const closedError = (sent: boolean): TuiLensError => {
+      if (!socketError) return new TuiLensError("IPC_CLOSED", "本机服务连接已关闭", { sent });
+      const code = typeof socketError.code === "string" ? socketError.code : "IPC_CLOSED";
+      return new TuiLensError(
+        code,
+        `本机服务连接失败：${socketError.message}`,
+        { sent, reason: code },
+        `The local IPC connection failed (${code}): ${socketError.message}`
+      );
+    };
     const auth = this.authWaiter;
     this.authWaiter = null;
     if (auth) {
       clearTimeout(auth.timer);
-      auth.reject(new TuiLensError("IPC_CLOSED", "本机服务连接已关闭"));
+      auth.reject(closedError(false));
     }
     for (const pending of [...this.inflight.values()]) {
-      this.completePending(pending, new TuiLensError("IPC_CLOSED", "本机服务连接已关闭", { sent: pending.sent }));
+      this.completePending(pending, closedError(pending.sent));
     }
     if (this.idleTimer) {
       clearTimeout(this.idleTimer);

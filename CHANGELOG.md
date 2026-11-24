@@ -16,6 +16,13 @@
 - `scenario` and `perf` emit real progress events, and the CLI `watch` consumes daemon events instead
   of polling `observe`.
 
+### Fixed
+- Visual replay now rebases its initial grid when evicted resize events are no longer available, and
+  releases the replay buffer after the visual renderer attaches.
+- `watch` retries after `FRAME_PENDING` instead of waiting for an unrelated frame notification.
+- IPC preserves real socket errors such as `EACCES` instead of masking them as an unavailable daemon.
+- `shutdown` flushes its response before stopping the daemon, with a bounded fallback timeout.
+
 ### Removed
 - Removed the per-request short IPC connection protocol.
 - Removed `launch.images`, CLI `--images`, `ImageProfile` and `imageProfileGraphics`.

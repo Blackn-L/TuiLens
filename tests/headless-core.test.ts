@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { BrowserEngineOptions, TerminalEngine, TerminalSnapshot } from "../src/core/types.js";
 import { createBrowserEngine, type VisualEngineFactory } from "../src/engine/browser-engine.js";
-import { createHeadlessEngine } from "../src/engine/headless-core.js";
+import { createHeadlessEngine, HeadlessTerminalCore } from "../src/engine/headless-core.js";
 
 interface VisualCall {
   type: "write" | "resize";
@@ -143,6 +143,53 @@ test("历史回放超限时明确标记 visualSyncDegraded", async () => {
     assert.deepEqual(visual.calls, [{ type: "resize", value: 20 }]);
   } finally {
     await engine.close();
+  }
+});
+
+test("淘汰 resize 事件后使用更新后的回放基线并可释放缓存", async () => {
+  const core = new HeadlessTerminalCore({
+    cols: 5,
+    rows: 2,
+    onData() {},
+    maxVisualReplayBytes: 8,
+  });
+  const calls: { type: "write" | "resize"; value: string | number; rows?: number }[] = [];
+  const target: Pick<TerminalEngine, "write" | "resize"> = {
+    async write(data) {
+      calls.push({ type: "write", value: data });
+    },
+    async resize(cols, rows) {
+      calls.push({ type: "resize", value: cols, rows });
+    },
+  };
+  try {
+    await core.write("AAAAA");
+    await core.resize(8, 2);
+    await core.write("BBBBBB");
+    await core.write("CCCCC");
+
+    const state = core.replayState();
+    assert.equal(state.baseCols, 8);
+    assert.equal(state.baseRows, 2);
+    assert.equal(state.truncated, true);
+    assert.equal(await core.replayTo(target, { cols: 8, rows: 2 }), true);
+    assert.deepEqual(calls, [
+      { type: "resize", value: 8, rows: 2 },
+      { type: "write", value: "CCCCC" },
+    ]);
+
+    core.disableReplayBuffer();
+    assert.deepEqual(core.replayState(), {
+      events: [],
+      truncated: false,
+      baseCols: 8,
+      baseRows: 2,
+      disabled: true,
+    });
+    await core.write("D");
+    assert.deepEqual(core.replayState().events, []);
+  } finally {
+    await core.close();
   }
 });
 

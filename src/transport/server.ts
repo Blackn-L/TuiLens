@@ -19,6 +19,7 @@ import {
 } from "./protocol.js";
 
 const MAX_EVENT_BACKLOG_BYTES = 8 * 1024 * 1024;
+const SHUTDOWN_FLUSH_TIMEOUT_MS = 1000;
 
 function tokenMatches(actual: string, expected: string): boolean {
   const left = Buffer.from(actual);
@@ -32,6 +33,34 @@ function errnoCode(error: unknown): string | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Flush the shutdown response before stopping; the timer bounds a broken peer. */
+export function writeFrameBeforeStop(
+  socket: Pick<Socket, "writable" | "destroyed" | "write">,
+  frame: ServerFrame,
+  stop: () => void,
+  timeoutMs = SHUTDOWN_FLUSH_TIMEOUT_MS
+): void {
+  let completed = false;
+  let timer: NodeJS.Timeout;
+  const complete = (): void => {
+    if (completed) return;
+    completed = true;
+    clearTimeout(timer);
+    stop();
+  };
+  timer = setTimeout(complete, Math.max(1, timeoutMs));
+  timer.unref();
+  if (socket.destroyed || !socket.writable) {
+    complete();
+    return;
+  }
+  try {
+    socket.write(encodeFrame(frame), () => complete());
+  } catch {
+    complete();
+  }
 }
 
 type SocketProbe = "live" | "stale" | "missing" | "unknown";
@@ -264,25 +293,33 @@ export async function serve(): Promise<void> {
       };
       void (async () => {
         let shutdownRequested = false;
+        let response: ServerFrame;
         try {
           if (stopping) throw new TuiLensError("SHUTTING_DOWN", "服务正在关闭");
           shutdownRequested = request.method === "shutdown";
           const data = await dispatch(manager, request.method, request.params, controller.signal, emit);
-          sendFrame(state, { type: "res", id: request.id, ok: true, data });
+          response = { type: "res", id: request.id, ok: true, data };
         } catch (error) {
-          sendFrame(state, {
+          response = {
             type: "res",
             id: request.id,
             ok: false,
             error: errorRecord(error),
-          });
+          };
         } finally {
           inflight.delete(request.id);
-          if (shutdownRequested) {
-            setTimeout(() => {
+        }
+        if (shutdownRequested) {
+          writeFrameBeforeStop(
+            socket,
+            response,
+            () => {
               void stop().catch(reportStopError);
-            }, 10);
-          }
+            },
+            SHUTDOWN_FLUSH_TIMEOUT_MS
+          );
+        } else {
+          sendFrame(state, response);
         }
       })();
     }

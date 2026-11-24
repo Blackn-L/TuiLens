@@ -85,34 +85,69 @@ interface ReplayResize {
 
 export type VisualReplayEvent = ReplayOutput | ReplayResize;
 
+export interface VisualReplayState {
+  events: VisualReplayEvent[];
+  truncated: boolean;
+  baseCols: number;
+  baseRows: number;
+  disabled: boolean;
+}
+
 /** 记录可视化层挂载所需的最近输出；按事件边界淘汰，避免从 ANSI 序列中间重放。 */
 class VisualReplayBuffer {
   private events: VisualReplayEvent[] = [];
   private bytes = 0;
   private truncated = false;
-  constructor(private readonly limit = MAX_VISUAL_REPLAY_BYTES) {}
+  private disabled = false;
+  constructor(
+    private baseCols: number,
+    private baseRows: number,
+    private readonly limit = MAX_VISUAL_REPLAY_BYTES
+  ) {}
+
+  private evict(): void {
+    const removed = this.events.shift();
+    if (!removed) return;
+    if (removed.type === "output") {
+      this.bytes -= Buffer.byteLength(removed.data);
+    } else {
+      // The next buffered event must be replayed from the grid state after this resize.
+      this.baseCols = removed.cols;
+      this.baseRows = removed.rows;
+    }
+    this.truncated = true;
+  }
 
   record(event: VisualReplayEvent): void {
+    if (this.disabled) return;
     if (event.type === "output" && Buffer.byteLength(event.data) > this.limit) {
       this.truncated = true;
       return;
     }
     if (this.events.length >= MAX_VISUAL_REPLAY_EVENTS) {
-      const removed = this.events.shift();
-      if (removed?.type === "output") this.bytes -= Buffer.byteLength(removed.data);
-      this.truncated = true;
+      this.evict();
     }
     this.events.push(event);
     if (event.type === "output") this.bytes += Buffer.byteLength(event.data);
-    while (this.bytes > this.limit && this.events.length > 0) {
-      const removed = this.events.shift();
-      if (removed?.type === "output") this.bytes -= Buffer.byteLength(removed.data);
-      this.truncated = true;
-    }
+    while (this.bytes > this.limit && this.events.length > 0) this.evict();
   }
 
-  snapshot(): { events: VisualReplayEvent[]; truncated: boolean } {
-    return { events: [...this.events], truncated: this.truncated };
+  snapshot(): VisualReplayState {
+    return {
+      events: [...this.events],
+      truncated: this.truncated,
+      baseCols: this.baseCols,
+      baseRows: this.baseRows,
+      disabled: this.disabled,
+    };
+  }
+
+  disable(): void {
+    if (this.disabled) return;
+    this.disabled = true;
+    this.events.length = 0;
+    this.bytes = 0;
+    this.truncated = false;
   }
 }
 
@@ -133,8 +168,6 @@ export class HeadlessTerminalCore {
   readonly renderer: RendererKind = "headless";
   private readonly terminal: InstanceType<typeof XtermTerminal>;
   private readonly profile: ResolvedTerminalProfile;
-  private readonly initialCols: number;
-  private readonly initialRows: number;
   private readonly palette = buildPalette();
   private foreground = "#d4d4d4";
   private background = "#101114";
@@ -152,13 +185,11 @@ export class HeadlessTerminalCore {
 
   constructor(private readonly options: HeadlessCoreOptions) {
     this.profile = options.profile ?? defaultTerminalProfile();
-    this.initialCols = options.cols;
-    this.initialRows = options.rows;
     const replayLimit = options.maxVisualReplayBytes ?? MAX_VISUAL_REPLAY_BYTES;
     if (!Number.isInteger(replayLimit) || replayLimit < 1 || replayLimit > MAX_VISUAL_REPLAY_BYTES) {
       throw new TuiLensError("INVALID_ARGUMENT", "maxVisualReplayBytes 必须是 1 B～4 MiB 的整数");
     }
-    this.replay = new VisualReplayBuffer(replayLimit);
+    this.replay = new VisualReplayBuffer(options.cols, options.rows, replayLimit);
     this.scrollback = options.scrollback ?? this.profile.capabilities.scrollback ?? 2000;
     if (!Number.isInteger(this.scrollback) || this.scrollback < 0 || this.scrollback > 5000) {
       throw new TuiLensError("INVALID_PROFILE", "profile scrollback 必须是 0～5000 的整数");
@@ -587,19 +618,24 @@ export class HeadlessTerminalCore {
     return snapshot;
   }
 
-  replayState(): { events: VisualReplayEvent[]; truncated: boolean } {
+  replayState(): VisualReplayState {
     return this.replay.snapshot();
+  }
+
+  /** The visual layer is attached and receives writes directly; replay history is no longer needed. */
+  disableReplayBuffer(): void {
+    this.replay.disable();
   }
 
   async replayTo(
     engine: Pick<TerminalEngine, "write" | "resize">,
     finalSize?: { cols: number; rows: number }
   ): Promise<boolean> {
-    const { events, truncated } = this.replayState();
-    let cols = this.initialCols;
-    let rows = this.initialRows;
+    const { events, truncated, baseCols, baseRows } = this.replayState();
+    let cols = baseCols;
+    let rows = baseRows;
     // Browser pages are created at the current size. Restore the original grid before
-    // replaying output so data written before an early resize keeps its original wrap.
+    // replaying output so data written after evicted resize events keeps its wrapping.
     await engine.resize(cols, rows);
     for (const event of events) {
       if (event.type === "output") await engine.write(event.data);

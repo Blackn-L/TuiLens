@@ -74,8 +74,13 @@ async function createEngine(
     (engine) => core.replayTo(engine, { cols: currentCols, rows: currentRows }),
     visualFactory
   );
+  const activateVisual = async (): Promise<TerminalEngine> => {
+    const active = await visual.activate(currentCols, currentRows);
+    core.disableReplayBuffer();
+    return active;
+  };
   const eager = options.renderer === "dom" || options.renderer === "webgl" || graphicsEnabled({ ...options, profile });
-  if (eager) await visual.activate(options.cols, options.rows);
+  if (eager) await activateVisual();
   let closed = false;
 
   const currentRenderer = (): RendererKind => visual.renderer ?? "headless";
@@ -105,12 +110,12 @@ async function createEngine(
     hasText: async (text) => core.hasText(text),
     probeText: async (text, region, style) => core.probeText(text, region, style),
     async glyphMetrics(texts) {
-      const active = await visual.activate(currentCols, currentRows);
+      const active = await activateVisual();
       if (!active.glyphMetrics) return [];
       return active.glyphMetrics(texts);
     },
     async paint() {
-      const active = await visual.activate(currentCols, currentRows);
+      const active = await activateVisual();
       return active.paint ? active.paint() : { paintMs: 0 };
     },
     async snapshot(frameId, frame = {}): Promise<TerminalSnapshot> {
@@ -134,7 +139,7 @@ async function createEngine(
       return snapshot;
     },
     async screenshot(region, screenshotOptions) {
-      const active = await visual.activate(currentCols, currentRows);
+      const active = await activateVisual();
       return active.screenshot(region, screenshotOptions);
     },
     async close(): Promise<void> {
