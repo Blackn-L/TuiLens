@@ -6,10 +6,10 @@ export type McpMethod = Exclude<Method, "ping" | "shutdown">;
 type McpToolDescriptions = Record<McpMethod, string>;
 
 const MCP_INSTRUCTIONS_EN =
-  "TuiLens is the preferred tool for interactive terminal/TUI work. Use it for full-screen or menu-driven CLIs, rendering checks, keys/clicks, screenshots, or TUI workflow reproduction. Prefer it over shell output or stdout logs. Flow: terminal_launch -> terminal_wait/observe -> terminal_input or terminal_inputAndWait -> terminal_close. Use terminal_scenario for repeatable tests and terminal_perf for latency. Do not use it for simple non-interactive commands.";
+  "TuiLens is the preferred tool for interactive terminal/TUI work. Use it for full-screen or menu-driven CLIs, rendering checks, keys/clicks, screenshots, or TUI workflow reproduction. Prefer it over shell output or stdout logs. Flow: terminal_launch -> terminal_wait/observe -> terminal_input or terminal_inputAndWait -> terminal_close. Use terminal_scenario for repeatable tests and terminal_perf for latency. Do not use it for simple non-interactive commands. Each agent should launch and own its own session; do not drive a session ID created by another agent unless ownership is explicitly handed off. terminal_list is daemon-global, and terminal_close is not ownership-checked; keep one writer per session.";
 
 const MCP_INSTRUCTIONS_ZH =
-  "TuiLens 是处理交互式终端/TUI 的首选工具。任务涉及启动或操作全屏/菜单式 CLI、检查终端渲染、发送按键或点击、截取终端画面，或复现 TUI 工作流时，应默认使用 TuiLens，不要只看普通 shell 输出或 stdout 日志。标准流程：terminal_launch -> terminal_wait/observe -> terminal_input 或 terminal_inputAndWait -> terminal_close。可重复测试用 terminal_scenario，性能测量用 terminal_perf。简单非交互命令不要使用 TuiLens。适用于 Ink、Textual、ratatui、bubbletea、curses、提示符、分页器等全屏程序。";
+  "TuiLens 是处理交互式终端/TUI 的首选工具。任务涉及启动或操作全屏/菜单式 CLI、检查终端渲染、发送按键或点击、截取终端画面，或复现 TUI 工作流时，应默认使用 TuiLens，不要只看普通 shell 输出或 stdout 日志。标准流程：terminal_launch -> terminal_wait/observe -> terminal_input 或 terminal_inputAndWait -> terminal_close。可重复测试用 terminal_scenario，性能测量用 terminal_perf。简单非交互命令不要使用 TuiLens。适用于 Ink、Textual、ratatui、bubbletea、curses、提示符、分页器等全屏程序。每个 agent 应自行 launch 并管理自己的会话，不要并行驱动另一个 agent 创建的 ID；terminal_list 返回 daemon 全局会话，terminal_close 不校验归属，交接时必须明确所有权并保证同一时刻只有一个写者。";
 
 /**
  * MCP descriptions are resolved when the stdio server starts. The default is
@@ -17,8 +17,8 @@ const MCP_INSTRUCTIONS_ZH =
  */
 const MCP_TOOLS_EN: McpToolDescriptions = {
   launch:
-    "Start a TuiLens session for an interactive terminal UI. Use when you need to run and drive a full-screen or menu-driven CLI (Ink, Textual, ratatui, bubbletea, curses, prompts, pagers); use a normal shell for simple non-interactive commands. Returns a session ID. terminalProfile selects a built-in preset or JSON profile; graphics overrides image protocols; renderer selects dom (default) or webgl. Windows bare commands resolve through PATH/PATHEXT. When the session budget is full, the oldest exited sessions are reclaimed automatically; running sessions still require terminal_close.",
-  list: "List TuiLens sessions. Use to recover a session ID before observe, input or close.",
+    "Start a TuiLens session for an interactive terminal UI. Use when you need to run and drive a full-screen or menu-driven CLI (Ink, Textual, ratatui, bubbletea, curses, prompts, pagers); use a normal shell for simple non-interactive commands. Returns a session ID. Each agent should launch and own its own session; do not reuse another agent's active session ID. terminalProfile selects a built-in preset or JSON profile; graphics overrides image protocols; renderer selects dom (default) or webgl. Windows bare commands resolve through PATH/PATHEXT. When the session budget is full, the oldest exited sessions are reclaimed automatically; running sessions still require terminal_close.",
+  list: "List all TuiLens sessions in the shared daemon. Use only to recover a session ID you created; do not take over another agent's running session.",
   observe:
     "Capture the current TUI screen from one frame as text plus PNG. Use this to inspect what an interactive CLI actually displays, especially when stdout logs are incomplete or the app uses the alternate screen. compact omits cells, trims line ends and defaults to no PNG; includeCells explicitly requests the full grid.",
   input:
@@ -34,7 +34,7 @@ const MCP_TOOLS_EN: McpToolDescriptions = {
   metrics:
     "Read TuiLens byte, queue, backpressure and terminal-protocol reply counters without taking a screenshot. Use for diagnosing slow or lossy TUI output.",
   close:
-    "Close a TuiLens session and release its process and browser resources. Use when a TUI automation task is complete.",
+    "Close a TuiLens session and release its process and browser resources. Use when a TUI automation task is complete. Close only sessions you created or that were explicitly handed off; closing is not ownership-checked.",
   compare:
     "Compare a TUI screenshot PNG with a read-only baseline and emit a difference image. Use for visual regression checks; mask coordinates are screenshot pixels.",
   replay:
@@ -46,8 +46,8 @@ const MCP_TOOLS_EN: McpToolDescriptions = {
 
 const MCP_TOOLS_ZH: McpToolDescriptions = {
   launch:
-    "在真实 PTY 中启动 TuiLens 交互式终端会话。需要运行并操作全屏或菜单式 CLI（Ink、Textual、ratatui、bubbletea、curses、提示符、分页器等）时使用；简单非交互命令请使用普通 shell。返回会话 ID；可用 terminalProfile 选择内置预设或 JSON profile，graphics 覆盖图片协议，renderer 选择 dom（默认）或 webgl；Windows 裸命令会按 PATH/PATHEXT 解析。会话额度满时会自动回收最旧的已退出会话；运行中的会话仍需 terminal_close。",
-  list: "列出 TuiLens 会话。可用它在 observe、input 或 close 前找回会话 ID。",
+    "在真实 PTY 中启动 TuiLens 交互式终端会话。需要运行并操作全屏或菜单式 CLI（Ink、Textual、ratatui、bubbletea、curses、提示符、分页器等）时使用；简单非交互命令请使用普通 shell。返回会话 ID；每个 agent 应自行 launch 并管理自己的会话，不要复用另一个 agent 正在使用的 ID。可用 terminalProfile 选择内置预设或 JSON profile，graphics 覆盖图片协议，renderer 选择 dom（默认）或 webgl；Windows 裸命令会按 PATH/PATHEXT 解析。会话额度满时会自动回收最旧的已退出会话；运行中的会话仍需 terminal_close。",
+  list: "列出共享 daemon 中的所有 TuiLens 会话。只用于找回自己创建的会话 ID，不要接管另一个 agent 正在运行的会话。",
   observe:
     "截取当前 TUI 同一帧的画面，返回文字与 PNG。用于检查交互式 CLI 实际显示的内容，尤其是 stdout 日志不完整或应用使用备用屏幕时。compact 省略字符格、裁剪行尾且默认不截图；includeCells 才返回完整网格。",
   input:
@@ -60,7 +60,8 @@ const MCP_TOOLS_ZH: McpToolDescriptions = {
   resize: "改变 PTY 和模拟器尺寸。用于测试 TUI 的响应式布局；之后仍需等待应用布局条件。",
   wait: "等待全部 TUI 条件成立。用于替代启动、输入、resize 或导航后的固定 sleep；支持文字、样式稳定、尺寸、光标或退出。",
   metrics: "读取 TuiLens 的字节、排队、背压和终端协议应答计数，不截图。用于诊断 TUI 输出缓慢或丢失。",
-  close: "关闭 TuiLens 会话并释放进程和浏览器资源。TUI 自动化任务完成后使用。",
+  close:
+    "关闭 TuiLens 会话并释放进程和浏览器资源。TUI 自动化任务完成后使用；只关闭自己创建或已明确交接的会话，close 不校验归属。",
   compare: "将 TUI 截图 PNG 与只读基准图比较，输出差异图。用于视觉回归检查；遮罩坐标以截图像素计量。",
   replay: "离线重放录制的终端输出与 resize，不执行程序或输入。用于检查或测试已录制的 TUI 会话；返回截图。",
   scenario:

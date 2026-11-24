@@ -149,6 +149,39 @@ interact with terminal_input or terminal_inputAndWait, and finish with terminal_
 Keep simple non-interactive commands on the normal shell path so the agent does not launch a
 browser-backed session unnecessarily.
 
+## Multi-agent use
+
+Main and subagents in the same conversation can use TuiLens at the same time, but TuiLens
+isolates work by terminal session ID, not by agent identity. All MCP connections share one
+daemon; `terminal_list` returns every session, and any caller with a valid ID can use
+`terminal_observe`, `terminal_input`, and `terminal_close`.
+
+Follow these rules to avoid interference:
+
+- Each agent should call `terminal_launch` for its own terminal, use only the returned ID,
+  and call `terminal_close` when its task is complete. Do not pick a running session from
+  `terminal_list` and take it over.
+- Do not let two agents drive the same ID concurrently. Low-level operations on one
+  terminal are serialized by its session queue, but their order depends on arrival time.
+  `terminal_wait` and `terminal_inputAndWait` do not hold an agent-level lock for the whole
+  workflow, so another input can still change the screen and cause a false result or
+  `STALE_FRAME`.
+- Treat a handoff as an explicit ownership transfer: the original agent stops sending
+  input, resizing, and closing; the receiving agent confirms before continuing. Keep one
+  writer per session. `terminal_close` does not check ownership, so closing a session makes
+  it fail for every caller holding that ID.
+- Different terminals may run in parallel. They share the daemon, browser, and the default
+  budget of eight sessions (configurable with `TUILENS_MAX_SESSIONS`). When the budget is
+  full, only the oldest exited sessions are reclaimed; running sessions are never
+  preempted.
+- Disconnecting an MCP connection releases only sessions created by that connection. Do
+  not rely on a disconnect to clean up another agent's sessions; manage the lifecycle
+  explicitly when handing work off.
+
+The MCP initialization `instructions` and the `terminal_launch`, `terminal_list`, and
+`terminal_close` tool descriptions also carry these constraints. If a client does not
+surface server instructions, repeat the same rules in `AGENTS.md` or its system prompt.
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Action |

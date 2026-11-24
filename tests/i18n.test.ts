@@ -45,6 +45,10 @@ test("MCP descriptions have English and Chinese variants", () => {
   assert.match(mcpTools("zh-CN").launch, /启动 TuiLens 交互式终端会话/u);
   assert.match(mcpInstructions("en"), /preferred tool for interactive terminal\/TUI work/u);
   assert.match(mcpInstructions("zh-CN"), /TuiLens 是处理交互式终端\/TUI 的首选工具/u);
+  assert.match(mcpInstructions("en"), /Each agent should launch and own its own session/u);
+  assert.match(mcpInstructions("zh-CN"), /每个 agent 应自行 launch 并管理自己的会话/u);
+  assert.match(mcpTools("en").list, /shared daemon/u);
+  assert.match(mcpTools("zh-CN").close, /不校验归属/u);
 });
 
 test("CLI help and errors honor TUILENS_LANG", async () => {

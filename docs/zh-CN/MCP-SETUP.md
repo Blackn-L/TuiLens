@@ -142,6 +142,34 @@ shell，再为它增加客户端级规则或 Skill。例如在 Codex 的 `AGENTS
 
 简单非交互命令仍走普通 shell，避免无谓地启动浏览器会话。
 
+## 多 Agent 协作
+
+同一个对话里的主 Agent 和子 Agent 可以同时使用 TuiLens，但 TuiLens 的隔离边界是
+terminal 会话 ID，不是 Agent 身份。所有 MCP 连接共享同一个 daemon，`terminal_list`
+会返回全局会话；任何持有有效 ID 的调用者都能执行 `terminal_observe`、
+`terminal_input` 和 `terminal_close`。
+
+为避免互相抢占或串台，遵循以下约定：
+
+- 每个 Agent 自行 `terminal_launch`，只使用自己启动返回的 ID，并在任务结束时
+  `terminal_close`。不要从 `terminal_list` 挑一个运行中的会话直接接管。
+- 不要把同一个 ID 交给两个 Agent 并行驱动。同一个 terminal 的底层操作会按会话队列
+  串行，但执行顺序取决于请求到达时间；`terminal_wait` 和 `terminal_inputAndWait`
+  不会为整段逻辑持有 Agent 级锁，另一方的输入仍可能改变画面并造成误判或
+  `STALE_FRAME`。
+- 确需交接时，把它当作一次显式所有权转移：原 Agent 停止输入、resize 和 close，
+  接收方确认后再继续。同一时刻只保留一个写者。`terminal_close` 不校验调用者归属，
+  关闭后所有持有该 ID 的调用都会失败。
+- 不同 terminal 可以并行；它们共享 daemon、浏览器和默认 8 个会话额度（可用
+  `TUILENS_MAX_SESSIONS` 调整）。额度满时只自动回收最旧的已退出会话，不会抢占运行
+  中的会话。
+- MCP 连接断开时只回收该连接创建的会话。需要跨 Agent 保留会话时，不要依赖连接断开
+  清理，显式管理生命周期。
+
+MCP 初始化 `instructions` 和 `terminal_launch`、`terminal_list`、`terminal_close`
+的工具描述也会提示这些约束。如果客户端不展示 server instructions，建议在
+`AGENTS.md` 或系统提示中重复同样的协作规则。
+
 ## 常见问题
 
 | 现象 | 可能原因 | 处理方式 |
