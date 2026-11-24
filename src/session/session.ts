@@ -492,7 +492,7 @@ export class ManagedSession {
               // Re-arm the dirty flag and retry instead of waiting for a publish.
               dirty = true;
               try {
-                await sleep(8, { signal });
+                await sleep(8, undefined, { signal });
               } catch {
                 if (timedOut) return { frames, timedOut: true };
                 if (signal.aborted) {
