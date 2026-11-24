@@ -426,14 +426,24 @@ test("mcp-config 覆盖所有客户端与启动模式并输出可粘贴格式", 
       }
     }
   }
+  const windows = process.platform === "win32";
+  const fixtureExecPath = windows ? "C:\\Program Files\\nodejs\\node.exe" : "/opt/node path/node";
+  const fixtureCliPath = windows
+    ? "C:\\Tui Lens\\dist\\src\\interfaces\\cli.js"
+    : "/opt/Tui Lens/dist/src/interfaces/cli.js";
   const absolute = buildMcpConfig({
     client: "claude-code",
     mode: "absolute",
-    execPath: "C:\\Program Files\\nodejs\\node.exe",
-    cliPath: "C:\\Tui Lens\\dist\\src\\interfaces\\cli.js",
+    execPath: fixtureExecPath,
+    cliPath: fixtureCliPath,
   });
-  assert.match(absolute.content, /"C:\\Program Files\\nodejs\\node\.exe"/u);
-  assert.match(absolute.content, /"C:\\Tui Lens\\dist\\src\\interfaces\\cli\.js" mcp$/u);
+  if (windows) {
+    assert.match(absolute.content, /"C:\\Program Files\\nodejs\\node\.exe"/u);
+    assert.match(absolute.content, /"C:\\Tui Lens\\dist\\src\\interfaces\\cli\.js" mcp$/u);
+  } else {
+    assert.match(absolute.content, /'\/opt\/node path\/node'/u);
+    assert.match(absolute.content, /'\/opt\/Tui Lens\/dist\/src\/interfaces\/cli\.js' mcp$/u);
+  }
   assert.throws(() => buildMcpConfig({ client: "unknown" }), { code: "INVALID_ARGUMENT" });
   assert.throws(() => buildMcpConfig({ mode: "unknown" }), { code: "INVALID_ARGUMENT" });
 
