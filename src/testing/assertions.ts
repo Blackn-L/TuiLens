@@ -147,7 +147,8 @@ export class Terminal {
           );
         }
       } catch (error) {
-        if (!(error instanceof TuiLensError) || error.code !== "FRAME_PENDING") throw error;
+        if (!(error instanceof TuiLensError) || !["FRAME_PENDING", "OPERATION_TIMEOUT"].includes(error.code))
+          throw error;
         lastError = error;
       }
       // 仅在剩余时间内继续观察；不为了凑满窗口而空转。

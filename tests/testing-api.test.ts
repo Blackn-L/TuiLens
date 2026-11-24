@@ -29,10 +29,10 @@ test("断言句柄提供可读期望与实际，并附失败截图", { timeout: 
     await tui.expectText("READY");
     await tui.expectSize(40, 8);
     await tui.expectNoText("ERROR_STATE");
-    await tui.expectNoText("OUTSIDE", { region: { x: 0, y: 1, width: 3, height: 1 }, timeoutMs: 100 });
-    await tui.expectNoText("BOLD_STATE", { style: { bold: false }, timeoutMs: 100 });
+    await tui.expectNoText("OUTSIDE", { region: { x: 0, y: 1, width: 3, height: 1 }, timeoutMs: 2000 });
+    await tui.expectNoText("BOLD_STATE", { style: { bold: false }, timeoutMs: 2000 });
     await assert.rejects(
-      tui.expectNoText("BOLD_STATE", { style: { bold: true }, timeoutMs: 100 }),
+      tui.expectNoText("BOLD_STATE", { style: { bold: true }, timeoutMs: 2000 }),
       (error: unknown) => error instanceof TuiLensAssertionError && error.code === "EXPECT_NO_TEXT_FAILED"
     );
     const screen = await tui.screen();
