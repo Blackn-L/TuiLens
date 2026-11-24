@@ -51,7 +51,7 @@ test("SIXEL 只在启用时声明能力，首图与擦除均进入截图", { tim
   const engine = await createBrowserEngine({
     cols: 20,
     rows: 8,
-    images: "sixel",
+    graphics: { sixel: true },
     onData: (data) => responses.push(data),
   });
   try {
@@ -72,7 +72,13 @@ test("SIXEL 只在启用时声明能力，首图与擦除均进入截图", { tim
 });
 
 test("WebGL renderer 与 SIXEL 图片层共存", { timeout: 30000 }, async () => {
-  const engine = await createBrowserEngine({ cols: 20, rows: 8, renderer: "webgl", images: "sixel", onData() {} });
+  const engine = await createBrowserEngine({
+    cols: 20,
+    rows: 8,
+    renderer: "webgl",
+    graphics: { sixel: true },
+    onData() {},
+  });
   try {
     await engine.write(`${ESC}[?25l${ESC}[2;3H` + redSixel);
     const image = await engine.screenshot();
@@ -88,7 +94,7 @@ test("Kitty PNG 内联分块传输、替换和删除不依赖额外观察轮次"
   const engine = await createBrowserEngine({
     cols: 20,
     rows: 8,
-    images: "all",
+    graphics: { sixel: true, kitty: true, iterm: true },
     onData: (data) => responses.push(data),
   });
   try {
@@ -114,7 +120,12 @@ test("Kitty PNG 内联分块传输、替换和删除不依赖额外观察轮次"
 });
 
 test("Kitty 虚拟占位符跟随正文覆盖、滚动、resize 和清屏", { timeout: 30000 }, async () => {
-  const engine = await createBrowserEngine({ cols: 20, rows: 8, images: "all", onData() {} });
+  const engine = await createBrowserEngine({
+    cols: 20,
+    rows: 8,
+    graphics: { sixel: true, kitty: true, iterm: true },
+    onData() {},
+  });
   try {
     await engine.write(`${ESC}[?25l`);
     const sequence = apc(`a=T,f=100,i=42,U=1,c=2,r=2,q=2;${bitmap(255, 0, 0, 32)}`);
@@ -147,7 +158,12 @@ test("Kitty 虚拟占位符跟随正文覆盖、滚动、resize 和清屏", { ti
 
 test("Kitty 图像数量有上限，拒绝外部介质和不支持的放置", { timeout: 30000 }, async () => {
   const responses: string[] = [];
-  const engine = await createBrowserEngine({ cols: 8, rows: 4, images: "all", onData: (data) => responses.push(data) });
+  const engine = await createBrowserEngine({
+    cols: 8,
+    rows: 4,
+    graphics: { sixel: true, kitty: true, iterm: true },
+    onData: (data) => responses.push(data),
+  });
   try {
     await engine.write(
       Array.from({ length: 129 }, (_, index) => apc(`a=t,f=24,s=1,v=1,i=${index + 1},q=2;/wAA`)).join("")
@@ -174,7 +190,7 @@ test("Kitty 放置面积预算包含视口外格子，删除释放预算", { tim
   const engine = await createBrowserEngine({
     cols: 20,
     rows: 8,
-    images: "all",
+    graphics: { sixel: true, kitty: true, iterm: true },
     onData: (data) => responses.push(data),
   });
   try {
@@ -196,7 +212,12 @@ test("Kitty 放置面积预算包含视口外格子，删除释放预算", { tim
 });
 
 test("Kitty 普通放置的行擦除只移除水平交集", { timeout: 30000 }, async () => {
-  const engine = await createBrowserEngine({ cols: 20, rows: 8, images: "all", onData() {} });
+  const engine = await createBrowserEngine({
+    cols: 20,
+    rows: 8,
+    graphics: { sixel: true, kitty: true, iterm: true },
+    onData() {},
+  });
   try {
     await engine.write(`${ESC}[?25l${ESC}[2;3H` + apc(`a=T,f=100,i=18,c=2,r=2,C=1,q=2;${bitmap(255, 0, 0, 32)}`));
     const before = count((await engine.screenshot()).png, [255, 0, 0]);
@@ -217,7 +238,12 @@ test("Kitty 普通放置的行擦除只移除水平交集", { timeout: 30000 }, 
 
 test("Kitty PNG 容器检查拒绝动画、坏 CRC 与尾随数据", { timeout: 30000 }, async () => {
   const responses: string[] = [];
-  const engine = await createBrowserEngine({ cols: 8, rows: 4, images: "all", onData: (data) => responses.push(data) });
+  const engine = await createBrowserEngine({
+    cols: 8,
+    rows: 4,
+    graphics: { sixel: true, kitty: true, iterm: true },
+    onData: (data) => responses.push(data),
+  });
   try {
     const raw = Buffer.from(bitmap(255, 0, 0), "base64");
     const animationControl = Buffer.alloc(8);
@@ -246,6 +272,25 @@ test("字符格截图区域按真实像素裁剪并拒绝越界", { timeout: 300
     assert.ok(Math.abs(crop.height - full.height / 4) < 2);
     assert.equal(count(crop.png, [0, 255, 0]), crop.width * crop.height);
     await assert.rejects(engine.screenshot({ x: 19, y: 0, width: 2, height: 1 }), { code: "INVALID_REGION" });
+  } finally {
+    await engine.close();
+  }
+});
+
+test("图形会话的标准终端应答仍只由 TerminalCore 发送", { timeout: 30000 }, async () => {
+  const responses: string[] = [];
+  const engine = await createBrowserEngine({
+    cols: 20,
+    rows: 8,
+    graphics: { sixel: true, kitty: true, iterm: true },
+    onData: (data) => responses.push(data),
+  });
+  try {
+    await engine.write(`${ESC}[c${ESC}[>c`);
+    assert.equal(responses.filter((data) => /^\x1b\[\?[0-9;]*c$/u.test(data)).length, 1);
+    assert.equal(responses.filter((data) => /^\x1b\[>[0-9;]*c$/u.test(data)).length, 1);
+    await engine.write(apc("a=q,i=8,f=24,s=1,v=1;/wAA"));
+    assert.ok(responses.includes(apc("i=8;OK")));
   } finally {
     await engine.close();
   }

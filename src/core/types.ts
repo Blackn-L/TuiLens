@@ -6,8 +6,14 @@ export interface Region {
   height: number;
 }
 
-/** 终端绘制后端；DOM 保持既有行为，WebGL 用于连续块字符和更高保真截图。 */
-export type RendererKind = "dom" | "webgl";
+/**
+ * 终端会话实际使用的能力层。headless 是默认的纯 Node 解析核心；
+ * 只有需要像素级视觉产物时才升级到 DOM 或 WebGL。
+ */
+export type RendererKind = "headless" | "dom" | "webgl";
+
+/** 浏览器可视化层可用后端；headless 不属于 VizualRenderer。 */
+export type VisualRendererKind = Exclude<RendererKind, "headless">;
 
 export interface TerminalCell {
   x: number;
@@ -157,9 +163,6 @@ export interface InputGuard {
   region?: { bounds: Region; fingerprint: string };
 }
 
-/** @deprecated 使用 capabilities.graphics 或 LaunchOptions.graphics。 */
-export type ImageProfile = "off" | "sixel" | "iterm" | "all";
-
 export interface TerminalGraphicsCapabilities {
   sixel?: boolean;
   kitty?: boolean;
@@ -223,11 +226,12 @@ export interface LaunchOptions {
   cols?: number;
   rows?: number;
   colorMode?: "truecolor" | "ansi256" | "none";
-  /** 绘制后端；默认 dom。WebGL 不可用时回退 dom，并通过 session.renderer 回传实际值。 */
+  /**
+   * 绘制后端；缺省 headless。显式 dom/webgl 会立即激活
+   * VisualRenderer；WebGL 不可用时回退 dom。
+   */
   renderer?: RendererKind;
-  /** @deprecated 使用 terminalProfile 的 capabilities.graphics，或显式 graphics。 */
-  images?: ImageProfile;
-  /** 正交的图片协议覆盖；比 images 更细粒度。 */
+  /** 正交的图片协议覆盖。 */
   graphics?: TerminalGraphicsCapabilities;
   /** 内置 preset 键/名称，或 JSON profile 路径。 */
   terminalProfile?: string;
@@ -251,6 +255,8 @@ export interface SessionInfo {
   terminalProfile?: string;
   /** 实际使用的绘制后端；由内置引擎回传，自定义旧引擎可缺省。 */
   renderer?: RendererKind;
+  /** 懒加载可视化层时历史输出已超出回放窗口，截图可能与纯文本状态不一致。 */
+  visualSyncDegraded?: boolean;
 }
 
 export interface Observation {
@@ -353,13 +359,13 @@ export interface BrowserEngineOptions {
   /** 显式字体文件；会被嵌入页面并优先于 fontFamily。 */
   fontFile?: string;
   fontSize?: number;
-  /** 请求的绘制后端；默认 dom。 */
+  /** 请求的绘制后端；缺省 headless，dom/webgl 表示启动时即激活可视化层。 */
   renderer?: RendererKind;
-  /** @deprecated 使用 profile.capabilities.graphics，或显式 graphics。 */
-  images?: ImageProfile;
   graphics?: TerminalGraphicsCapabilities;
   profile?: ResolvedTerminalProfile;
   scrollback?: number;
+  /** 可视化层挂载时允许重放的历史输出上限；默认 4 MiB。 */
+  maxVisualReplayBytes?: number;
 }
 
 /** 终端适配器不持有进程；替换引擎无需修改 CLI/MCP 或等待规则。 */
@@ -368,6 +374,8 @@ export interface TerminalEngine {
   resize(cols: number, rows: number): Promise<void>;
   /** 内置引擎回传实际绘制后端；自定义引擎可缺省。 */
   renderer?: RendererKind;
+  /** 懒加载时发生历史回放截断时为 true。 */
+  visualSyncDegraded?: boolean;
   /** 只读取尺寸与模式，不等待绘制，也不遍历或传输字符网格。 */
   state(): Promise<TerminalState>;
   /** 可选快速文本条件：避免等待普通标记时跨进程传输整屏字符格。 */

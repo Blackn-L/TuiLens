@@ -1,17 +1,16 @@
 import { mkdir, open, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import type { ImageProfile, InputAction, RendererKind } from "../core/types.js";
+import type { InputAction, RendererKind } from "../core/types.js";
 import type { RecordingTerminalProfile } from "./replay.js";
 import { TuiLensError } from "../core/errors.js";
 
 export interface RecordingHeader {
   type: "header";
-  version: 1;
+  version: 2;
   cols: number;
   rows: number;
-  images: ImageProfile;
-  renderer?: RendererKind;
+  renderer: RendererKind;
   profile?: RecordingTerminalProfile;
 }
 

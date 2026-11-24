@@ -71,9 +71,19 @@ SIXEL/Kitty 内联图片子集、区域截图与视觉比较、拖拽和修饰�
 
 退出条件：tag 构建可复现发布、能从打包 tarball 安装，并通过与 CI 相同的检查。
 
+### 0.6.0 PR-1 零浏览器 TerminalCore（进行中）
+
+- 文本观察、等待、探测与快照默认改用 `@xterm/headless`。
+- Chromium/xterm.js 视觉层按需加载，用于显式 DOM/WebGL、图片协议、截图与视觉比较；
+  懒加载时重放最多 4 MiB 历史并暴露 `visualSyncDegraded`。
+- 移除 `launch.images`、CLI `--images`、旧图片简写映射与过时文档。
+- `benchmark:overhead` 对照 `headless`、`dom` 与 `webgl` 的启动和 RSS。
+
+退出条件：纯文本会话不启动 Chromium，懒加载截图与后续更新一致，全部质量门禁通过。
+
 ## 后续
 
 - 扩展有测试覆盖的图片协议语义，不宣称未实现能力。
-- 用解析、IPC 和渲染实测数据评估原生处理引擎。
-- 浏览器无关引擎必须先有可复现的开销测量和渲染等价证据；仅更换语言不保证准确或更快。
-  替换条件见[架构](ARCHITECTURE.md)。
+- 图片解码与像素截图继续使用浏览器路径，同时验证解析/状态等价性。
+- 完全无浏览器的视觉后端仍需可复现的像素、字体和图片协议等价证据。
+  边界见[架构](ARCHITECTURE.md)。

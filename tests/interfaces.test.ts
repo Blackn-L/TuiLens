@@ -37,7 +37,7 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
       rows: 12,
       recording: {},
     })) as SessionInfo;
-    assert.equal(session.renderer, "dom");
+    assert.equal(session.renderer, "headless");
     await call("wait", { id: session.id, conditions: [{ kind: "text", text: "TUILENS_READY" }] });
     const clicked = await run(
       process.execPath,

@@ -228,9 +228,36 @@ test("resize 后截图直接使用新网格并保持 PNG 尺寸一致", { timeou
   }
 });
 
+test("懒加载首次截图保留 resize 前历史尺寸", { timeout: 60_000 }, async () => {
+  const lazy = await createBrowserEngine({ cols: 5, rows: 2, onData() {} });
+  const eager = await createBrowserEngine({ cols: 5, rows: 2, renderer: "dom", onData() {} });
+  try {
+    for (const engine of [lazy, eager]) {
+      await engine.write("ABCDEF");
+      await engine.resize(8, 2);
+      await engine.write("GH");
+    }
+    const lazyScreenshot = await lazy.screenshot();
+    const eagerScreenshot = await eager.screenshot();
+    assert.deepEqual(lazyScreenshot.png, eagerScreenshot.png);
+    assert.deepEqual(
+      (await lazy.snapshot(1, { cells: false })).lines,
+      (await eager.snapshot(1, { cells: false })).lines
+    );
+    assert.equal(lazy.visualSyncDegraded, false);
+  } finally {
+    await Promise.all([lazy.close(), eager.close()]);
+  }
+});
+
 test("浏览器终端解析宽字符、样式与模式，并从同一画面输出 PNG", { timeout: 30_000 }, async () => {
   const responses: string[] = [];
-  const engine = await createBrowserEngine({ cols: 40, rows: 8, onData: (data) => responses.push(data) });
+  const engine = await createBrowserEngine({
+    cols: 40,
+    rows: 8,
+    renderer: "dom",
+    onData: (data) => responses.push(data),
+  });
   try {
     await engine.write("\x1b[?1049h\x1b[?2004h\x1b[?1003h\x1b[?1006h");
     await engine.write("\x1b[38;2;18;52;86m\x1b[48;2;23;58;40m\x1b[1m中A⠀🚀\x1b[0m");
@@ -279,8 +306,8 @@ test("浏览器终端解析宽字符、样式与模式，并从同一画面输�
 test("同一管理器的多个会话共享浏览器进程并按引用释放", { timeout: 60_000 }, async () => {
   const { createBrowserEngineFactory } = await import("../src/engine/browser-engine.js");
   const factory = createBrowserEngineFactory();
-  const first = await factory({ cols: 20, rows: 4, onData() {} });
-  const second = await factory({ cols: 20, rows: 4, onData() {} });
+  const first = await factory({ cols: 20, rows: 4, renderer: "dom", onData() {} });
+  const second = await factory({ cols: 20, rows: 4, renderer: "dom", onData() {} });
   try {
     await first.write("FIRST");
     await second.write("SECOND");
@@ -346,8 +373,17 @@ test("会话上限可配置，默认值仍为 8", async () => {
   }
 });
 
-test("默认 DOM；显式 WebGL 的 120 个块字符不产生周期暗列", { timeout: 30_000 }, async () => {
-  const dom = await createBrowserEngine({ cols: 40, rows: 8, onData() {} });
+test("默认 headless；显式 DOM 与 WebGL 才会启动浏览器", { timeout: 30_000 }, async () => {
+  const headless = await createBrowserEngine({ cols: 40, rows: 8, onData() {} });
+  try {
+    assert.equal(headless.renderer, "headless");
+    await headless.write("HEADLESS");
+    assert.equal((await headless.snapshot(1)).lines[0], "HEADLESS");
+  } finally {
+    await headless.close();
+  }
+
+  const dom = await createBrowserEngine({ cols: 40, rows: 8, renderer: "dom", onData() {} });
   try {
     assert.equal(dom.renderer, "dom");
   } finally {

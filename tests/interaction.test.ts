@@ -198,10 +198,17 @@ test("唯一匹配和序号匹配明确区分零结果与非法选项", () => {
 });
 
 test("新增启动、等待和保护条件有严格参数边界", () => {
-  launchOptions({ command: "sample", images: "all", recording: { maxBytes: 4096 } });
+  launchOptions({
+    command: "sample",
+    graphics: { sixel: true, kitty: true, iterm: true },
+    recording: { maxBytes: 4096 },
+  });
   waitOptions({ conditions: [{ kind: "text", text: "中", style: { bold: false }, count: 2 }] });
   assert.throws(() => launchOptions({ command: "sample", recording: { maxBytes: 1 } }), { code: "INVALID_ARGUMENT" });
-  assert.throws(() => launchOptions({ command: "sample", images: "unknown" as "off" }), { code: "INVALID_ARGUMENT" });
+  assert.throws(
+    () => launchOptions({ command: "sample", graphics: { unknown: true } as unknown as { sixel: boolean } }),
+    { code: "INVALID_ARGUMENT" }
+  );
   assert.throws(() => waitOptions({ conditions: [{ kind: "text", text: "x", absent: true, count: 1 }] }), {
     code: "INVALID_ARGUMENT",
   });

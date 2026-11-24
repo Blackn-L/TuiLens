@@ -6,7 +6,7 @@ import type {
   MatchStyle,
   Region,
   RenderMetadata,
-  RendererKind,
+  VisualRendererKind,
   TerminalGraphicsCapabilities,
   TerminalKeyboardCapabilities,
   TerminalModes,
@@ -47,7 +47,7 @@ export interface BrowserRuntime {
   glyphMetrics(texts: string[]): GlyphMetric[];
   paint(): Promise<{ paintMs: number }>;
   size(): { width: number; height: number };
-  renderer(): RendererKind;
+  renderer(): VisualRendererKind;
   snapshot(frameId: number, includeGrid: boolean, scrollbackLines: number): PackedSnapshot;
   dispose(): void;
 }
@@ -76,7 +76,7 @@ export interface RuntimeOptions {
   fontFamily: string;
   fontSize: number;
   fontHash?: string;
-  renderer: RendererKind;
+  renderer: VisualRendererKind;
   scrollback: number;
   graphics: Required<TerminalGraphicsCapabilities>;
   replies?: TerminalReplies;
@@ -84,7 +84,7 @@ export interface RuntimeOptions {
 }
 
 /** 此函数整体传入浏览器执行，不能引用外部运行时变量或 Node.js API。 */
-export async function initializeBrowserRuntime(options: RuntimeOptions): Promise<RendererKind> {
+export async function initializeBrowserRuntime(options: RuntimeOptions): Promise<VisualRendererKind> {
   const host = window as unknown as RuntimeWindow;
   const basePalette = [
     "#000000",
@@ -166,7 +166,7 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
   const container = document.querySelector<HTMLElement>("#terminal");
   if (!container) throw new Error("Terminal container is missing");
   terminal.open(container);
-  let rendererKind: RendererKind = "dom";
+  let rendererKind: VisualRendererKind = "dom";
   if (options.renderer === "webgl" && host.WebglAddon) {
     let addon: WebglAddonRuntime | undefined;
     try {

@@ -9,7 +9,7 @@ import { RecordingWriter } from "../src/recording/writer.js";
 import type { EngineFactory, TerminalEngine, TerminalSnapshot } from "../src/core/types.js";
 import { resolveTerminalProfile } from "../src/profiles/index.js";
 
-const header = { type: "header", version: 1, cols: 10, rows: 2, images: "off" } as const;
+const header = { type: "header", version: 2, cols: 10, rows: 2, renderer: "headless" } as const;
 function snapshot(frameId: number): TerminalSnapshot {
   return {
     frameId,
@@ -166,7 +166,7 @@ test("回放应用输出和 resize，但不会执行录制输入", async () => {
   }
 });
 
-test("新录制内嵌最终渲染 profile，旧 images 录制保持兼容", async () => {
+test("新录制内嵌最终渲染 profile，无 profile 时使用默认能力", async () => {
   const directory = await mkdtemp(join(tmpdir(), "tuilens-replay-profile-"));
   const profile = await resolveTerminalProfile("kitty");
   const { env: _env, source: _source, ...renderProfile } = profile;
@@ -203,7 +203,8 @@ test("新录制内嵌最终渲染 profile，旧 images 录制保持兼容", asyn
       artifactDir: directory,
       engineFactory,
     });
-    assert.equal((received as { images: string }).images, "off");
+    assert.equal((received as { renderer?: string }).renderer, "headless");
+    assert.equal((received as { images?: string }).images, undefined);
     assert.equal("profile" in (received as object), false);
   } finally {
     await rm(directory, { recursive: true, force: true });

@@ -102,7 +102,7 @@ export class SessionManager {
       throw new TuiLensError("INVALID_ARGUMENT", "maxSessions 必须是 1～128 的整数");
     }
     this.ptyWorker = options.ptyWorker === true;
-    // 默认在管理器内部共享一个浏览器进程；显式工厂仍由调用方决定生命周期。
+    // 默认在管理器内部共享一个按需 BrowserHost；纯文本会话不会拉起浏览器。
     if (options.engineFactory) {
       this.engineFactory = options.engineFactory;
     } else {
@@ -190,7 +190,6 @@ export class SessionManager {
     const cols = options.cols ?? 160;
     const rows = options.rows ?? 50;
     const profile = applyTerminalProfileOverrides(await resolveTerminalProfile(options.terminalProfile, { cwd }), {
-      ...(options.images === undefined ? {} : { images: options.images }),
       ...(options.graphics === undefined ? {} : { graphics: options.graphics }),
       ...(options.colorMode === undefined ? {} : { colorMode: options.colorMode }),
     });
@@ -219,11 +218,10 @@ export class SessionManager {
           sessionId,
           {
             type: "header",
-            version: 1,
+            version: 2,
             cols,
             rows,
-            images: "off",
-            ...(engine.renderer ? { renderer: engine.renderer } : {}),
+            renderer: engine.renderer ?? "headless",
             profile: renderProfile,
           },
           options.recording.maxBytes
@@ -259,10 +257,7 @@ export class SessionManager {
       const resolved = await resolveExecutable(requested, { cwd, env });
       const name = getEnv(env, "TERM") ?? "xterm-256color";
       const useConptyDll =
-        process.platform === "win32" &&
-        (options.terminalProfile !== undefined ||
-          options.graphics !== undefined ||
-          (options.images !== undefined && options.images !== "off"));
+        process.platform === "win32" && (options.terminalProfile !== undefined || options.graphics !== undefined);
       if (this.ptyWorker) {
         pty = await spawnIsolatedPty({
           command: resolved.file,

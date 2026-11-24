@@ -170,6 +170,8 @@ async function runScenarioSingle(
     }
   } finally {
     if (id) {
+      const current = manager.list().find((session) => session.id === id);
+      if (current?.renderer) result.renderer = current.renderer;
       try {
         await manager.close(id);
       } catch (error) {

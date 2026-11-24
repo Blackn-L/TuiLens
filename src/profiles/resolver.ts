@@ -4,7 +4,6 @@ import { z } from "zod";
 import { readBoundedFile } from "../core/bounded-file.js";
 import { TuiLensError } from "../core/errors.js";
 import type {
-  ImageProfile,
   ResolvedTerminalProfile,
   TerminalCapabilities,
   TerminalGraphicsCapabilities,
@@ -108,7 +107,6 @@ export interface ResolveTerminalProfileOptions {
 }
 
 export interface TerminalProfileOverrides {
-  images?: ImageProfile;
   graphics?: TerminalGraphicsCapabilities;
   colorMode?: "truecolor" | "ansi256" | "none";
   scrollback?: number;
@@ -308,19 +306,6 @@ export async function resolveTerminalProfile(
   });
 }
 
-export function imageProfileGraphics(images: ImageProfile): TerminalGraphicsCapabilities {
-  switch (images) {
-    case "off":
-      return { sixel: false, kitty: false, iterm: false };
-    case "sixel":
-      return { sixel: true, kitty: false, iterm: false };
-    case "iterm":
-      return { sixel: false, kitty: false, iterm: true };
-    case "all":
-      return { sixel: true, kitty: true, iterm: true };
-  }
-}
-
 function applyCapabilityOverrides(
   capabilities: TerminalCapabilities,
   overrides: TerminalProfileOverrides
@@ -331,9 +316,6 @@ function applyCapabilityOverrides(
   }
   if (overrides.graphics) {
     result.graphics = { ...result.graphics, ...overrides.graphics };
-  }
-  if (overrides.images !== undefined) {
-    result.graphics = imageProfileGraphics(overrides.images);
   }
   if (overrides.scrollback !== undefined) result.scrollback = overrides.scrollback;
   return result;

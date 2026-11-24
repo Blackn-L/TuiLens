@@ -1,5 +1,12 @@
 export { SessionManager } from "./session/manager.js";
 export { createBrowserEngine } from "./engine/browser-engine.js";
+export {
+  createHeadlessEngine,
+  HeadlessTerminalCore,
+  MAX_VISUAL_REPLAY_BYTES,
+  MAX_VISUAL_REPLAY_EVENTS,
+} from "./engine/headless-core.js";
+export type { HeadlessCoreOptions, VisualReplayEvent } from "./engine/headless-core.js";
 export { findText, regionFingerprint } from "./core/locator.js";
 export { TuiLensError, errorRecord } from "./core/errors.js";
 export { VERSION } from "./version.js";
@@ -38,7 +45,6 @@ export { createBrowserEngineFactory } from "./engine/browser-engine.js";
 export {
   applyTerminalProfileOverrides,
   defaultTerminalProfile,
-  imageProfileGraphics,
   listTerminalProfiles,
   resolveTerminalProfile,
 } from "./profiles/index.js";

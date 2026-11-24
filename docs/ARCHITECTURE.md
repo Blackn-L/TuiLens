@@ -7,7 +7,7 @@
 | Directory | Responsibility |
 | --- | --- |
 | `src/core` | Public types, protocol schemas, input encoding, locators, validation, bounded reads, error catalog |
-| `src/engine` | xterm.js browser adapter, shared browser host, snapshot codec, image decoding and rendering, viewport capture |
+| `src/engine` | Browser-free `@xterm/headless` core, lazy browser visual layer, shared browser host, image decoding, viewport capture |
 | `src/profiles` | Built-in terminal presets, JSON profile inheritance, capability/reply resolution |
 | `src/session` | PTY lifecycle, optional PTY worker, ordered output, observation barriers, waits and resource limits |
 | `src/recording` | Bounded versioned journals and offline replay |
@@ -23,49 +23,56 @@
 Interfaces delegate to the same application service. Protocol schemas are in core;
 scenarios do not import CLI implementations. `TerminalEngine` is the replaceable engine contract.
 
-The browser engine uses xterm.js's DOM renderer by default. Opt-in WebGL is loaded from
-`@xterm/addon-webgl`; if activation fails, the page falls back to DOM. The engine returns the actual
-renderer, which is propagated to sessions, recording headers, scenario/perf environments and visual metadata.
+Every session starts with a browser-free `TerminalCore` backed by `@xterm/headless`. It owns ordered
+VT parsing, frame state, scrollback, text probes and terminal replies. `VisualRenderer` wraps Chromium,
+the xterm.js DOM/WebGL surface and image addons; it is created only when launch explicitly requests
+`dom`/`webgl`, an image protocol is enabled, or a screenshot/visual comparison/paint is requested.
+
+When activated mid-session, `VisualRenderer` replays the bounded output ring (4 MiB by default), waits
+for two painted frames, then remains synchronized by receiving future writes and resizes. The engine
+reports `headless`, `dom` or `webgl` from live state, and sets `visualSyncDegraded` if replay history
+was truncated.
 
 ## Transport and sharing
 
-- A `SessionManager` owns one `BrowserHost`. Each session acquires a reference and gets its own browser
-  context and page; the browser process starts once and is shared. `shutdownEngine` runs after all sessions
-  close, never before.
-- `createBrowserEngine` still creates an isolated host for callers that want one browser per engine.
+- A `SessionManager` owns one lazy `BrowserHost`. Pure-text sessions never acquire a browser;
+  the first visual session starts Chromium once, and later visual sessions share it with their own
+  context and page. `shutdownEngine` runs after all sessions close, never before.
+- `createBrowserEngine` keeps an isolated lazy host for callers that want one browser per engine.
 - `maxSessions` (default 8, `TUILENS_MAX_SESSIONS`) caps sessions plus offline replays; matrix testing needs a
   higher value. When a launch finds the budget full, the oldest exited sessions are reclaimed first; running
   sessions are never evicted automatically.
 
 ## Snapshot codec
 
-The character grid never crosses the Playwright boundary as an object graph. Inside the page it is packed into
-two strings — a token stream per row and a style run-length stream per row — and Node unpacks it into
-`TerminalCell[][]`. Unpacking validates row count, cell count and style coverage; a mismatch raises
-`INVALID_SNAPSHOT` rather than silently filling defaults.
+The browser-free core reads `TerminalCell[][]` directly from `@xterm/headless`; it is the canonical state
+source for text, cells, style, cursor and mode guards. Once a visual layer is active, visual snapshots
+only contribute renderer/font metadata and never replace core cells. This keeps region fingerprints
+stable across the lazy transition.
+
+The optional page snapshot uses the existing Playwright codec: two strings per row, one token stream
+and one style run-length stream. Unpacking validates row count, cell count and style coverage; a mismatch
+raises `INVALID_SNAPSHOT` rather than silently filling defaults.
 
 `cells:false` skips packing entirely. Callers that only need text, size, cursor or a screenshot use it;
 `observe` over CLI/MCP does so unless `includeCells` is requested.
 
-## Renderer boundary and exit criteria
+## Engine boundary
 
-The browser-backed engine is deliberate: xterm.js and Chromium provide the measured fidelity for terminal
-parsing, WebGL/DOM rendering, fonts, images and screenshots. The accepted costs are Chromium cold start,
-memory use, and platform font fallback.
+`TerminalCore` now covers the browser-free path for PTY output, parsing, text waits, scrollback,
+keyboard/mouse mode mirroring and snapshot cells. Browser Chromium remains the measured fidelity layer
+for PNG output, font fallback and the implemented image protocols; its cold-start and RSS cost is paid
+only by sessions that request those features.
 
-A browser-free or native engine is not a short-term refactor. It must first demonstrate:
-
-1. Parser, mode, cursor, wide-character and image-protocol equivalence against the existing fixtures.
-2. Startup, idle RSS and long-session RSS budgets measured with the same workloads.
-3. Stable font/grid fingerprints on Windows, Linux and macOS or an explicit platform support contract.
-4. A bounded image subset with protocol errors instead of silently advertising unsupported features.
-
-Until those gates are met, the public engine boundary is `TerminalEngine`; callers must not depend on
-Playwright internals. See [performance](PERFORMANCE.md), [images](IMAGES.md) and [roadmap](ROADMAP.md).
+Callers must stay on the public `TerminalEngine` contract and must not depend on Playwright internals.
+See [performance](PERFORMANCE.md), [images](IMAGES.md) and [roadmap](ROADMAP.md).
 
 ## Contracts
 
 - Public coordinates are zero-based terminal cells; PNG masks are pixels.
+- The default engine is `headless`. A normal observe/find/wait path does not load Playwright or start Chromium.
+- `TerminalCore` is the canonical snapshot source after visual activation; the browser contributes only render metadata.
+- A bounded 4 MiB replay ring restores history when the visual layer attaches; truncation sets `visualSyncDegraded`.
 - Wide-character continuation cells have width 0. Locators use buffer cells rather than JavaScript string length.
 - Received output is batched, then applied in order. Input and resize seal earlier batches before entering the queue.
 - A capture reads state and PNG behind one observation barrier; newer output queues until capture ends.
@@ -100,6 +107,7 @@ Playwright internals. See [performance](PERFORMANCE.md), [images](IMAGES.md) and
 Output batches contain at most 32K UTF-16 units without splitting surrogate pairs.
 8 MiB of queued output pauses PTY reading; below 4 MiB resumes; over 16 MiB is a visible error.
 Recording files have explicit byte limits. Replay, PNG reads and image placement metadata also have independent limits.
+The visual replay ring is capped at 4 MiB and 8192 whole output/resize events.
 See [images](IMAGES.md), [recording](RECORDING.md), and [visual testing](VISUAL.md).
 
 Windows uses named pipes; Linux uses abstract Unix sockets. A local token authenticates requests.

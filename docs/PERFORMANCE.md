@@ -2,7 +2,8 @@
 
 [English](PERFORMANCE.md) · [简体中文](zh-CN/PERFORMANCE.md)
 
-Disabling screenshots does not remove parsing, browser IPC or rendering cost.
+Text-only sessions use `TerminalCore` without loading Playwright or starting Chromium.
+Once a session requests visual output, browser IPC and rendering costs remain part of that session.
 Always identify the workload, terminal engine, platform and collection method.
 
 ## Application performance (`perf`)
@@ -50,26 +51,34 @@ test instead of requiring a repository baseline.
 ## Tool overhead (`benchmark:overhead`)
 
 ```sh
-npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1 --out artifacts/overhead.json
+npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1 \
+  --renderers headless,dom,webgl --out artifacts/overhead.json
 ```
 
 The same native PTY fixture runs in isolated workers with alternating order:
 
 - `drain-only`: consumes output without ANSI parsing or drawing.
-- `tuilens`: uses the actual session/browser engine, without screenshots or full-grid polling during measurement.
+- `tuilens-headless`: uses `TerminalCore`, without screenshots or full-grid polling.
+- `tuilens-dom`: eagerly activates the DOM renderer before the fixture starts.
+- `tuilens-webgl`: eagerly activates WebGL, falling back to DOM if the context is unavailable.
 
 One final screen read validates the completion marker outside the measurement window.
 
 | Metric | Scope |
 | --- | --- |
-| startupMs | Module, browser, PTY startup and fixture readiness |
+| engineStartupMs | Engine factory only; `headless` parses without Chromium, DOM/WebGL includes browser startup |
+| startupMs | Module, PTY, renderer and fixture readiness; DOM/WebGL includes Chromium cold start |
 | workload.elapsedMs | Fixture-reported output production time |
 | controlToOutputAppliedMs | Control input to final output consumption/parser completion |
 | rootCpuMs | Tool worker root-process CPU |
 | rootRssPeakBytes | Sampled root-process RSS peak |
+| treeRssPeakBytes | Sampled RSS peak across the tool worker and all descendants, including the same fixture, PTY host and activated Chromium |
 | sessionMetrics | Received/applied bytes, queue peaks, pauses and batches |
 
-Root CPU/RSS excludes Chromium, the PTY host and workload. Parser completion is not pixel presentation.
+Root CPU/RSS excludes Chromium, the PTY host and workload; `treeRssPeakBytes` includes those children,
+but the workload is identical across compared modes.
+Parser completion is not pixel presentation.
+`engineStartupMs` isolates the engine constructor from module import and PTY fixture startup.
 The PTY may transform or coalesce output, so produced and received byte counts are distinct.
 
 ## Snapshot transport

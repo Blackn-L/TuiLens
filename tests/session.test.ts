@@ -932,10 +932,10 @@ test("显式关闭丢弃在途输出时录制标记不完整", async () => {
   const directory = await mkdtemp(join(tmpdir(), "tuilens-incomplete-"));
   const writer = await RecordingWriter.create(directory, "close", {
     type: "header",
-    version: 1,
+    version: 2,
     cols: 10,
     rows: 2,
-    images: "off",
+    renderer: "headless",
   });
   const memory = memoryEngine();
   const data = new Set<(value: string) => void>();
@@ -982,7 +982,7 @@ test("回放受统一生命周期管理，关闭后禁止创建并等待迟到�
   await writeFile(
     path,
     [
-      JSON.stringify({ type: "header", version: 1, cols: 10, rows: 2, images: "off" }),
+      JSON.stringify({ type: "header", version: 2, cols: 10, rows: 2, renderer: "headless" }),
       JSON.stringify({ type: "end", truncated: false, atMs: 0 }),
       "",
     ].join("\n")
@@ -1068,7 +1068,7 @@ test("replay 复用 launch 的退出会话回收与槽位准入", { timeout: 15_
   await writeFile(
     path,
     [
-      JSON.stringify({ type: "header", version: 1, cols: 10, rows: 2, images: "off" }),
+      JSON.stringify({ type: "header", version: 2, cols: 10, rows: 2, renderer: "headless" }),
       JSON.stringify({ type: "end", truncated: false, atMs: 0 }),
       "",
     ].join("\n")

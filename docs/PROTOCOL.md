@@ -84,13 +84,15 @@ application hands history to the terminal scrollback rather than repainting it i
 ```
 
 `terminalProfile` accepts a built-in preset key/name or a JSON profile path. The returned session includes
-the resolved name in `terminalProfile`. `graphics` overrides individual image protocols; legacy `images`
-still works but maps to the same capabilities. See [terminal profiles](PROFILES.md).
+the resolved name in `terminalProfile`. `graphics` overrides individual image protocols. See
+[terminal profiles](PROFILES.md).
 
-`renderer` selects `dom` (default) or `webgl`. The returned session includes the actual value in `renderer`;
-WebGL failure falls back to DOM and returns `dom`. The actual renderer is also written to recording headers,
-scenario/perf environments, observation metadata and visual comparison JSON. WebGL may use integer cell
-widths, so screenshot dimensions can change; re-record visual baselines when switching renderers.
+`renderer` accepts `headless` (default), `dom`, or `webgl`. `headless` never loads Chromium. Explicit
+`dom`/`webgl`, an enabled image protocol, or the first screenshot/visual comparison activates the visual
+layer. The returned session always reflects live state, so it can start as `headless` and later report
+`dom`/`webgl`. `visualSyncDegraded: true` means the bounded replay window was truncated during lazy attach.
+WebGL failure falls back to DOM and returns `dom`. WebGL may use integer cell widths, so screenshot
+dimensions can change; re-record visual baselines when switching renderers.
 
 ## Keyboard protocols
 

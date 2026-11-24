@@ -1,4 +1,4 @@
-import { chromium, type Browser } from "playwright-core";
+import type { Browser } from "playwright-core";
 import { TuiLensError } from "../core/errors.js";
 
 /**
@@ -63,6 +63,7 @@ export class BrowserHost {
   }
 
   private async launch(): Promise<Browser> {
+    const { chromium } = await import("playwright-core");
     const browser = await chromium.launch({
       headless: true,
       ...(this.executablePath ? { executablePath: this.executablePath } : {}),

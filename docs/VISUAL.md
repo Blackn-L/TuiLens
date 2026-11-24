@@ -26,6 +26,8 @@ maximum 16777216 pixels, with container/CRC checks before accepting decoded outp
 
 Fix font, browser, renderer, scale, terminal size and image mode for each baseline. The actual renderer is
 written to observation and comparison metadata; re-record baselines when switching between `dom` and `webgl`.
+Sessions start in `headless`; `manager.compare()` and screenshot captures activate `VisualRenderer` on demand.
+If the 4 MiB replay window was truncated, `visualSyncDegraded` is set and the capture may not represent full history.
 Mask only known nondeterministic regions.
 Captures hide the cursor by default; set `cursor: "show"` when cursor pixels are part of the expected baseline.
 Accepting a new baseline is an explicit file operation; comparisons never approve updates automatically.
@@ -34,7 +36,7 @@ Accepting a new baseline is an explicit file operation; comparisons never approv
 
 Chromium cannot read fonts private to a terminal package. In particular, Windows Terminal's bundled
 `Cascadia Mono` is not a system font, and its bundled build does not necessarily cover all circled numerals.
-The default renderer therefore injects `unicode-range`-scoped local faces from `Noto Sans`,
+The DOM/WebGL visual renderer therefore injects `unicode-range`-scoped local faces from `Noto Sans`,
 `MS PGothic`, `Segoe UI Symbol`, and `Apple Symbols`. They affect only circled numerals, so
 `⓪` and `⑪`–`⑳` do not reach Consolas at a smaller optical size and the main ASCII/CJK font
 selection remains unchanged.

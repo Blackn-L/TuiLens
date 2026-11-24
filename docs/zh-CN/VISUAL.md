@@ -35,13 +35,15 @@
 这是严格的通道级比较，不是感知相似度或 OCR。
 字体、字体回退、DPI、网格、引擎版本、renderer 和图片解码配置应固定。
 实际 renderer 会写入观察和比较元数据；在 `dom` 与 `webgl` 之间切换时需要重新录制基准。
+会话默认从 `headless` 开始；`manager.compare()` 和截图会按需激活 `VisualRenderer`。
+若 4 MiB 回放窗口被截断，会设置 `visualSyncDegraded`，此时截图可能不代表完整历史。
 时间、动画和光标等动态区域应显式遮罩，不能通过扩大容差隐藏布局回归。
 实际截图默认隐藏光标；只有基准确实包含光标时才设置 `cursor: "show"`。
 
 ## 固定截图字体
 
 Chromium 读不到终端包内的私有字体。Windows Terminal 自带的 `Cascadia Mono` 不是系统字体，
-而且随包版本不一定覆盖全部圈码。因此默认渲染会注入带 `unicode-range` 的本地字面
+而且随包版本不一定覆盖全部圈码。因此 DOM/WebGL 视觉渲染会注入带 `unicode-range` 的本地字面
 `Noto Sans`、`MS PGothic`、`Segoe UI Symbol` 和 `Apple Symbols`，只接管圈码；
 这样 `⓪` 和 `⑪`–`⑳` 不会被 Consolas 以更小字阶接管，主 ASCII/CJK 字体选择也保持不变。
 
