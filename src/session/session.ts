@@ -633,8 +633,7 @@ export class ManagedSession {
               ...diffSnapshots(base, target),
               omittedSnapshotText: true,
             };
-            const { scrollback: _scrollback, scrollbackTruncated: _truncated, ...metadata } = snapshot;
-            visible = { ...metadata, text: "", lines: [], cells: [] };
+            visible = { ...snapshot, text: "", lines: [], cells: [] };
           } else {
             diff = {
               baseFrameId: options.fromFrameId!,

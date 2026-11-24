@@ -26,6 +26,10 @@
 - `watch` retries after `FRAME_PENDING` instead of waiting for an unrelated frame notification.
 - IPC preserves real socket errors such as `EACCES` instead of masking them as an unavailable daemon.
 - `shutdown` flushes its response before stopping the daemon, with a bounded fallback timeout.
+- Diff regions now extend through a shared suffix when a per-line insertion or deletion changes the
+  display width, so callers can crop or compare every shifted cell.
+- `observe` with `view:"diff"` keeps explicitly requested scrollback on a cache hit while still
+  omitting viewport text and cells.
 
 ### Removed
 - Removed the per-request short IPC connection protocol.

@@ -105,7 +105,12 @@ function changedColumns(before: string, after: string, columns: number): Changed
   const afterEnd = afterParts
     .slice(0, afterParts.length - suffix)
     .reduce((width, grapheme) => width + graphemeWidth(grapheme), 0);
-  const end = Math.min(columns, Math.max(start + 1, beforeEnd, afterEnd));
+  const beforeWidth = beforeParts.reduce((width, grapheme) => width + graphemeWidth(grapheme), 0);
+  const afterWidth = afterParts.reduce((width, grapheme) => width + graphemeWidth(grapheme), 0);
+  // A shared suffix remains screen-stable only when both lines occupy the same total width.
+  // Otherwise an insertion/deletion shifts every following cell, so the region extends to the line end.
+  const changedEnd = beforeWidth === afterWidth ? Math.max(beforeEnd, afterEnd) : Math.max(beforeWidth, afterWidth);
+  const end = Math.min(columns, Math.max(start + 1, changedEnd));
   return { start, end };
 }
 

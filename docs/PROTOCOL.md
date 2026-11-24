@@ -210,6 +210,9 @@ ends and omits cells, `full` skips compact trimming while omitting cells, and `c
 `diff` requires `fromFrameId` and returns `diff.changedLines`, `diff.changedRegion` and cursor/mode/resize
 flags while omitting the full snapshot text. Frames older than the retained 16-frame ring fall back to a
 compact full observation with `diff.fallbackFull:true`. Screenshots require `screenshot:true` for every view.
+When a line insertion or deletion changes its display width, `changedRegion` extends through the shifted
+suffix to the end of the wider line. An explicitly requested `scrollback` is retained when a diff is
+available; otherwise the snapshot omits viewport text and cells.
 Regional text/style waits are evaluated in the engine before a light observation is returned.
 
 ## Automatic terminal replies
