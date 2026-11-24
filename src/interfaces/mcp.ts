@@ -1,14 +1,15 @@
-import { readFile } from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { CallToolResult, ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { Observation, OperationProgress, SessionInfo } from "../core/types.js";
+import { readBoundedFile } from "../core/bounded-file.js";
 import { errorRecord } from "../core/errors.js";
 import { request } from "../transport/client.js";
 import { methodSchemas } from "./schemas.js";
 import { mcpInstructions, mcpTools, type McpMethod } from "./mcp-tools.js";
-import { registerMcpPrompts, registerMcpResources } from "./mcp-resources.js";
+import { MCP_SCREENSHOT_MAX_BYTES, registerMcpPrompts, registerMcpResources } from "./mcp-resources.js";
+import { McpProgressForwarder } from "./mcp-progress.js";
 import { VERSION } from "../version.js";
 import { pick } from "../core/i18n.js";
 
@@ -71,11 +72,7 @@ export async function startMcp(): Promise<void> {
             const content: CallToolResult["content"] = [{ type: "text", text: JSON.stringify(data) }];
             const observation = imageObservation(method, data);
             if (observation?.screenshot) {
-              content.push({
-                type: "image",
-                mimeType: "image/png",
-                data: (await readFile(observation.screenshot.path)).toString("base64"),
-              });
+              content.push(await mcpImageContent(observation.screenshot.path));
             }
             const failed = data !== null && typeof data === "object" && "pass" in data && data.pass === false;
             return { content, ...(failed ? { isError: true } : {}) };
@@ -137,41 +134,41 @@ async function requestWithProgress(
   if (token === undefined || !PROGRESS_METHODS.has(method)) return request(method, args, { signal });
   let stopped = false;
   let sending = Promise.resolve();
-  const shouldForward = progressTracker();
-  const onEvent = (event: string, data: unknown): void => {
-    if (stopped || event !== "progress" || !isOperationProgress(data)) return;
-    if (!shouldForward(data)) return;
+  const forwarder = new McpProgressForwarder((progress) => {
     sending = sending
       .then(() =>
         extra.sendNotification({
           method: "notifications/progress",
           params: {
             progressToken: token,
-            progress: data.current,
-            total: data.total,
-            message: progressMessage(data),
+            progress: progress.current,
+            total: progress.total,
+            message: progressMessage(progress),
           },
         })
       )
       .catch(() => undefined);
+  });
+  const onEvent = (event: string, data: unknown): void => {
+    if (stopped || event !== "progress" || !isOperationProgress(data)) return;
+    forwarder.offer(data);
   };
   try {
     return await request(method, args, { signal, onEvent });
   } finally {
     stopped = true;
+    forwarder.finish();
     await sending;
   }
 }
 
-/** Scenario/perf matrices restart `current` for each profile, so dedupe within a stream identity. */
-export function progressTracker(): (progress: OperationProgress) => boolean {
-  const last = new Map<string, number>();
-  return (progress) => {
-    const key = `${progress.kind}\0${progress.profile ?? ""}\0${progress.total}`;
-    const previous = last.get(key);
-    if (previous !== undefined && progress.current < previous) return false;
-    last.set(key, progress.current);
-    return true;
+/** Keep tool image content on the same bounded path as screenshot resources. */
+export async function mcpImageContent(path: string): Promise<{ type: "image"; mimeType: "image/png"; data: string }> {
+  const png = await readBoundedFile(path, MCP_SCREENSHOT_MAX_BYTES);
+  return {
+    type: "image",
+    mimeType: "image/png",
+    data: png.toString("base64"),
   };
 }
 

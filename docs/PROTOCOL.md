@@ -28,7 +28,9 @@ only aborts that request. Reusing an in-flight request ID is a connection-level 
 and closes the connection without a second terminal response. `watch` is a server-pushed stream
 (`frame` and `exit` events); the CLI no longer polls `observe`. `wait`, `inputAndWait`, `scenario`,
 `perf` and `replay` use `progress` events with `{kind,profile?,current,total,elapsedMs}`. Progress is
-throttled, bounded to 100 notifications per operation, and only emitted from real state changes.
+only emitted from real operation progress. `wait`, `inputAndWait` and `replay` are throttled and
+capped at 100 daemon events; `scenario` and `perf` report each step/round, and the MCP adapter
+coalesces forwarded notifications to at most 100 per tool call.
 
 ## Exact targeting
 

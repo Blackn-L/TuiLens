@@ -27,7 +27,8 @@ CLI 使用 `--json`、`--file` 或 `--stdin`；MCP 接收相同对象。
 请求 ID 属于连接级协议错误，服务端会关闭连接且不会再发送第二个终态响应。`watch` 由服务端主动
 推送 `frame`/`exit` 事件，CLI 不再轮询 `observe`；`wait`、`inputAndWait`、`scenario`、`perf`
 和 `replay` 通过 `progress` 事件推送 `{kind,profile?,current,total,elapsedMs}`。进度经过节流，
-每个操作最多 100 条通知，且只来源于真实状态推进。
+且只来源于真实操作进度。`wait`、`inputAndWait` 和 `replay` 的 daemon 事件最多 100 条；
+`scenario`/`perf` 按 step/round 上报，MCP 转发层会把单个工具调用的通知合并到最多 100 条。
 
 ## 精确定位
 

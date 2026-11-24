@@ -10,7 +10,7 @@ import type { Observation, SessionInfo } from "../core/types.js";
 import { isDaemonUnavailable, request } from "../transport/client.js";
 import { runtimePaths } from "../transport/paths.js";
 
-const SCREENSHOT_MAX_BYTES = 32 * 1024 * 1024;
+export const MCP_SCREENSHOT_MAX_BYTES = 32 * 1024 * 1024;
 const ARTIFACT_MAX_BYTES = 16 * 1024 * 1024;
 const MAX_ARTIFACT_RESOURCES = 256;
 const MAX_ARTIFACT_ENTRIES = 1024;
@@ -67,12 +67,12 @@ export function registerMcpResources(server: McpServer, options: McpResourceOpti
       ),
       mimeType: "application/json",
     },
-    async (uri) => ({
+    async (uri, extra) => ({
       contents: [
         {
           uri: uri.toString(),
           mimeType: "application/json",
-          text: JSON.stringify(await safeSessions(), null, 2),
+          text: JSON.stringify(await safeSessions(extra.signal), null, 2),
         },
       ],
     })
@@ -85,8 +85,8 @@ export function registerMcpResources(server: McpServer, options: McpResourceOpti
     zh: string
   ): ResourceTemplate =>
     new ResourceTemplate(`tuilens://sessions/{id}/${kind}`, {
-      list: async () => ({
-        resources: (await safeSessions()).map((session) => ({
+      list: async (extra) => ({
+        resources: (await safeSessions(extra.signal)).map((session) => ({
           uri: `tuilens://sessions/${session.id}/${kind}`,
           name: `${session.id}-${kind}`,
           description: `${description(en, zh)}: ${session.id}`,
@@ -106,11 +106,11 @@ export function registerMcpResources(server: McpServer, options: McpResourceOpti
       ),
       mimeType: "text/plain",
     },
-    async (uri, variables) => {
+    async (uri, variables, extra) => {
       const observation = await request(
         "observe",
         { id: sessionId(variables.id), view: "compact", screenshot: false },
-        { autoStart: false }
+        { autoStart: false, signal: extra.signal }
       );
       return {
         contents: [
@@ -135,14 +135,14 @@ export function registerMcpResources(server: McpServer, options: McpResourceOpti
       ),
       mimeType: "image/png",
     },
-    async (uri, variables) => {
+    async (uri, variables, extra) => {
       const observation = (await request(
         "observe",
         { id: sessionId(variables.id), view: "compact", screenshot: true },
-        { autoStart: false }
+        { autoStart: false, signal: extra.signal }
       )) as Observation;
       if (!observation.screenshot) throw new TuiLensError("SCREENSHOT_FAILED", "截图资源未生成 PNG");
-      const image = await readBoundedFile(observation.screenshot.path, SCREENSHOT_MAX_BYTES);
+      const image = await readBoundedFile(observation.screenshot.path, MCP_SCREENSHOT_MAX_BYTES);
       return {
         contents: [
           {
@@ -166,13 +166,13 @@ export function registerMcpResources(server: McpServer, options: McpResourceOpti
       ),
       mimeType: "application/json",
     },
-    async (uri, variables) => ({
+    async (uri, variables, extra) => ({
       contents: [
         {
           uri: uri.toString(),
           mimeType: "application/json",
           text: JSON.stringify(
-            await request("metrics", { id: sessionId(variables.id) }, { autoStart: false }),
+            await request("metrics", { id: sessionId(variables.id) }, { autoStart: false, signal: extra.signal }),
             null,
             2
           ),
@@ -193,9 +193,11 @@ export function registerMcpResources(server: McpServer, options: McpResourceOpti
         "读取 artifact 目录内的报告、差异图、截图或录制；读取上限 16 MiB。"
       ),
     },
-    async (uri, variables) => {
+    async (uri, variables, extra) => {
       if (typeof variables.name !== "string") throw new TuiLensError("INVALID_ARGUMENT", "artifact 名称不能为空");
+      if (extra.signal.aborted) throw new TuiLensError("ABORTED", "资源读取已取消");
       const artifact = await readArtifactResource(variables.name, artifactDir);
+      if (extra.signal.aborted) throw new TuiLensError("ABORTED", "资源读取已取消");
       return {
         contents: [
           {
@@ -307,9 +309,9 @@ export function registerMcpPrompts(server: McpServer): void {
   );
 }
 
-async function safeSessions(): Promise<ReturnType<typeof safeSession>[]> {
+async function safeSessions(signal?: AbortSignal): Promise<ReturnType<typeof safeSession>[]> {
   try {
-    const sessions = (await request("list", {}, { autoStart: false })) as SessionInfo[];
+    const sessions = (await request("list", {}, { autoStart: false, ...(signal ? { signal } : {}) })) as SessionInfo[];
     return sessions.map(safeSession);
   } catch (error) {
     if (isDaemonUnavailable(error)) return [];
@@ -411,8 +413,8 @@ async function listArtifacts(artifactDir: string): Promise<
   try {
     let scanned = 0;
     for await (const entry of directory) {
+      if (scanned >= MAX_ARTIFACT_ENTRIES) break;
       scanned += 1;
-      if (scanned > MAX_ARTIFACT_ENTRIES) break;
       if (!entry.isFile()) continue;
       resources.push({
         uri: `tuilens://artifacts/${encodeURIComponent(entry.name)}`,

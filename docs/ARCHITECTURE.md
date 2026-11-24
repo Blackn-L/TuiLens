@@ -110,8 +110,10 @@ Output batches contain at most 32K UTF-16 units without splitting surrogate pair
 8 MiB of queued output pauses PTY reading; below 4 MiB resumes; over 16 MiB is a visible error.
 Recording files have explicit byte limits. Replay, PNG reads and image placement metadata also have independent limits.
 The visual replay ring is capped at 4 MiB and 8192 whole output/resize events.
-MCP resource reads cap screenshots at 32 MiB and artifacts at 16 MiB; artifact listings stop at 256
-entries. Long-task progress is throttled and capped at 100 notifications per operation.
+MCP resource reads and tool image content cap screenshots at 32 MiB and artifacts at 16 MiB; artifact
+listings scan at most 1024 directory entries and return at most 256 resources. `wait`, `inputAndWait`
+and `replay` throttle daemon progress to 100 events; `scenario`/`perf` emit per step/round, and the
+MCP adapter coalesces forwarded notifications to 100 per tool call.
 See [images](IMAGES.md), [recording](RECORDING.md), and [visual testing](VISUAL.md).
 
 Windows uses named pipes; Linux uses abstract Unix sockets. A local token authenticates requests.

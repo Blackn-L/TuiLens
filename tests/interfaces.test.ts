@@ -10,9 +10,10 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { Observation, SessionInfo } from "../src/core/types.js";
-import { progressTracker } from "../src/interfaces/mcp.js";
+import { mcpImageContent } from "../src/interfaces/mcp.js";
 import { buildMcpConfig, MCP_CONFIG_CLIENTS, MCP_CONFIG_MODES } from "../src/interfaces/mcp-config.js";
-import { readArtifactResource } from "../src/interfaces/mcp-resources.js";
+import { McpProgressForwarder } from "../src/interfaces/mcp-progress.js";
+import { MCP_SCREENSHOT_MAX_BYTES, readArtifactResource } from "../src/interfaces/mcp-resources.js";
 import { VERSION } from "../src/version.js";
 
 const run = promisify(execFile);
@@ -436,15 +437,30 @@ test("mcp-config 覆盖所有客户端与启动模式并输出可粘贴格式", 
   assert.throws(() => buildMcpConfig({ client: "unknown" }), { code: "INVALID_ARGUMENT" });
   assert.throws(() => buildMcpConfig({ mode: "unknown" }), { code: "INVALID_ARGUMENT" });
 
-  const cliResult = await run(process.execPath, [cli, "mcp-config", "--client", "codex", "--mode", "global"], {
-    maxBuffer: 1024 * 1024,
-  });
-  assert.match(cliResult.stdout, /^\[mcp_servers\.tuilens\]\n/u);
-  assert.doesNotMatch(cliResult.stdout, /^\{/u);
+  const cliCases = [
+    { client: "json", mode: "absolute", pattern: /^\{/u },
+    { client: "codex", mode: "global", pattern: /^\[mcp_servers\.tuilens\]\n/u },
+    {
+      client: "claude-code",
+      mode: "npx",
+      pattern: /^claude mcp add --scope user tuilens -- npx -y tuilens mcp\n?$/u,
+    },
+  ];
+  for (const item of cliCases) {
+    const result = await run(process.execPath, [cli, "mcp-config", "--client", item.client, "--mode", item.mode], {
+      maxBuffer: 1024 * 1024,
+    });
+    assert.match(result.stdout, item.pattern);
+  }
 });
 
-test("MCP 进度去重按 profile 重新计数而不丢弃矩阵后续 profile", () => {
-  const shouldForward = progressTracker();
+test("MCP 进度转发按 profile 去重、节流且有上限", () => {
+  let now = 0;
+  const sent: { profile: string | undefined; current: number }[] = [];
+  const forwarder = new McpProgressForwarder(
+    (progress) => sent.push({ profile: progress.profile, current: progress.current }),
+    () => now
+  );
   const event = (profile: string, current: number) => ({
     kind: "scenario" as const,
     profile,
@@ -452,11 +468,46 @@ test("MCP 进度去重按 profile 重新计数而不丢弃矩阵后续 profile",
     total: 2,
     elapsedMs: current * 10,
   });
-  assert.equal(shouldForward(event("headless", 1)), true);
-  assert.equal(shouldForward(event("headless", 2)), true);
-  assert.equal(shouldForward(event("headless", 1)), false);
-  assert.equal(shouldForward(event("dom", 1)), true);
-  assert.equal(shouldForward(event("dom", 2)), true);
+  forwarder.offer(event("headless", 1));
+  now = 200;
+  forwarder.offer(event("headless", 2));
+  now = 400;
+  forwarder.offer(event("dom", 1));
+  now = 600;
+  forwarder.offer(event("dom", 2));
+  now = 800;
+  forwarder.offer(event("headless", 1));
+  forwarder.finish();
+  assert.deepEqual(sent, [
+    { profile: "headless", current: 1 },
+    { profile: "headless", current: 2 },
+    { profile: "dom", current: 1 },
+    { profile: "dom", current: 2 },
+  ]);
+
+  const capped: number[] = [];
+  const cappedForwarder = new McpProgressForwarder(
+    (progress) => capped.push(progress.current),
+    () => {
+      now += 1000;
+      return now;
+    }
+  );
+  for (let current = 1; current <= 500; current += 1) {
+    cappedForwarder.offer({
+      kind: "perf",
+      current,
+      total: 500,
+      elapsedMs: current,
+    });
+  }
+  cappedForwarder.finish();
+  assert.equal(capped.length, 100);
+  assert.deepEqual(
+    capped.slice(0, 99),
+    Array.from({ length: 99 }, (_, index) => index + 1)
+  );
+  assert.equal(capped.at(-1), 500);
 });
 
 test("artifact 资源拒绝路径穿越、符号链接和超限文件", async (t) => {
@@ -501,6 +552,10 @@ test("artifact 资源拒绝路径穿越、符号链接和超限文件", async (t
     await writeFile(join(artifacts, "large.txt"), "");
     await truncate(join(artifacts, "large.txt"), 16 * 1024 * 1024 + 1);
     await assert.rejects(readArtifactResource("large.txt", artifacts), { code: "FILE_LIMIT" });
+    const largeImage = join(artifacts, "large.png");
+    await writeFile(largeImage, "");
+    await truncate(largeImage, MCP_SCREENSHOT_MAX_BYTES + 1);
+    await assert.rejects(mcpImageContent(largeImage), { code: "FILE_LIMIT" });
   } finally {
     await rm(root, { recursive: true, force: true });
     await rm(outside, { recursive: true, force: true });
