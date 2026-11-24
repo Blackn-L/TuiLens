@@ -22,6 +22,15 @@ function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code;
 }
 
+export async function sleepWithSignal(delayMs: number, signal?: AbortSignal): Promise<void> {
+  try {
+    await sleep(delayMs, undefined, signal ? { signal } : {});
+  } catch (error) {
+    if (signal?.aborted) throw new TuiLensError("ABORTED", "操作已取消");
+    throw error;
+  }
+}
+
 /** 缺失状态文件、拒绝连接或端点提前关闭都表示没有可控制的本机服务。 */
 export function isDaemonUnavailable(error: unknown): boolean {
   const code = errorCode(error);
@@ -31,6 +40,7 @@ export function isDaemonUnavailable(error: unknown): boolean {
     code === "ENOENT" ||
     code === "ECONNREFUSED" ||
     code === "ECONNRESET" ||
+    code === "EPIPE" ||
     code === "ENOTSOCK"
   );
 }
@@ -149,7 +159,7 @@ async function withCleanupLock<T>(path: string, signal: AbortSignal | undefined,
         const stale = await readLockState(path);
         // 给其他清理者让出窗口，再按 token 复核，避免删除刚建立的新清理锁。
         try {
-          await sleep(10, signal ? { signal } : {});
+          await sleepWithSignal(10, signal);
         } catch {
           throw new TuiLensError("ABORTED", "操作已取消");
         }
@@ -166,7 +176,7 @@ async function withCleanupLock<T>(path: string, signal: AbortSignal | undefined,
         throw new TuiLensError("DAEMON_START_FAILED", `等待本机服务清理锁超时，请查看 ${path}`);
       }
       try {
-        await sleep(CLEANUP_LOCK_POLL_MS, signal ? { signal } : {});
+        await sleepWithSignal(CLEANUP_LOCK_POLL_MS, signal);
       } catch {
         throw new TuiLensError("ABORTED", "操作已取消");
       }
@@ -222,7 +232,7 @@ async function withStartLock<T>(
         throw new TuiLensError("DAEMON_START_FAILED", `等待本机服务启动锁超时，请查看 ${paths.log}`);
       }
       try {
-        await sleep(START_LOCK_POLL_MS, signal ? { signal } : {});
+        await sleepWithSignal(START_LOCK_POLL_MS, signal);
       } catch {
         throw new TuiLensError("ABORTED", "操作已取消");
       }
@@ -367,7 +377,7 @@ export async function request(
               if (errorCode(pingError) !== "SHUTTING_DOWN" && isDaemonUnavailable(pingError)) break;
             }
             try {
-              await sleep(50, options.signal ? { signal: options.signal } : {});
+              await sleepWithSignal(50, options.signal);
             } catch {
               throw new TuiLensError("ABORTED", "操作已取消");
             }
@@ -396,7 +406,7 @@ export async function request(
         if (options.signal?.aborted) throw new TuiLensError("ABORTED", "操作已取消");
         if (launchError) throw new TuiLensError("DAEMON_START_FAILED", launchError.message);
         try {
-          await sleep(START_RETRY_MS, options.signal ? { signal: options.signal } : {});
+          await sleepWithSignal(START_RETRY_MS, options.signal);
         } catch {
           throw new TuiLensError("ABORTED", "操作已取消");
         }
@@ -417,7 +427,7 @@ export async function request(
   } catch (error) {
     if (options.signal?.aborted) throw error;
     if (options.autoStart === false) {
-      if (isStartableFailure(error)) throw unavailable(error);
+      if (isDaemonUnavailable(error) || errorCode(error) === "SHUTTING_DOWN") throw unavailable(error);
       throw error;
     }
     if (!isStartableFailure(error)) throw error;

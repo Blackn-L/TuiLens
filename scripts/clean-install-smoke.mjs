@@ -81,7 +81,6 @@ try {
     env: {
       ...process.env,
       TUILENS_HOME: home,
-      TUILENS_BROWSER_PATH: process.execPath,
       TUILENS_LANG: "en",
     },
   });

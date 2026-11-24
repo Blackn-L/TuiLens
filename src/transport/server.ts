@@ -9,6 +9,7 @@ import { runtimePaths } from "./paths.js";
 
 const requestSchema = z.object({ token: z.string(), method: z.string(), params: z.unknown() }).strict();
 const MAX_REQUEST = 1024 * 1024;
+const DEFAULT_HANDSHAKE_TIMEOUT_MS = 15_000;
 
 function tokenMatches(actual: string, expected: string): boolean {
   const left = Buffer.from(actual);
@@ -75,6 +76,11 @@ export async function serve(): Promise<void> {
   await mkdir(paths.home, { recursive: true, mode: 0o700 });
   const token = randomBytes(32).toString("hex");
   const ipcTimeout = Number(process.env.TUILENS_IPC_TIMEOUT_MS);
+  const configuredHandshakeTimeout = Number(process.env.TUILENS_IPC_HANDSHAKE_TIMEOUT_MS);
+  const handshakeTimeout =
+    Number.isFinite(configuredHandshakeTimeout) && configuredHandshakeTimeout > 0
+      ? configuredHandshakeTimeout
+      : DEFAULT_HANDSHAKE_TIMEOUT_MS;
   const configuredLimit = Number(process.env.TUILENS_MAX_SESSIONS);
   const manager = new SessionManager({
     artifactDir: paths.artifactDir,
@@ -92,12 +98,13 @@ export async function serve(): Promise<void> {
     const abort = new AbortController();
     let buffer = Buffer.alloc(0);
     let received = false;
+    const handshakeTimer = setTimeout(() => socket.destroy(), handshakeTimeout);
     socket.on("error", () => abort.abort());
     socket.on("close", () => {
+      clearTimeout(handshakeTimer);
       abort.abort();
       connections.delete(socket);
     });
-    if (Number.isFinite(ipcTimeout) && ipcTimeout > 0) socket.setTimeout(ipcTimeout, () => socket.destroy());
     socket.on("data", (data: Buffer) => {
       if (received) return;
       buffer = Buffer.concat([buffer, data]);
@@ -108,6 +115,8 @@ export async function serve(): Promise<void> {
       const end = buffer.indexOf(10);
       if (end < 0) return;
       received = true;
+      clearTimeout(handshakeTimer);
+      if (Number.isFinite(ipcTimeout) && ipcTimeout > 0) socket.setTimeout(ipcTimeout, () => socket.destroy());
       void (async () => {
         let shutdownRequested = false;
         try {

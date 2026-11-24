@@ -18,7 +18,9 @@ npm run smoke:install
 ```
 
 `smoke:install` builds, packs, installs the tarball into a clean temporary project, imports the SDK and
-runs `tuilens --version`. The local coverage gate is 70% lines, 65% branches and 70% functions.
+runs `tuilens --version` and `tuilens doctor`. It requires a real Playwright Chromium installation so the
+doctor browser check resolves the packaged `playwright-core` path; the CI `package-smoke` job installs
+Chromium before running it. The local coverage gate is 70% lines, 65% branches and 70% functions.
 
 ## Version and tag
 
