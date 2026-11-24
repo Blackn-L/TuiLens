@@ -55,7 +55,7 @@ and one style run-length stream. Unpacking validates row count, cell count and s
 raises `INVALID_SNAPSHOT` rather than silently filling defaults.
 
 `cells:false` skips packing entirely. Callers that only need text, size, cursor or a screenshot use it;
-`observe` over CLI/MCP does so unless `includeCells` is requested.
+`observe` over CLI/MCP requests cells only for `view:"cells"`.
 
 ## Engine boundary
 
@@ -91,7 +91,9 @@ See [performance](PERFORMANCE.md), [images](IMAGES.md) and [roadmap](ROADMAP.md)
 - `doctor` stays local and does not start the daemon. `ping` exposes uptime and live session counts; `shutdown` is idempotent when no daemon is running.
 - Exited sessions remain observable at normal capacity. A new launch under capacity pressure reclaims the oldest
   exited sessions before reporting `SESSION_LIMIT`; explicit `close` still releases them immediately.
-- `observe.compact` keeps line count, trims line ends, omits cells and defaults to no screenshot. Regional text/style waits use the engine-side `probeText` path.
+- `observe` defaults to `view:"compact"`; `full` omits cells without trimming, `cells` returns the grid,
+  and `diff` compares against one of 16 bounded lightweight frames. Screenshots are opt-in for every view.
+  Regional text/style waits use the engine-side `probeText` path.
 - `snapshot.render` records renderer, font/grid metrics, a timing-independent fingerprint and the latest `paintMs`; `probe` compares fixed glyph widths.
 - A configured font file is read with a byte limit, embedded as a `FontFace` before xterm starts, and represented by a SHA-256 prefix in `snapshot.render`; `unicode-range`-scoped symbol faces cover circled numerals without changing primary font selection.
 - `TUILENS_PTY_WORKER=1` moves `node-pty` into a per-session child process. The default fast path remains in-process; neither mode is a sandbox.

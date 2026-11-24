@@ -205,9 +205,12 @@ A requested screenshot uses a separate bounded capture budget, so a successful w
 
 A cursor condition can combine `x`, `y`, `visible`, `style` and `blink` with AND semantics.
 `observe`/`compare` accept `cursor: "hide"` (default) or `"show"`; snapshots always include cursor metadata.
-`observe` also accepts `compact:true`: line endings are trimmed, cells are omitted, and no PNG is captured
-unless `screenshot:true` is explicit. Regional text/style waits are evaluated in the engine before a light
-observation is returned.
+`observe.view` is one of `compact`, `full`, `cells` or `diff` (default `compact`). `compact` trims line
+ends and omits cells, `full` skips compact trimming while omitting cells, and `cells` includes the terminal grid.
+`diff` requires `fromFrameId` and returns `diff.changedLines`, `diff.changedRegion` and cursor/mode/resize
+flags while omitting the full snapshot text. Frames older than the retained 16-frame ring fall back to a
+compact full observation with `diff.fallbackFull:true`. Screenshots require `screenshot:true` for every view.
+Regional text/style waits are evaluated in the engine before a light observation is returned.
 
 ## Automatic terminal replies
 

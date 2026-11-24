@@ -23,7 +23,7 @@ New coverage includes timely/late terminal replies, split queries, suppress poli
 clickText hit areas, one-shot inputAndWait confirmation, cursor metadata, hidden screenshot cursors,
 pending-frame click targeting with real PTY input, page/top/bottom scroll encoding,
 PNG grid dimensions after resize, doctor checks for runtime/browser/PTY/storage/daemon state,
-idempotent daemon shutdown, compact observations, engine-side regional probes, MCP progress/cancellation,
+idempotent daemon shutdown, declarative compact/full/cells/diff observations, engine-side regional probes, MCP progress/cancellation,
 optional PTY workers, fixed-glyph rendering probes and JSONL watch. MCP launch is exercised with `colorMode:"truecolor"`.
 
 Inspect captures in `artifacts/engine/`, `artifacts/images/`, and `artifacts/visual/` for glyphs, colors and clipping.

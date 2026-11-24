@@ -60,13 +60,13 @@ export async function dispatch(
     }
     case "observe": {
       const args = result.data as Params<"observe">;
-      // 未请求字符格时在引擎侧就不构造网格，而不是传完整网格后再剥离。
+      const view = args.view ?? "compact";
       return presentObservation(
         await manager.observe(
           args.id,
           {
-            cells: args.includeCells === true,
-            ...(args.compact === undefined ? {} : { compact: args.compact }),
+            view,
+            ...(args.fromFrameId === undefined ? {} : { fromFrameId: args.fromFrameId }),
             ...(args.screenshot === undefined ? {} : { screenshot: args.screenshot }),
             ...(args.region ? { region: args.region } : {}),
             ...(args.scrollback === undefined ? {} : { scrollback: args.scrollback }),
@@ -74,7 +74,7 @@ export async function dispatch(
           },
           { signal }
         ),
-        args.includeCells ?? false
+        view === "cells"
       );
     }
     case "watch": {
@@ -83,9 +83,7 @@ export async function dispatch(
         args.id,
         args.intervalMs,
         { signal },
-        (event, data) => {
-          emit(event, event === "frame" ? presentObservation(data as Observation, false) : data);
-        },
+        (event, data) => emit(event, event === "frame" ? presentObservation(data as Observation, false) : data),
         args.timeoutMs
       );
     }
@@ -168,7 +166,7 @@ export async function dispatch(
   }
 }
 
-/** 默认只回传可读画面；数千字符格可按需请求，完整证据仍保存在 JSON 文件。 */
+/** Omit cell arrays from every view except explicit cells observations. */
 function presentObservation(observation: Observation, includeCells: boolean) {
   if (includeCells) return observation;
   const { cells: _cells, ...snapshot } = observation.snapshot;

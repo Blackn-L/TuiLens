@@ -38,8 +38,8 @@ test("真实终端：区域截图、比较、精确定位、过期保护、输�
     assert.equal(matches[0]?.region.x, 6);
     await manager.clickText(session.id, "Run", undefined, { nth: 1 });
     const region = { x: 0, y: 0, width: 15, height: 4 };
-    const before = await manager.observe(session.id, { region });
-    const full = await manager.observe(session.id);
+    const before = await manager.observe(session.id, { screenshot: true, region });
+    const full = await manager.observe(session.id, { screenshot: true });
     assert.ok(before.screenshot!.width < full.screenshot!.width);
     assert.ok(before.screenshot!.height < full.screenshot!.height);
     assert.equal((await manager.compare(session.id, { baseline: before.screenshot!.path, region })).pass, true);
@@ -169,12 +169,12 @@ tick();
   try {
     const session = await manager.launch({ command: process.execPath, args: script, cols: 40, rows: 6 });
     await manager.wait(session.id, { conditions: [{ kind: "text", text: "SCROLL_DONE" }], timeoutMs: 30000 });
-    const view = await manager.observe(session.id, { screenshot: false, cells: false });
+    const view = await manager.observe(session.id, { view: "compact", screenshot: false });
     // 早期内容已经离开视口。
     assert.equal(view.snapshot.text.includes("HISTORY_1"), false);
     const withHistory = await manager.observe(session.id, {
+      view: "compact",
       screenshot: false,
-      cells: false,
       scrollback: 200,
     });
     assert.ok(withHistory.snapshot.scrollback);
@@ -183,7 +183,7 @@ tick();
     const joined = withHistory.snapshot.scrollback!.join("\n");
     assert.ok(joined.indexOf("HISTORY_1") < joined.indexOf("HISTORY_50"));
     // 请求行数少于可用行数时不应被标记为截断。
-    const small = await manager.observe(session.id, { screenshot: false, cells: false, scrollback: 5 });
+    const small = await manager.observe(session.id, { view: "compact", screenshot: false, scrollback: 5 });
     assert.equal(small.snapshot.scrollback!.length, 5);
     assert.equal(small.snapshot.scrollbackTruncated, undefined);
   } finally {

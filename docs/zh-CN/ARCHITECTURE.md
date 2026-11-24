@@ -70,7 +70,8 @@ TuiLens 提供面向 Agent 的终端运行环境。会话默认使用零浏览�
 23. inputAndWait 发送一次输入后等待可观测条件，不自动重发；超时保留已接收证据。
 24. `doctor` 只做本地诊断，不启动 daemon；`ping` 返回运行时长和活动会话计数；
     没有 daemon 时 `shutdown` 幂等成功。
-25. `observe.compact` 保留行数但裁剪行尾、省略字符格并默认不截图；区域文本/样式等待走引擎侧
+25. `observe` 默认 `view:"compact"`；`full` 不裁剪文本但不含字符格，`cells` 返回完整字符格，
+    `diff` 与 16 帧有界轻量缓存之一比较。所有视图默认不截图。区域文本/样式等待走引擎侧
     `probeText`，不在未命中时传输整屏网格。
 26. `snapshot.render` 记录绘制后端、字体/网格度量、与时间无关的指纹和最近一次 `paintMs`；
     `probe` 用固定字形样本比较实际落格宽度和圈码字阶。字体文件有大小上限，在 xterm 启动前

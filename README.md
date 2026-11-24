@@ -29,7 +29,7 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 - **Keyboard protocols:** traditional xterm encoding plus Kitty keyboard protocol (`CSI u`) and `modifyOtherKeys`, so `Shift+Enter`, `Ctrl+Enter` and `Ctrl+Space` reach applications that negotiate them.
 - **Terminal profiles:** declarative presets or JSON-derived profiles control `TERM`, DA1/DA2/XTVERSION and Kitty query replies, image protocols, keyboard capability metadata and scrollback. Scenario/perf runs can compare a matrix of profiles.
 - **Scrollback assertions:** `observe.scrollback` returns history lines above the viewport, so content that scrolled away can still be asserted.
-- **Compact observation:** `observe --compact` trims line ends, omits cells and defaults to no screenshot; `watch` streams changed frames as JSONL, with `--control` as an explicit TTY handoff.
+- **Declarative observation:** `observe --view compact|full|cells|diff` selects the payload shape; `diff --from-frame` returns only changed lines and metadata. Screenshots are opt-in, and `watch` streams compact frames as JSONL.
 - **Engine-side probes:** regional text/style waits are evaluated in `TerminalCore`; no browser or full-grid transfer is needed before a match.
 - **Terminal reply guard:** late or unmatched DA1/DA2, CPR/DSR and related automatic replies are dropped by default; `suppress` preserves ordinary input.
 - **Scenario runner:** declarative steps with failure screenshots, reports, and automatic session cleanup.
@@ -188,12 +188,15 @@ silently claiming WebGL. A session can start as `headless` and report `dom` afte
 `visualSyncDegraded` is set if the bounded replay window discarded history needed to reconstruct the screen.
 
 ```sh
-node dist/src/interfaces/cli.js observe SESSION_ID --region 0,0,40,10
+node dist/src/interfaces/cli.js observe SESSION_ID --screenshot --region 0,0,40,10
+node dist/src/interfaces/cli.js observe SESSION_ID --view cells
+node dist/src/interfaces/cli.js observe SESSION_ID --view diff --from-frame 42
 node dist/src/interfaces/cli.js compare SESSION_ID --baseline baseline.png --region 0,0,40,10
 ```
 
 A screenshot and its state share a `frameId`. Region capture crops the PNG; terminal state still describes
-the full viewport. `--cells` includes the full cell grid in CLI output. Complete capture metadata is also saved locally.
+the full viewport. `compact` is the default; `full` skips compact line trimming, `cells` adds the full cell grid,
+and `diff` compares against one of the retained 16 lightweight frame snapshots. Complete capture metadata is also saved locally.
 Baselines are read-only: accept a new baseline explicitly by copying a reviewed screenshot.
 Comparison masks use **PNG pixels**, not character cells. Fix fonts, browser version and grid dimensions for reproducible diffs.
 

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { IPty } from "node-pty";
-import { ManagedSession, type SessionEvent } from "../src/session/session.js";
+import { ManagedSession, MAX_FRAME_HISTORY, type SessionEvent } from "../src/session/session.js";
 import { SessionManager } from "../src/session/manager.js";
 import { ProtocolReplyGuard } from "../src/session/protocol-replies.js";
 import { TuiLensError } from "../src/core/errors.js";
@@ -114,7 +114,7 @@ test("观察屏障保证截图期间的新输出不会混入同帧状态", async
   const f = fixture(engine, directory);
   try {
     f.emit("BEFORE");
-    const observation = f.session.observe();
+    const observation = f.session.observe({ screenshot: true });
     await started.promise;
     f.emit("AFTER");
     finish.resolve();
@@ -307,11 +307,81 @@ test("compact 观察裁剪行尾并省略字符格与默认截图", async () => 
   const f = fixture(memory.engine, tmpdir());
   try {
     f.emit("TRAILING   \nNEXT\t ");
-    const observed = await f.session.observe({ compact: true });
+    const observed = await f.session.observe({ view: "compact" });
     assert.equal(observed.snapshot.text, "TRAILING\nNEXT");
     assert.deepEqual(observed.snapshot.lines.slice(0, 2), ["TRAILING", "NEXT"]);
     assert.deepEqual(observed.snapshot.cells, []);
     assert.equal(observed.screenshot, null);
+  } finally {
+    await f.session.close();
+  }
+});
+
+test("observe view 区分 compact、full、cells，截图默认关闭", async () => {
+  const memory = memoryEngine();
+  const f = fixture(memory.engine, tmpdir());
+  try {
+    f.emit("VALUE   \nTAIL");
+    const compact = await f.session.observe({ view: "compact" });
+    assert.equal(compact.snapshot.lines[0], "VALUE");
+    assert.deepEqual(compact.snapshot.cells, []);
+    assert.equal(compact.screenshot, null);
+
+    const full = await f.session.observe({ view: "full" });
+    assert.equal(full.snapshot.lines[0], "VALUE   ");
+    assert.deepEqual(full.snapshot.cells, []);
+    assert.equal(full.screenshot, null);
+
+    const cells = await f.session.observe({ view: "cells" });
+    assert.equal(cells.snapshot.lines[0], "VALUE   ");
+    assert.ok(cells.snapshot.cells.length > 0);
+    assert.equal(cells.screenshot, null);
+
+    const defaults = await f.session.observe();
+    assert.equal(defaults.snapshot.lines[0], "VALUE");
+    assert.deepEqual(defaults.snapshot.cells, []);
+    assert.equal(defaults.screenshot, null);
+  } finally {
+    await f.session.close();
+  }
+});
+
+test("observe view=diff 返回变化行并省略整屏文本", async () => {
+  const memory = memoryEngine();
+  const f = fixture(memory.engine, tmpdir());
+  try {
+    f.emit("first");
+    const base = await f.session.observe({ view: "compact" });
+    f.emit("\nsecond");
+    const diff = await f.session.observe({ view: "diff", fromFrameId: base.snapshot.frameId });
+    assert.ok(diff.diff);
+    assert.equal(diff.diff.omittedSnapshotText, true);
+    assert.equal(diff.diff.fallbackFull, undefined);
+    assert.equal(diff.snapshot.text, "");
+    assert.deepEqual(diff.snapshot.lines, []);
+    assert.ok(diff.diff.changedLines.length > 0);
+    assert.equal(diff.screenshot, null);
+
+    const unchanged = await f.session.observe({ view: "diff", fromFrameId: diff.snapshot.frameId });
+    assert.equal(unchanged.diff?.unchanged, true);
+  } finally {
+    await f.session.close();
+  }
+});
+
+test("view=diff 缺少 fromFrameId 或历史被淘汰时明确失败/降级", async () => {
+  const memory = memoryEngine();
+  const f = fixture(memory.engine, tmpdir());
+  try {
+    await assert.rejects(f.session.observe({ view: "diff" }), { code: "INVALID_ARGUMENT" });
+    const observations: number[] = [];
+    for (let index = 0; index < MAX_FRAME_HISTORY + 1; index += 1) {
+      f.emit(`FRAME_${index}\n`);
+      observations.push((await f.session.observe({ view: "compact" })).snapshot.frameId);
+    }
+    const fallback = await f.session.observe({ view: "diff", fromFrameId: observations[0]! });
+    assert.equal(fallback.diff?.fallbackFull, true);
+    assert.notEqual(fallback.snapshot.text, "");
   } finally {
     await f.session.close();
   }

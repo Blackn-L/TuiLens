@@ -18,7 +18,7 @@ launch --cwd <path> [--terminal-profile kitty|wezterm|...|<JSON>]
                                      headless is the default; dom/webgl activate Chromium on demand
 launch --json <JSON>                 also accepts --file <path> or --stdin
 list                                 list sessions
-observe <id> [--no-screenshot] [--cells] [--compact] [--show-cursor]  compact omits cells and defaults to no PNG
+observe <id> [--view compact|diff|full|cells] [--from-frame <id>] [--screenshot] [--show-cursor] [--region x,y,w,h]
 type <id> <text>                     send text without submitting
 paste <id> <text>                    use negotiated bracketed paste
 key <id> Enter                       send a key or chord such as Ctrl+a
@@ -72,7 +72,7 @@ launch --cwd <路径> [--terminal-profile kitty|wezterm|...|<JSON>]
                                      默认 headless；dom/webgl 按需激活 Chromium
 launch --json <JSON>                 也可使用 --file <文件> 或 --stdin
 list                                列出会话
-observe <id> [--no-screenshot] [--cells] [--compact] [--show-cursor]  compact 省略字符格且默认不截图
+observe <id> [--view compact|diff|full|cells] [--from-frame <id>] [--screenshot] [--show-cursor] [--region x,y,w,h]
 type <id> <文本>                     输入文本，不自动提交
 paste <id> <文本>                    使用已协商的括号粘贴
 key <id> Enter                      按键或 Ctrl+a 等组合键
@@ -186,9 +186,8 @@ async function main(): Promise<void> {
       env: { type: "string", multiple: true },
       "color-mode": { type: "string" },
       "terminal-profile": { type: "string" },
-      "no-screenshot": { type: "boolean" },
-      cells: { type: "boolean" },
-      compact: { type: "boolean" },
+      view: { type: "string" },
+      "from-frame": { type: "string" },
       text: { type: "string" },
       region: { type: "string" },
       stable: { type: "string" },
@@ -323,9 +322,9 @@ async function main(): Promise<void> {
       case "observe":
         params = {
           id,
-          screenshot: !values["no-screenshot"],
-          includeCells: values.cells ?? false,
-          ...(values.compact ? { compact: true } : {}),
+          view: values.view ?? "compact",
+          ...(values["from-frame"] === undefined ? {} : { fromFrameId: Number(values["from-frame"]) }),
+          ...(values.screenshot ? { screenshot: true } : {}),
           ...(region ? { region } : {}),
           ...(values["show-cursor"] ? { cursor: "show" } : {}),
         };

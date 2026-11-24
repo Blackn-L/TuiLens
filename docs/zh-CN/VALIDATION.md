@@ -27,7 +27,7 @@ npm run smoke:install
 - MCP 使用 `colorMode:"truecolor"` 启动，非法 colorMode 诊断包含收到的值。
 - 光标可见性/样式/闪烁、截图默认隐藏，以及 resize 后 PNG 网格尺寸。
 - `doctor` 的运行时、浏览器、PTY、存储和 daemon 检查，以及 daemon 幂等关闭。
-- `observe --compact`、区域 probeText、MCP 进度/取消、可选 PTY worker、固定字形探针和 JSONL watch。
+- `observe --view compact|full|cells|diff`、区域 probeText、MCP 进度/取消、可选 PTY worker、固定字形探针和 JSONL watch。
 - CLI 与 MCP 的会话、图片返回及断开清理。
 - 并发启动、状态发布失败及服务重启。
 
