@@ -1,7 +1,7 @@
 import { resolveLocale, type Locale } from "../core/i18n.js";
 import type { Method } from "./schemas.js";
 
-export type McpMethod = Exclude<Method, "ping" | "shutdown">;
+export type McpMethod = Exclude<Method, "ping" | "shutdown" | "watch">;
 
 type McpToolDescriptions = Record<McpMethod, string>;
 

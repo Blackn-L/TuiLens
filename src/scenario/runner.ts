@@ -2,7 +2,14 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { errorRecord, TuiLensError } from "../core/errors.js";
-import type { ClickTextOptions, InputAction, LaunchOptions, RendererKind, WaitCondition } from "../core/types.js";
+import type {
+  ClickTextOptions,
+  InputAction,
+  LaunchOptions,
+  ProgressReporter,
+  RendererKind,
+  WaitCondition,
+} from "../core/types.js";
 import type { SessionManager } from "../session/manager.js";
 import { scenarioSchema, type ScenarioSpec } from "./schema.js";
 import type { VisualOptions } from "../visual/artifacts.js";
@@ -32,20 +39,22 @@ export async function runScenario(
   manager: SessionManager,
   specification: unknown,
   directory: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: ProgressReporter
 ): Promise<ScenarioRunResult> {
   const parsed = scenarioSchema.safeParse(specification);
   if (!parsed.success) throw new TuiLensError("INVALID_SCENARIO", "场景格式不合法", parsed.error.issues);
   const spec = parsed.data;
-  if (spec.profiles) return runScenarioMatrix(manager, spec, directory, signal);
-  return runScenarioSingle(manager, spec, directory, signal);
+  if (spec.profiles) return runScenarioMatrix(manager, spec, directory, signal, onProgress);
+  return runScenarioSingle(manager, spec, directory, signal, onProgress);
 }
 
 async function runScenarioMatrix(
   manager: SessionManager,
   spec: ScenarioSpec,
   directory: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: ProgressReporter
 ): Promise<ScenarioMatrixResult> {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const profiles = spec.profiles!;
@@ -53,6 +62,9 @@ async function runScenarioMatrix(
   const runs: ScenarioResult[] = [];
   for (const profile of profiles) {
     if (signal?.aborted) break;
+    const report = onProgress
+      ? (progress: Parameters<ProgressReporter>[0]) => onProgress({ ...progress, profile })
+      : undefined;
     runs.push(
       await runScenarioSingle(
         manager,
@@ -61,7 +73,8 @@ async function runScenarioMatrix(
           launch: { ...base.launch, terminalProfile: profile } as LaunchOptions,
         },
         directory,
-        signal
+        signal,
+        report
       )
     );
   }
@@ -80,7 +93,8 @@ async function runScenarioSingle(
   manager: SessionManager,
   spec: ScenarioSpec,
   directory: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: ProgressReporter
 ): Promise<ScenarioResult> {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const result: ScenarioResult = {
@@ -89,6 +103,7 @@ async function runScenarioSingle(
     steps: [],
   };
   let id: string | undefined;
+  const scenarioStarted = performance.now();
   try {
     if (signal?.aborted) throw new TuiLensError("ABORTED", "场景已取消");
     const launched = await manager.launch(spec.launch as LaunchOptions);
@@ -155,6 +170,13 @@ async function runScenarioSingle(
         throw error;
       } finally {
         record.elapsedMs = performance.now() - started;
+        onProgress?.({
+          kind: "scenario",
+          ...(result.terminalProfile ? { profile: result.terminalProfile } : {}),
+          current: index + 1,
+          total: spec.steps.length,
+          elapsedMs: Math.round(performance.now() - scenarioStarted),
+        });
       }
     }
   } catch (error) {

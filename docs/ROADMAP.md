@@ -78,7 +78,7 @@ Exit: measured budgets exist before any native-engine rewrite is considered.
 
 Exit: tag builds publish reproducibly, install from the packed tarball, and pass the same checks as CI.
 
-### 0.6.0 PR-1 browser-free TerminalCore (in progress)
+### 0.6.0 PR-1 browser-free TerminalCore (landed)
 
 - Make `@xterm/headless` the default parser for text observation, waits, probes and snapshots.
 - Lazy-load the Chromium/xterm.js visual layer for explicit DOM/WebGL, image protocols, screenshots and
@@ -88,6 +88,18 @@ Exit: tag builds publish reproducibly, install from the packed tarball, and pass
 
 Exit: pure-text sessions never start Chromium, lazy screenshots match post-activation updates, and all
 quality gates pass.
+
+### 0.6.0 PR-2 persistent IPC v2 (landed)
+
+- Replace per-request short connections with one authenticated, multiplexed NDJSON connection.
+- Cancel by request ID, bound each connection to 64 in-flight requests, and remove client-side watch
+  polling.
+- Push `frame`, `exit` and real `scenario`/`perf` progress events from server-side bounded
+  subscriptions.
+- Reuse the connection across short-lived CLI calls and unref it when idle so processes exit promptly.
+
+Exit: v2 is the only IPC protocol, watch and long-running work stream server events, and cancellation
+or shutdown leaves no pending requests or live handles.
 
 ## Later
 

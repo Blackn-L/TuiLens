@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { IPty } from "node-pty";
-import { ManagedSession } from "../src/session/session.js";
+import { ManagedSession, type SessionEvent } from "../src/session/session.js";
 import { SessionManager } from "../src/session/manager.js";
 import { ProtocolReplyGuard } from "../src/session/protocol-replies.js";
 import { TuiLensError } from "../src/core/errors.js";
@@ -212,6 +212,49 @@ function memoryEngine() {
     counts: () => ({ snapshots, states, closes }),
   };
 }
+
+test("会话订阅有界、合并并在释放后停止通知", async () => {
+  const memory = memoryEngine();
+  const f = fixture(memory.engine, tmpdir());
+  try {
+    const subscriptions = Array.from({ length: 16 }, () => f.session.subscribe(() => undefined, { coalesceMs: 0 }));
+    assert.throws(() => f.session.subscribe(() => undefined), { code: "SESSION_SUBSCRIBER_LIMIT" });
+    for (const subscription of subscriptions) subscription.dispose();
+    subscriptions[0]!.dispose();
+
+    const events: SessionEvent[] = [];
+    const subscription = f.session.subscribe((event) => events.push(event), { coalesceMs: 20 });
+    f.emit("A");
+    f.emit("B");
+    await new Promise<void>((resolve) => setTimeout(resolve, 60));
+    assert.equal(events.length, 1);
+    assert.equal(events[0]?.type, "frame");
+    subscription.dispose();
+    f.emit("C");
+    await new Promise<void>((resolve) => setTimeout(resolve, 60));
+    assert.equal(events.length, 1);
+  } finally {
+    await f.session.close();
+  }
+});
+
+test("会话退出订阅先处理最后输出，再通知 exit 和退出码", async () => {
+  const memory = memoryEngine();
+  const f = fixture(memory.engine, tmpdir());
+  try {
+    const events: SessionEvent[] = [];
+    f.session.subscribe((event) => events.push(event), { coalesceMs: 0 });
+    f.emit("FINAL_OUTPUT");
+    for (const listener of f.exit) listener({ exitCode: 7 });
+    await f.session.waitForExit({ timeoutMs: 1000 });
+    const exit = events.find((event) => event.type === "exit");
+    assert.ok(exit);
+    assert.equal(exit.exitCode, 7);
+    assert.match(memory.current, /FINAL_OUTPUT/u);
+  } finally {
+    await f.session.close();
+  }
+});
 
 test("同一批输出合并但显式输入保留顺序，并以轻量状态编码", async () => {
   const memory = memoryEngine();

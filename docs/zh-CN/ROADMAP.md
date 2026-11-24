@@ -71,7 +71,7 @@ SIXEL/Kitty 内联图片子集、区域截图与视觉比较、拖拽和修饰�
 
 退出条件：tag 构建可复现发布、能从打包 tarball 安装，并通过与 CI 相同的检查。
 
-### 0.6.0 PR-1 零浏览器 TerminalCore（进行中）
+### 0.6.0 PR-1 零浏览器 TerminalCore（已落地）
 
 - 文本观察、等待、探测与快照默认改用 `@xterm/headless`。
 - Chromium/xterm.js 视觉层按需加载，用于显式 DOM/WebGL、图片协议、截图与视觉比较；
@@ -80,6 +80,15 @@ SIXEL/Kitty 内联图片子集、区域截图与视觉比较、拖拽和修饰�
 - `benchmark:overhead` 对照 `headless`、`dom` 与 `webgl` 的启动和 RSS。
 
 退出条件：纯文本会话不启动 Chromium，懒加载截图与后续更新一致，全部质量门禁通过。
+
+### 0.6.0 PR-2 持久化 IPC v2（已落地）
+
+- 用单一鉴权、多路复用的 NDJSON 长连接替换每次请求短连接。
+- 支持按请求 ID 取消、单连接最多 64 个在途请求，并移除客户端 watch 轮询。
+- 由服务端有界订阅推送 `frame`、`exit` 与真实的 `scenario`/`perf` 进度事件。
+- 短命 CLI 调用复用连接，空闲时 `unref()`，确保进程及时退出。
+
+退出条件：v2 是唯一 IPC 协议，watch 与长任务全部使用服务端事件流，取消或关闭后无残留请求与句柄。
 
 ## 后续
 

@@ -27,6 +27,39 @@ import type { PtyHandle } from "./pty-runtime.js";
 
 const MAX_PENDING_BYTES = 16 * 1024 * 1024;
 const MAX_BATCH_CHARS = 32 * 1024;
+const MAX_SESSION_SUBSCRIBERS = 16;
+const MAX_SUBSCRIBER_COALESCE_MS = 60_000;
+
+export interface SessionFrameEvent {
+  type: "frame";
+  frameId: number;
+  session: SessionInfo;
+}
+
+export interface SessionExitEvent {
+  type: "exit";
+  session: SessionInfo;
+  exitCode?: number;
+}
+
+export type SessionEvent = SessionFrameEvent | SessionExitEvent;
+export type SessionEventSubscriber = (event: SessionEvent) => void;
+
+export interface SessionSubscription {
+  dispose(): void;
+}
+
+export interface WatchResult {
+  frames: number;
+  timedOut: boolean;
+}
+
+interface SubscriberState {
+  listener: SessionEventSubscriber;
+  coalesceMs: number;
+  timer: NodeJS.Timeout | null;
+  latestFrame: SessionFrameEvent | null;
+}
 
 export interface SessionMetrics {
   receivedBytes: number;
@@ -98,6 +131,8 @@ export class ManagedSession {
   private readonly exitPromise: Promise<void>;
   private resolveExit: () => void = () => {};
   private readonly exitWaiters = new Set<() => void>();
+  private readonly subscribers = new Set<SubscriberState>();
+  private exitPublished = false;
   private readonly closeController = new AbortController();
   private exited = false;
   private readonly protocolGuard: ProtocolReplyGuard;
@@ -138,9 +173,13 @@ export class ManagedSession {
         void this.enqueue(async () => {
           this.details.status = "exited";
           this.details.exitCode = exitCode;
-          await this.recorder?.append({ type: "exit", code: exitCode });
-          await this.recorder?.close();
-          for (const wake of [...this.exitWaiters]) wake();
+          try {
+            await this.recorder?.append({ type: "exit", code: exitCode });
+            await this.recorder?.close();
+          } finally {
+            this.publishExit();
+            for (const wake of [...this.exitWaiters]) wake();
+          }
         }).catch((error: unknown) => this.setFault(error));
       })
     );
@@ -161,6 +200,78 @@ export class ManagedSession {
       pauseDurationMs:
         this.counters.pauseDurationMs + (this.pausedAt === undefined ? 0 : performance.now() - this.pausedAt),
     };
+  }
+
+  /**
+   * 订阅器只保留最新帧通知，不排队历史输出；高频写入在 coalesceMs 内合并，
+   * 退出事件立即发送。调用方必须在不再观察时 dispose。
+   */
+  subscribe(listener: SessionEventSubscriber, options: { coalesceMs?: number } = {}): SessionSubscription {
+    if (this.subscribers.size >= MAX_SESSION_SUBSCRIBERS) {
+      throw new TuiLensError("SESSION_SUBSCRIBER_LIMIT", "会话事件订阅者已达到上限");
+    }
+    const coalesceMs = options.coalesceMs ?? 16;
+    if (!Number.isInteger(coalesceMs) || coalesceMs < 0 || coalesceMs > MAX_SUBSCRIBER_COALESCE_MS) {
+      throw new TuiLensError("INVALID_ARGUMENT", `订阅合并窗口必须是 0～${MAX_SUBSCRIBER_COALESCE_MS} ms 的整数`);
+    }
+    const state: SubscriberState = { listener, coalesceMs, timer: null, latestFrame: null };
+    this.subscribers.add(state);
+    return {
+      dispose: () => {
+        if (state.timer) clearTimeout(state.timer);
+        state.timer = null;
+        state.latestFrame = null;
+        this.subscribers.delete(state);
+      },
+    };
+  }
+
+  private publishFrame(): void {
+    if (!this.subscribers.size) return;
+    const event: SessionFrameEvent = {
+      type: "frame",
+      frameId: this.frameId,
+      session: this.info(),
+    };
+    for (const subscriber of this.subscribers) {
+      subscriber.latestFrame = event;
+      if (subscriber.timer) continue;
+      subscriber.timer = setTimeout(
+        () => {
+          subscriber.timer = null;
+          const frame = subscriber.latestFrame;
+          subscriber.latestFrame = null;
+          if (frame && this.subscribers.has(subscriber)) {
+            try {
+              subscriber.listener(frame);
+            } catch {
+              // 订阅器异常不能破坏会话写入或服务端连接。
+            }
+          }
+        },
+        Math.max(1, subscriber.coalesceMs)
+      );
+    }
+  }
+
+  private publishExit(): void {
+    if (this.exitPublished) return;
+    this.exitPublished = true;
+    const event: SessionExitEvent = {
+      type: "exit",
+      session: this.info(),
+      ...(typeof this.details.exitCode === "number" ? { exitCode: this.details.exitCode } : {}),
+    };
+    for (const subscriber of this.subscribers) {
+      if (subscriber.timer) clearTimeout(subscriber.timer);
+      subscriber.timer = null;
+      subscriber.latestFrame = null;
+      try {
+        subscriber.listener(event);
+      } catch {
+        // 退出通知是尽力而为；关闭流程不能被单个订阅器阻塞。
+      }
+    }
   }
 
   protocolResponse(data: string): void {
@@ -264,6 +375,7 @@ export class ManagedSession {
           this.counters.appliedBytes += bytes;
           this.counters.writeBatches += 1;
           this.frameId += 1;
+          this.publishFrame();
         }
       } finally {
         this.counters.pendingBytes -= bytes;
@@ -283,6 +395,111 @@ export class ManagedSession {
   ): Promise<Observation> {
     this.assertUsable();
     return this.observeReady(options, control, frame);
+  }
+
+  /**
+   * 服务端 watch：订阅会话变化并按 intervalMs 合并，主动推送 compact 画面。
+   * timeoutMs 到期属于正常结束；客户端取消或会话关闭仍返回对应错误。
+   */
+  async watch(
+    intervalMs: number,
+    control: OperationControl,
+    emit: (event: "frame" | "exit", data: unknown) => void,
+    timeoutMs?: number
+  ): Promise<WatchResult> {
+    this.assertUsable();
+    if (!Number.isInteger(intervalMs) || intervalMs < 50 || intervalMs > 60_000) {
+      throw new TuiLensError("INVALID_ARGUMENT", "watch interval 必须是 50～60000 ms 的整数");
+    }
+    if (timeoutMs !== undefined && (!Number.isInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > 86_400_000)) {
+      throw new TuiLensError("INVALID_ARGUMENT", "watch timeout 必须是 0～86400000 ms 的整数");
+    }
+
+    const localStop = new AbortController();
+    const signal = control.signal
+      ? AbortSignal.any([control.signal, localStop.signal, this.closeController.signal])
+      : AbortSignal.any([localStop.signal, this.closeController.signal]);
+    let timedOut = false;
+    let dirty = true;
+    let exited = false;
+    let frames = 0;
+    let lastFrame = -1;
+    let wake: (() => void) | undefined;
+    const subscription = this.subscribe(
+      (event) => {
+        dirty = true;
+        if (event.type === "exit") exited = true;
+        const resolve = wake;
+        wake = undefined;
+        resolve?.();
+      },
+      { coalesceMs: intervalMs }
+    );
+    const timer =
+      timeoutMs !== undefined && timeoutMs > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            localStop.abort();
+            const resolve = wake;
+            wake = undefined;
+            resolve?.();
+          }, timeoutMs)
+        : undefined;
+    const abort = (): void => {
+      const resolve = wake;
+      wake = undefined;
+      resolve?.();
+    };
+    signal.addEventListener("abort", abort, { once: true });
+
+    const waitForChange = (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        if (dirty || exited || timedOut || signal.aborted) {
+          resolve();
+          return;
+        }
+        wake = resolve;
+      });
+
+    try {
+      while (true) {
+        if (timedOut) return { frames, timedOut: true };
+        if (signal.aborted) {
+          throw new TuiLensError(this.closing ? "SESSION_CLOSED" : "ABORTED", "watch 已取消");
+        }
+        if (dirty) {
+          dirty = false;
+          try {
+            const observation = await this.observe({ compact: true, screenshot: false }, { signal });
+            if (observation.snapshot.frameId !== lastFrame) {
+              lastFrame = observation.snapshot.frameId;
+              frames += 1;
+              emit("frame", observation);
+            }
+          } catch (error) {
+            if (timedOut) return { frames, timedOut: true };
+            if (signal.aborted) {
+              throw new TuiLensError(this.closing ? "SESSION_CLOSED" : "ABORTED", "watch 已取消");
+            }
+            if (
+              !(error instanceof TuiLensError) ||
+              !["FRAME_PENDING", "PROCESS_EXITED", "SESSION_CLOSED"].includes(error.code)
+            ) {
+              throw error;
+            }
+          }
+        }
+        if (exited || this.details.status !== "running") {
+          emit("exit", this.info());
+          return { frames, timedOut: false };
+        }
+        await waitForChange();
+      }
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      subscription.dispose();
+    }
   }
 
   async hasText(text: string, control: OperationControl): Promise<boolean | undefined> {
@@ -493,6 +710,7 @@ export class ManagedSession {
       this.details.rows = rows;
       await this.recorder?.append({ type: "resize", cols, rows });
       this.frameId += 1;
+      this.publishFrame();
       return this.info();
     });
     return controlled(pending, { timeoutMs: 10000, ...control }).catch((error) => {
@@ -585,6 +803,11 @@ export class ManagedSession {
       closeError ??= error;
     }
     this.details.status = "closed";
+    this.publishExit();
+    for (const subscriber of this.subscribers) {
+      if (subscriber.timer) clearTimeout(subscriber.timer);
+    }
+    this.subscribers.clear();
     if (closeError) throw closeError;
   }
 }

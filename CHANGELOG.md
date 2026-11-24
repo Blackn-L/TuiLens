@@ -11,8 +11,13 @@
 - `benchmark:overhead` accepts `--renderers headless,dom,webgl` for startup and RSS comparisons.
 - Recording headers move to version 2 with the renderer captured at recording start; the legacy
   image-mode field and its replay mapping are gone.
+- Local IPC now uses persistent v2 NDJSON connections with one-time authentication, multiplexed
+  requests, per-id cancellation, bounded in-flight requests and server-pushed `watch` frames.
+- `scenario` and `perf` emit real progress events, and the CLI `watch` consumes daemon events instead
+  of polling `observe`.
 
 ### Removed
+- Removed the per-request short IPC connection protocol.
 - Removed `launch.images`, CLI `--images`, `ImageProfile` and `imageProfileGraphics`.
   Use `terminalProfile` capabilities or orthogonal `graphics` options.
 

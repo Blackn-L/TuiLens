@@ -368,6 +368,8 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1
 
 测试使用独立夹具，截图、录制、报告与编译产物均被 Git 忽略。
 后台服务在 Windows 使用本机命名管道、Linux 使用 abstract Unix socket、macOS 使用私有 Unix socket，并使用本地令牌认证。
+IPC v2 使用持久连接，一次鉴权后多路复用请求，并推送 `watch` 画面与真实的 `scenario`/`perf` 进度；
+单连接在途请求上限为 64。
 `TUILENS_IPC_TIMEOUT_MS` 可设置 IPC 超时；默认不施加固定五分钟上限。
 `TUILENS_HOME` 可隔离状态目录，默认 `~/.tuilens`；没有公开 HTTP 控制端口。
 

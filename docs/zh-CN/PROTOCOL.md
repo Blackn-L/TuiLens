@@ -5,6 +5,29 @@
 CLI 使用 `--json`、`--file` 或 `--stdin`；MCP 接收相同对象。
 会话 ID 来自 launch。除明确标注像素的字段外，坐标均为从 0 起算的字符格。
 
+## 本机 IPC v2
+
+守护进程只接受持久 NDJSON 连接。首帧用于连接级鉴权：
+
+```json
+{"type":"auth","version":2,"token":"<hex>"}
+```
+
+成功返回 `auth_ok`（含 pid 与版本），失败返回 `auth_error` 后断开。默认握手超时为 15 秒。
+鉴权后同一连接多路复用请求：
+
+```json
+{"type":"req","id":"<uuid>","method":"observe","params":{},"stream":true}
+{"type":"cancel","id":"<uuid>"}
+{"type":"event","id":"<uuid>","event":"frame","data":{}}
+{"type":"res","id":"<uuid>","ok":true,"data":{}}
+```
+
+单行请求上限 1 MiB，单连接在途请求上限 64。取消按 id 精确生效，不影响其他请求。复用仍在途的
+请求 ID 属于连接级协议错误，服务端会关闭连接且不会再发送第二个终态响应。`watch` 由服务端主动
+推送 `frame`/`exit` 事件，CLI 不再轮询 `observe`；`scenario`/`perf` 通过 `progress` 事件推送
+`{kind,profile,current,total,elapsedMs}`。
+
 ## 精确定位
 
 ```json
