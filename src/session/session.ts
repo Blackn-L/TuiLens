@@ -487,6 +487,19 @@ export class ManagedSession {
             ) {
               throw error;
             }
+            if (error.code === "FRAME_PENDING") {
+              // The pending synchronized frame may end without another output batch.
+              // Re-arm the dirty flag and retry instead of waiting for a publish.
+              dirty = true;
+              try {
+                await sleep(8, { signal });
+              } catch {
+                if (timedOut) return { frames, timedOut: true };
+                if (signal.aborted) {
+                  throw new TuiLensError(this.closing ? "SESSION_CLOSED" : "ABORTED", "watch 已取消");
+                }
+              }
+            }
           }
         }
         if (exited || this.details.status !== "running") {

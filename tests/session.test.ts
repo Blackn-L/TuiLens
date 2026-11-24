@@ -256,6 +256,28 @@ test("会话退出订阅先处理最后输出，再通知 exit 和退出码", as
   }
 });
 
+test("watch 遇到 FRAME_PENDING 后重新观察而不依赖下一次输出通知", async () => {
+  const memory = memoryEngine();
+  const f = fixture(memory.engine, tmpdir());
+  const observe = f.session.observe.bind(f.session);
+  let observations = 0;
+  f.session.observe = async (...args) => {
+    observations += 1;
+    if (observations === 1) throw new TuiLensError("FRAME_PENDING", "同步帧未提交");
+    return observe(...args);
+  };
+  const eventNames: ("frame" | "exit")[] = [];
+  try {
+    const result = await f.session.watch(50, {}, (event) => eventNames.push(event), 120);
+    assert.equal(result.timedOut, true);
+    assert.equal(result.frames, 1);
+    assert.ok(observations >= 2);
+    assert.equal(eventNames[0], "frame");
+  } finally {
+    await f.session.close();
+  }
+});
+
 test("同一批输出合并但显式输入保留顺序，并以轻量状态编码", async () => {
   const memory = memoryEngine();
   const f = fixture(memory.engine, tmpdir());

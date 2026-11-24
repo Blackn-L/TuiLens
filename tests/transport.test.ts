@@ -3,13 +3,14 @@ import { execFile } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
-import { connect, createServer, type Server, type Socket } from "node:net";
+import { connect, createServer, Socket, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
+import { TuiLensError } from "../src/core/errors.js";
 import type { OperationProgress, SessionInfo } from "../src/core/types.js";
 import { IpcClient, isDaemonUnavailable, request, sleepWithSignal } from "../src/transport/client.js";
 import { runtimePaths } from "../src/transport/paths.js";
@@ -22,6 +23,7 @@ import {
   type IpcEventName,
   type ServerFrame,
 } from "../src/transport/protocol.js";
+import { writeFrameBeforeStop } from "../src/transport/server.js";
 
 const execute = promisify(execFile);
 const cli = fileURLToPath(new URL("../src/interfaces/cli.js", import.meta.url));
@@ -458,6 +460,88 @@ test("autoStart:false 将断连与 SHUTTING_DOWN 统一为 DAEMON_UNAVAILABLE", 
     restoreEnv("TUILENS_HOME", previousHome);
     await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
+});
+
+test("IPC 连接保留 EACCES 原始错误，不伪装为 DAEMON_UNAVAILABLE", async () => {
+  const home = await mkdtemp(join(tmpdir(), "tuilens-socket-error-"));
+  const previousHome = process.env.TUILENS_HOME;
+  process.env.TUILENS_HOME = home;
+  try {
+    const paths = runtimePaths();
+    await mkdir(paths.home, { recursive: true });
+    await writeFile(paths.state, JSON.stringify({ token: randomBytes(16).toString("hex"), pid: process.pid }));
+    const denied = Object.assign(new Error("connect EACCES: access denied"), {
+      code: "EACCES",
+    }) as NodeJS.ErrnoException;
+    const socket = new Socket();
+    const connector = (() => {
+      process.nextTick(() => {
+        socket.emit("error", denied);
+        socket.emit("close");
+      });
+      return socket;
+    }) as unknown as typeof connect;
+    const client = new IpcClient(paths, connector);
+    await assert.rejects(client.call("ping", {}, { timeoutMs: 1000 }), (error: unknown) => {
+      assert.ok(error instanceof TuiLensError);
+      assert.equal(error.code, "EACCES");
+      assert.equal(isDaemonUnavailable(error), false);
+      assert.match(error.message, /access denied/u);
+      return true;
+    });
+    socket.destroy();
+  } finally {
+    restoreEnv("TUILENS_HOME", previousHome);
+    await rm(home, { recursive: true, force: true, maxRetries: 5 });
+  }
+});
+
+test("shutdown 响应在写回调后才停止，并有超时兜底", async () => {
+  let callback: ((error?: Error) => void) | undefined;
+  let written = "";
+  let stops = 0;
+  const socket = {
+    writable: true,
+    destroyed: false,
+    write(chunk: string, done?: (error?: Error) => void): boolean {
+      written += chunk;
+      callback = done;
+      return true;
+    },
+  };
+  const frame: ServerFrame = {
+    type: "res",
+    id: randomUUID(),
+    ok: true,
+    data: { stopped: true },
+  };
+  writeFrameBeforeStop(
+    socket as unknown as Pick<Socket, "writable" | "destroyed" | "write">,
+    frame,
+    () => {
+      stops += 1;
+    },
+    1000
+  );
+  assert.equal(stops, 0);
+  assert.match(written, /"stopped":true/u);
+  callback?.();
+  callback?.();
+  assert.equal(stops, 1);
+
+  let fallbackStops = 0;
+  writeFrameBeforeStop(
+    socket as unknown as Pick<Socket, "writable" | "destroyed" | "write">,
+    frame,
+    () => {
+      fallbackStops += 1;
+    },
+    10
+  );
+  await sleep(30);
+  assert.equal(fallbackStops, 1);
+  callback?.();
+  assert.equal(fallbackStops, 1);
 });
 
 test("AbortSignal 中断已经发送的持久连接请求", { timeout: 10000 }, async () => {
