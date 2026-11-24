@@ -78,11 +78,21 @@ Exit: measured budgets exist before any native-engine rewrite is considered.
 
 Exit: tag builds publish reproducibly, install from the packed tarball, and pass the same checks as CI.
 
+### 0.6.0 PR-1 browser-free TerminalCore (in progress)
+
+- Make `@xterm/headless` the default parser for text observation, waits, probes and snapshots.
+- Lazy-load the Chromium/xterm.js visual layer for explicit DOM/WebGL, image protocols, screenshots and
+  visual comparisons; replay a bounded 4 MiB history and expose `visualSyncDegraded`.
+- Remove `launch.images`, CLI `--images`, legacy image shorthand mapping and obsolete docs.
+- Compare `headless`, `dom` and `webgl` startup/RSS in `benchmark:overhead`.
+
+Exit: pure-text sessions never start Chromium, lazy screenshots match post-activation updates, and all
+quality gates pass.
+
 ## Later
 
 - Expand tested image protocol semantics without advertising unsupported behavior.
-- Evaluate a native processing engine using measured parser, IPC and rendering costs.
+- Keep image decoding and pixel capture on the browser path while validating parser/state equivalence.
 
-A browser-free engine still needs reproducible overhead measurements and renderer equivalence; changing
-language alone does not guarantee accuracy. See the renderer exit criteria in
-[architecture](ARCHITECTURE.md).
+A fully browser-free visual backend still needs reproducible pixel, font and image-protocol equivalence.
+See the engine boundary in [architecture](ARCHITECTURE.md).

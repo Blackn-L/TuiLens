@@ -147,7 +147,11 @@ export class ManagedSession {
   }
 
   info(): SessionInfo {
-    return { ...this.details };
+    return {
+      ...this.details,
+      ...(this.engine.renderer ? { renderer: this.engine.renderer } : {}),
+      ...(this.engine.visualSyncDegraded ? { visualSyncDegraded: true } : {}),
+    };
   }
 
   metrics(): SessionMetrics {
@@ -368,6 +372,8 @@ export class ManagedSession {
             ...(options.region ? { region: options.region } : {}),
             cursor: options.cursor === "show" ? "shown" : "hidden",
           };
+          // 截图可能刚刚按需挂载可视化层；元数据必须反映挂载后的真实 renderer。
+          observation.session = this.info();
           await writeFile(`${prefix}.json`, JSON.stringify(observation, null, 2), { mode: 0o600 });
         }
         return observation;

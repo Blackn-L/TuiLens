@@ -79,7 +79,7 @@ All top-level fields except `name` are optional in a file that has `extends`. Un
   renderer's mouse tracking, underline drawing or Unicode table.
 
 On Windows, system ConPTY answers DA1/DA2 before the browser emulator sees the query. Sessions that
-explicitly select a profile (or override `graphics`/`images`) therefore use the bundled ConPTY DLL; the
+explicitly select a profile or override `graphics` therefore use the bundled ConPTY DLL; the
 default fast path without an explicit profile keeps system ConPTY. TuiLens also rewrites terminal-originated
 DA1/DA2/XTVERSION/Kitty replies at `ManagedSession.protocolResponse` before they enter the PTY.
 
@@ -131,9 +131,8 @@ Precedence:
 1. Built-in/default profile.
 2. A file's `extends` chain.
 3. `launch.graphics` overrides individual image protocols.
-4. Deprecated `launch.images` overrides all image protocols when present.
-5. `launch.env` overrides profile environment variables.
-6. `colorMode` applies last to color environment variables and `capabilities.color`.
+4. `launch.env` overrides profile environment variables.
+5. `colorMode` applies last to color environment variables and `capabilities.color`.
 
 The session result includes the resolved name in `terminalProfile`.
 
@@ -160,25 +159,7 @@ A profile that cannot launch or produces no measurements is reported as a failed
 
 Recordings persist the resolved renderer capabilities and replies without environment variables or the
 profile's filesystem path. Replay therefore does not depend on an external JSON profile remaining available.
-Older recordings that contain only `images` retain their previous replay behavior.
 
 `examples/profile-matrix.json` runs a minimal DA1/DA2/XTVERSION/Kitty probe across all built-in presets.
-
-## Deprecated `images`
-
-`images` remains accepted for compatibility but is mapped to `capabilities.graphics`:
-
-| `images` | SIXEL | Kitty | iTerm2 |
-| --- | --- | --- | --- |
-| `off` | false | false | false |
-| `sixel` | true | false | false |
-| `iterm` | false | false | true |
-| `all` | true | true | true |
-
-Use orthogonal overrides for new code:
-
-```json
-{ "graphics": { "sixel": true, "kitty": false, "iterm": false } }
-```
 
 Profiles, CLI/MCP schemas, and the TypeScript SDK share this model.

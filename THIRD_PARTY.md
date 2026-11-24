@@ -6,6 +6,7 @@ Direct runtime dependencies / 直接运行依赖：
 | --- | --- | --- | --- |
 | node-pty | 1.2.0-beta.18 | PTY / ConPTY 进程通道 | MIT |
 | @xterm/xterm | 6.0.0 | 终端状态与绘制 | MIT |
+| @xterm/headless | 6.0.0 | 零浏览器终端解析核心 | MIT |
 | @xterm/addon-unicode-graphemes | 0.4.0 | 字素与宽字符处理 | MIT |
 | @xterm/addon-image | 0.9.0 | SIXEL rendering / 图像渲染 | MIT |
 | @xterm/addon-webgl | 0.19.0 | Optional WebGL renderer / 可选 WebGL 绘制 | MIT |

@@ -20,7 +20,7 @@ test("真实终端：区域截图、比较、精确定位、过期保护、输�
       rows: 10,
       recording: {},
     });
-    assert.equal(session.renderer, "dom");
+    assert.equal(session.renderer, "headless");
     await manager.wait(session.id, {
       conditions: [
         { kind: "text", text: "READY" },
@@ -98,7 +98,7 @@ test("录制容量上限被明确标记，不会作为完整回放通过", async
     const writer = await RecordingWriter.create(
       directory,
       "cap",
-      { type: "header", version: 1, cols: 40, rows: 10, images: "off" },
+      { type: "header", version: 2, cols: 40, rows: 10, renderer: "headless" },
       4096
     );
     await writer.append({ type: "output", data: "x".repeat(5000) });

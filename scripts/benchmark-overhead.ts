@@ -11,17 +11,20 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { IPty } from "node-pty";
 import type { EngineFactory, TerminalEngine } from "../src/core/types.js";
+import { ProcessTreeSampler } from "../src/perf/resource.js";
 
 const SELF = fileURLToPath(import.meta.url);
 const COLS = 160;
 const ROWS = 50;
 const TIMEOUT_MS = 120_000;
 const DEFAULTS = { frames: 240, repeats: 3, paceMs: 0 };
-type Mode = "drain-only" | "tuilens";
+type RendererMode = "headless" | "dom" | "webgl";
+type Mode = "drain-only" | `tuilens-${RendererMode}`;
 interface Options {
   frames: number;
   repeats: number;
   paceMs: number;
+  renderers: RendererMode[];
   out: string;
 }
 interface FixtureResult {
@@ -41,6 +44,7 @@ interface SessionMetrics {
 interface Result {
   mode: Mode;
   startupMs: number;
+  engineStartupMs: number | null;
   startupRootCpuMs: number;
   workload: FixtureResult;
   tool: {
@@ -50,6 +54,9 @@ interface Result {
     rootRssStartBytes: number;
     rootRssPeakBytes: number;
     rootRssEndBytes: number;
+    treeRssPeakBytes: number;
+    treePeakProcesses: number;
+    treeSamples: number;
     rssSamplingIntervalMs: number;
     receivedBytes: number;
     appliedBytes: number;
@@ -75,14 +82,20 @@ function numberOption(args: string[], flag: string, fallback: number, min: numbe
 }
 
 function parseOptions(args: string[]): Options {
-  const allowed = new Set(["--frames", "--repeats", "--pace-ms", "--out"]);
+  const allowed = new Set(["--frames", "--repeats", "--pace-ms", "--renderers", "--out"]);
   for (let index = 0; index < args.length; index += 2) {
     if (!allowed.has(args[index]!)) throw new Error(`未知参数：${args[index]}`);
+  }
+  const rendererValues = (option(args, "--renderers") ?? "headless,dom").split(",");
+  const renderers = [...new Set(rendererValues)] as RendererMode[];
+  if (renderers.length === 0 || renderers.some((value) => !["headless", "dom", "webgl"].includes(value))) {
+    throw new Error("--renderers 必须是 headless、dom、webgl 的逗号分隔组合");
   }
   return {
     frames: numberOption(args, "--frames", DEFAULTS.frames, 1, 100_000),
     repeats: numberOption(args, "--repeats", DEFAULTS.repeats, 1, 20),
     paceMs: numberOption(args, "--pace-ms", DEFAULTS.paceMs, 0, 1000),
+    renderers,
     out: resolve(option(args, "--out") ?? "artifacts/overhead.json"),
   };
 }
@@ -203,10 +216,13 @@ async function worker(mode: Mode, frames: number, paceMs: number): Promise<Resul
   let send: (() => Promise<void>) | undefined;
   let getMetrics: (() => SessionMetrics) | undefined;
   let hasExited: (() => boolean) | undefined;
+  let engineStartupMs: number | null = null;
+  let processTree: ProcessTreeSampler | undefined;
   let timer: NodeJS.Timeout | undefined;
   const listeners: { dispose(): void }[] = [];
   const startupStarted = performance.now();
   const startupCpu = process.cpuUsage();
+  const renderer = mode === "drain-only" ? undefined : (mode.slice("tuilens-".length) as RendererMode);
   const collect = (data: string): void => {
     observedChunks += 1;
     receivedBytes += Buffer.byteLength(data);
@@ -253,7 +269,9 @@ async function worker(mode: Mode, frames: number, paceMs: number): Promise<Resul
       const { SessionManager } = await import("../src/session/manager.js");
       const { createBrowserEngine } = await import("../src/engine/browser-engine.js");
       const engineFactory: EngineFactory = async (options) => {
+        const started = performance.now();
         const actual = await createBrowserEngine(options);
+        engineStartupMs = rounded(performance.now() - started);
         engine = actual;
         return {
           ...actual,
@@ -274,6 +292,7 @@ async function worker(mode: Mode, frames: number, paceMs: number): Promise<Resul
         rows: ROWS,
         env: benchmarkEnv(),
         cwd: process.cwd(),
+        ...(renderer === undefined || renderer === "headless" ? {} : { renderer }),
       });
       const metricsManager = manager as typeof manager & { metrics(id: string): SessionMetrics };
       if (typeof metricsManager.metrics !== "function")
@@ -298,6 +317,8 @@ async function worker(mode: Mode, frames: number, paceMs: number): Promise<Resul
     const startupMs = performance.now() - startupStarted;
     const startupRootCpuMs = cpuMs(process.cpuUsage(startupCpu));
     const rootRssStartBytes = process.memoryUsage.rss();
+    processTree = new ProcessTreeSampler(process.pid, 1000);
+    processTree.start();
     let peakRss = rootRssStartBytes;
     timer = setInterval(() => {
       peakRss = Math.max(peakRss, process.memoryUsage.rss());
@@ -315,6 +336,8 @@ async function worker(mode: Mode, frames: number, paceMs: number): Promise<Resul
     clearInterval(timer);
     timer = undefined;
     const rootRssEndBytes = process.memoryUsage.rss();
+    const tree = await processTree.stop();
+    processTree = undefined;
     peakRss = Math.max(peakRss, rootRssEndBytes);
     const metrics = getMetrics?.() ?? null;
     const workload = JSON.parse(await readFile(reportPath, "utf8")) as FixtureResult;
@@ -329,6 +352,7 @@ async function worker(mode: Mode, frames: number, paceMs: number): Promise<Resul
     return {
       mode,
       startupMs: rounded(startupMs),
+      engineStartupMs,
       startupRootCpuMs: rounded(startupRootCpuMs),
       workload,
       tool: {
@@ -338,6 +362,9 @@ async function worker(mode: Mode, frames: number, paceMs: number): Promise<Resul
         rootRssStartBytes,
         rootRssPeakBytes: peakRss,
         rootRssEndBytes,
+        treeRssPeakBytes: tree.peakRssBytes,
+        treePeakProcesses: tree.peakProcesses,
+        treeSamples: tree.samples,
         rssSamplingIntervalMs: 25,
         receivedBytes: metrics?.receivedBytes ?? receivedBytes,
         appliedBytes: metrics?.appliedBytes ?? appliedBytes,
@@ -348,6 +375,7 @@ async function worker(mode: Mode, frames: number, paceMs: number): Promise<Resul
     };
   } finally {
     if (timer) clearInterval(timer);
+    if (processTree) await processTree.stop().catch(() => undefined);
     await close?.();
     if (isBenchmarkDir(workdir)) await rm(workdir, { recursive: true, force: true });
   }
@@ -388,16 +416,17 @@ async function subprocess(mode: Mode, options: Options): Promise<Result> {
 }
 
 async function main(options: Options): Promise<void> {
+  const modes: Mode[] = ["drain-only", ...options.renderers.map((renderer) => `tuilens-${renderer}` as Mode)];
   const rounds: { repeat: number; results: Result[] }[] = [];
   for (let repeat = 0; repeat < options.repeats; repeat += 1) {
-    const order: Mode[] = repeat % 2 ? ["tuilens", "drain-only"] : ["drain-only", "tuilens"];
+    const order = repeat % 2 ? [...modes].reverse() : modes;
     const results: Result[] = [];
     for (const mode of order) {
       process.stderr.write(`第 ${repeat + 1}/${options.repeats} 轮：${mode}\n`);
       results.push(await subprocess(mode, options));
     }
-    if (results[0]!.workload.producedBytes !== results[1]!.workload.producedBytes) {
-      throw new Error("两种模式的 fixture 产出字节数不一致，不能比较");
+    if (new Set(results.map((result) => result.workload.producedBytes)).size !== 1) {
+      throw new Error("各模式的 fixture 产出字节数不一致，不能比较");
     }
     rounds.push({ repeat: repeat + 1, results });
   }
@@ -407,16 +436,25 @@ async function main(options: Options): Promise<void> {
     return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
   };
   const summary = Object.fromEntries(
-    (["drain-only", "tuilens"] as const).map((mode) => {
+    modes.map((mode) => {
       const results = rounds.flatMap((round) => round.results).filter((result) => result.mode === mode);
       return [
         mode,
         {
+          medianEngineStartupMs: results.some((result) => result.engineStartupMs !== null)
+            ? rounded(
+                median(
+                  results.map((result) => result.engineStartupMs).filter((value): value is number => value !== null)
+                )
+              )
+            : null,
           medianStartupMs: rounded(median(results.map((result) => result.startupMs))),
           medianWorkloadMs: rounded(median(results.map((result) => result.workload.elapsedMs))),
           medianOutputAppliedMs: rounded(median(results.map((result) => result.tool.controlToOutputAppliedMs))),
           medianToolRootCpuMs: rounded(median(results.map((result) => result.tool.rootCpuMs))),
           peakToolRootRssBytes: Math.max(...results.map((result) => result.tool.rootRssPeakBytes)),
+          peakToolTreeRssBytes: Math.max(...results.map((result) => result.tool.treeRssPeakBytes)),
+          peakToolTreeProcesses: Math.max(...results.map((result) => result.tool.treePeakProcesses)),
         },
       ];
     })
@@ -434,12 +472,17 @@ async function main(options: Options): Promise<void> {
       grid: { cols: COLS, rows: ROWS },
       browserPath: process.env.TUILENS_BROWSER_PATH ?? "system auto selection",
     },
-    settings: { frames: options.frames, repeats: options.repeats, paceMs: options.paceMs },
+    settings: {
+      frames: options.frames,
+      repeats: options.repeats,
+      paceMs: options.paceMs,
+      renderers: options.renderers,
+    },
     boundaries: [
       "drain-only 不解析/绘制，不代表正常终端用户体验。",
-      "工具 CPU/RSS 仅统计基准 worker 根进程，不含 Chromium、ConPTY 和 workload。",
+      "工具 root CPU/RSS 仅统计基准 worker 根进程；tree RSS 包含同一 fixture 工作负载、PTY 宿主与已激活 Chromium 子进程。",
       "截图关闭，完整状态仅在主测量窗口结束后读取一次以验证最终完成标记。",
-      "启动含模块加载、浏览器/PTY 启动及 fixture READY，单独记录。",
+      "启动含模块加载、PTY 启动及 fixture READY；tuilens-dom/webgl 还包含 Chromium 冷启动。",
       "控制到输出应用耗时包含 GO 输入调用和最后一次 parser write 返回，不代表屏幕像素已绘制。",
       "退出观察每 10ms 读取内存计数或生命周期，带来最多一轮轮询的计时误差。",
       "输出字节包含终端通道改写和 READY；workload.producedBytes 为 fixture 自身测量窗口的输出。",
@@ -459,7 +502,9 @@ try {
   if (args[0] === "--fixture") await fixture(args.slice(1));
   else if (args[0] === "--worker") {
     const mode = args[1];
-    if (mode !== "drain-only" && mode !== "tuilens") throw new Error("未知 worker 模式");
+    if (mode !== "drain-only" && mode !== "tuilens-headless" && mode !== "tuilens-dom" && mode !== "tuilens-webgl") {
+      throw new Error("未知 worker 模式");
+    }
     const result = await worker(mode, Number(args[2]), Number(args[3]));
     process.stdout.write(JSON.stringify(result) + "\n");
   } else await main(parseOptions(args));

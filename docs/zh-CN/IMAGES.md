@@ -2,17 +2,15 @@
 
 [English](../IMAGES.md) · [简体中文](IMAGES.md)
 
-> **已弃用：** 新代码请使用 `graphics` 或 `terminalProfile` 能力。旧 `launch.images`
-> 枚举作为兼容简写保留，并映射到 `capabilities.graphics`。详见[终端能力画像](PROFILES.md)。
+图片能力来自 `terminalProfile`，或启动参数中的正交 `graphics`。`launch.images` 与
+`--images` 已移除。
 
-启动参数 `images` 可设为 `off`、`sixel`、`iterm` 或 `all`，默认 `off`。
+```json
+{ "command": "node", "args": ["app.mjs"], "graphics": { "sixel": true, "kitty": true, "iterm": false } }
+```
 
-| 配置 | 启用能力 |
-| --- | --- |
-| off | 文字与字符块 |
-| sixel | SIXEL |
-| iterm | iTerm2 OSC 1337 内联图片 |
-| all | SIXEL、IIP 与下述 Kitty 子集 |
+图片协议默认关闭。启用任一协议会激活按需 VisualRenderer，因此需要 Chrome/Chromium。
+不要用一个 `all` 简写暗示支持所有扩展。
 
 浏览器仅加载所需组件，不声明未启用的能力。SIXEL 模式通过 DA1 属性 `4`
 报告支持；字符像素尺寸由实际终端画布计算。Kitty 子集支持内联数据查询
@@ -32,7 +30,7 @@
 ## iTerm2 内联图片（OSC 1337）
 
 ```sh
-node dist/src/interfaces/cli.js launch --images iterm --cols 60 --rows 12 -- node examples/osc1337.mjs
+node dist/src/interfaces/cli.js launch --terminal-profile iterm2 --cols 60 --rows 12 -- node examples/osc1337.mjs
 ```
 
 ![OSC 1337 示例](../assets/osc1337.png)
@@ -59,7 +57,7 @@ PNG 在解码前校验容器；JPEG/GIF 先做有界浏览器预检，再交给�
 shell 集成、剪贴板动作和 Feature Reporting 扩展。
 通常使用 7 位 `ESC ]` 形式；GIF 不播放动画。
 图片随插件字符格机制滚动和擦除，resize 后分数格宽可能使缓存缩放向外取整一像素。
-协议显式启用；仅设置 `images` 不会设置 `TERM_PROGRAM=iTerm.app`。
+协议需显式启用；仅设置 `graphics.iterm` 不会设置 `TERM_PROGRAM=iTerm.app`。
 
 ## Kitty 子集
 

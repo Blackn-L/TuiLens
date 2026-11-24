@@ -66,8 +66,7 @@ export const launchSchema = z
     cols: dimension.optional(),
     rows: z.number().int().min(2).max(250).optional(),
     colorMode: z.enum(["truecolor", "ansi256", "none"]).optional(),
-    renderer: z.enum(["dom", "webgl"]).optional(),
-    images: z.enum(["off", "sixel", "iterm", "all"]).optional(),
+    renderer: z.enum(["headless", "dom", "webgl"]).optional(),
     graphics: graphicsSchema.optional(),
     terminalProfile: z.string().min(1).max(8192).optional(),
     recording: z

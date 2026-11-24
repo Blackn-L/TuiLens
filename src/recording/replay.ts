@@ -14,7 +14,6 @@ import type {
 } from "../core/types.js";
 import { createBrowserEngine } from "../engine/browser-engine.js";
 import { profileFileSchema } from "../profiles/resolver.js";
-import { pick } from "../core/i18n.js";
 
 const columns = z.number().int().min(2).max(500);
 const rows = z.number().int().min(2).max(250);
@@ -37,25 +36,13 @@ const recordingProfile = profileFileSchema
 const header = z
   .object({
     type: z.literal("header"),
-    version: z.literal(1),
+    version: z.literal(2),
     cols: columns,
     rows,
-    images: z.enum(["off", "sixel", "iterm", "all"]),
-    renderer: z.enum(["dom", "webgl"]).optional(),
+    renderer: z.enum(["headless", "dom", "webgl"]),
     profile: recordingProfile.optional(),
   })
-  .strict()
-  .superRefine((value, context) => {
-    if (value.profile && value.images !== "off") {
-      context.addIssue({
-        code: "custom",
-        message: pick(
-          "New recordings should use profile for final graphics instead of retaining an images override.",
-          "新录制应使用 profile 表示最终 graphics，而不是同时保留 images 覆盖"
-        ),
-      });
-    }
-  });
+  .strict();
 const event = z.discriminatedUnion("type", [
   z.object({ type: z.literal("output"), data: z.string().max(1024 * 1024), atMs: time }).strict(),
   z.object({ type: z.literal("resize"), cols: columns, rows, atMs: time }).strict(),
@@ -201,8 +188,7 @@ export async function replayRecording(
   const engine = await (manager.engineFactory ?? createBrowserEngine)({
     cols: start.cols,
     rows: start.rows,
-    renderer: start.renderer ?? "dom",
-    ...(start.profile ? {} : { images: start.images }),
+    renderer: start.renderer,
     ...(start.profile ? { profile: replayProfile(start.profile) } : {}),
     onData: () => {},
     ...(manager.executablePath ? { executablePath: manager.executablePath } : {}),

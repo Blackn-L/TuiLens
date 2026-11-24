@@ -47,27 +47,34 @@ node dist/src/interfaces/cli.js perf --file examples/perf.json --baseline artifa
 ## 工具开销对照
 
 ```sh
-npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1 --out artifacts/overhead.json
+npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1 `
+  --renderers headless,dom,webgl --out artifacts/overhead.json
 ```
 
 同一个原生 PTY 夹具分别经过：
 
 - `drain-only`：消费输出，不解析 ANSI、不绘制。
-- `tuilens`：通过实际会话和浏览器终端，测量期间不截图、不轮询完整字符格。
+- `tuilens-headless`：使用零浏览器 `TerminalCore`，测量期间不截图、不轮询完整字符格。
+- `tuilens-dom`：夹具启动前激活 DOM 渲染器。
+- `tuilens-webgl`：夹具启动前激活 WebGL；上下文不可用时回退 DOM。
 
 每轮使用独立进程，交替执行顺序；最后读取一次画面检查完成标记，
 这次读取不计入主测量窗口。
 
 | 字段 | 范围 |
 | --- | --- |
-| startupMs | 模块、浏览器、PTY 启动及夹具就绪 |
+| engineStartupMs | 仅引擎工厂；`headless` 不启动 Chromium，DOM/WebGL 含浏览器启动 |
+| startupMs | 模块、PTY、renderer 与夹具就绪；DOM/WebGL 含 Chromium 冷启动 |
 | workload.elapsedMs | 夹具自身产出耗时 |
 | controlToOutputAppliedMs | 发出控制动作到最后输出消费/解析完成 |
 | rootCpuMs | 工具根进程 CPU 时间 |
 | rootRssPeakBytes | 工具根进程采样 RSS 峰值 |
+| treeRssPeakBytes | 工具 worker 及全部后代的采样 RSS 峰值，含同一夹具、PTY 宿主与已激活 Chromium |
 | sessionMetrics | 接收/应用字节、积压、背压与批次 |
 
-根进程 CPU/RSS 不包含浏览器、PTY 宿主和被测程序。
+根进程 CPU/RSS 不包含浏览器、PTY 宿主和被测程序；`treeRssPeakBytes` 包含这些子进程，
+但各对照模式运行的是同一夹具工作负载。
+`engineStartupMs` 从模块导入和 PTY 夹具启动中单独隔离引擎构造耗时。
 解析完成不代表像素已经绘制。输出通道可能改写字节；
 夹具产出字节与终端接收字节应分别记录。
 

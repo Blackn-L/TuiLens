@@ -94,7 +94,7 @@ test("性能场景按模板等待每次新证据，并能写出可比较的基�
     const first = await runPerf(manager, { spec, directory, writeBaseline: baselinePath });
     assert.ok(!("matrix" in first));
     assert.equal(first.pass, true);
-    assert.equal(first.environment.renderer, "dom");
+    assert.equal(first.environment.renderer, "headless");
     assert.equal(first.processTree.errors, 0);
     assert.ok(first.processTree.peakRootRssBytes > 0);
     // 2 轮 × 2 次重复 = 4 个样本。
@@ -109,7 +109,7 @@ test("性能场景按模板等待每次新证据，并能写出可比较的基�
       metrics: { phase: string; name: string; p50: number }[];
     };
     assert.equal(baseline.version, 1);
-    assert.equal(baseline.environment.renderer, "dom");
+    assert.equal(baseline.environment.renderer, "headless");
     assert.equal(baseline.metrics[0]?.phase, "add");
     assert.equal(baseline.metrics[0]?.name, "add-turn");
 

@@ -9,15 +9,15 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 
 ![TuiLens：面向 AI Agent 的终端自动化工具](docs/assets/tuilens-agent-banner.zh-CN.png)
 
-> **状态：** 0.5.5 实验版本，用于功能和视觉测试。
-> 浏览器渲染链路不属于低干扰性能测量环境。
+> **状态：** 0.5.5 实验版本。文本观察默认运行零浏览器 `TerminalCore`，
+> 只有视觉产物才按需启动 Chromium。
 
 [功能](#功能) · [安装](#安装) · [诊断](#诊断) · [快速开始](#快速开始) · [接口](#接口) · [开发](#开发) · [文档](#文档) · [许可证](#许可证)
 
 ## 功能
 
 - **原生图片：** 按需启用 SIXEL、iTerm2 OSC 1337 内联图片和有界 Kitty 子集，支持 Unicode 虚拟放置。
-- **绘制后端：** 默认继续使用 DOM；可按需启用 WebGL，获得连续块字符和高保真截图。实际 renderer 会随会话和视觉产物回传、记录。
+- **绘制后端：** 默认 `headless`。可显式请求 `dom`/`webgl` 立即启动浏览器；截图、图片协议和视觉比较会按需激活。每次会话都会返回实际 renderer。
 - **视觉测试：** 字符格区域截图、PNG 比较、像素遮罩、差异图与报告。
 - **输入操作：** 按键、括号粘贴、点击、按住/释放、拖拽、带位置滚轮和修饰键。
 - **录制回放：** 有容量限制的输出/输入/resize 记录；离线回放不执行录制的输入。
@@ -45,7 +45,7 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 ## 环境要求
 
 - Node.js **22 或更高版本**。
-- Windows、Linux 或 macOS（实验性），以及本机 Chrome/Chromium 或 Playwright Chromium。
+- Windows、Linux 或 macOS（实验性）。纯文本会话不需要浏览器；截图与图片协议需要本机 Chrome/Chromium 或 Playwright Chromium。
 - node-pty 无可用预编译包时，需要相应平台的 C++ 构建工具。
 
 ## 安装
@@ -59,7 +59,7 @@ npm ci
 npm run build
 ```
 
-默认检测系统 Chrome/Edge；也可以安装 Playwright Chromium：
+需要视觉输出时，TuiLens 默认检测系统 Chrome/Edge；也可以安装 Playwright Chromium：
 
 ```sh
 npx playwright-core install chromium
@@ -166,14 +166,23 @@ CLI、MCP 和 SDK 的结构化错误同时提供 `messageEn` 与 `messageZh`，`
 
 ## 图片与截图
 
-使用 `launch --images sixel`、`launch --images iterm` 或 `launch --images all`，默认 `off`。
-`iterm` 启用 OSC 1337 内联图片及分段传输。`all` 包含三种已实现的图片协议，
-不代表完整 Kitty 或 OSC 1337 扩展兼容。
+图片协议由终端 profile 能力声明。可使用 `launch --terminal-profile kitty` 等预设，
+或在 JSON 启动参数中显式提供 `graphics`：
 
-`launch --renderer webgl` 启用 xterm.js WebGL 绘制；默认是 `--renderer dom`。需要在截图中保证块字符/框线连续时
-建议使用 WebGL。它可能把字符格宽取整（例如 160 列从 1500px 变为 1440px），切换后应重新录制视觉基准。
-`session.renderer`、录制头、scenario/perf 环境、观察 JSON 和比较 JSON 都会记录实际 renderer。
-WebGL 无法启动时会回退 DOM 并回传 `dom`，不会静默声称使用了 WebGL。
+```json
+{ "command": "my-tui", "graphics": { "sixel": true, "kitty": true, "iterm": true } }
+```
+
+图片默认关闭。这些开关只启用已实现的协议子集，不代表完整 Kitty 或 OSC 1337 扩展兼容。
+启用任一图片协议会激活 `VisualRenderer`。
+
+`launch --renderer webgl` 会立即启用 xterm.js WebGL 绘制；默认 `headless`。普通不带截图的
+`observe` 不会启动 Chromium。需要在截图中保证块字符/框线连续时建议使用 WebGL。
+它可能把字符格宽取整（例如 160 列从 1500px 变为 1440px），切换后应重新录制视觉基准。
+`session.renderer`、scenario/perf 环境、观察 JSON 和比较 JSON 记录实时 renderer；
+录制头记录录制开始时的 renderer。
+WebGL 无法启动时会回退 DOM 并回传 `dom`，不会静默声称使用了 WebGL。会话可以从 `headless`
+开始，在首次截图后返回 `dom`；若有界回放窗口丢弃了重建画面所需历史，会设置 `visualSyncDegraded`。
 
 ```sh
 node dist/src/interfaces/cli.js observe SESSION_ID --region 0,0,40,10

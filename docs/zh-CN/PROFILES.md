@@ -75,7 +75,7 @@ profile 文件所在目录解析。
   当前用于声明、矩阵比较和后续查询处理；不会直接改变渲染器的鼠标跟踪、下划线绘制或 Unicode 表。
 
 Windows 系统 ConPTY 会在浏览器模拟器看到查询之前自行回答 DA1/DA2。因此显式选择 profile
-（或覆盖 `graphics`/`images`）的会话使用 node-pty 随包提供的 ConPTY DLL；未显式指定 profile 的默认
+（或覆盖 `graphics`）的会话使用 node-pty 随包提供的 ConPTY DLL；未显式指定 profile 的默认
 快速路径继续使用系统 ConPTY。TuiLens 还会在 `ManagedSession.protocolResponse` 进入 PTY 前按 profile
 改写终端来源的 DA1/DA2/XTVERSION/Kitty 应答。
 
@@ -125,9 +125,8 @@ const presets = listTerminalProfiles();
 1. 内置/默认 profile。
 2. 文件中的 `extends` 链。
 3. `launch.graphics` 按单项覆盖图片协议。
-4. 已弃用的 `launch.images` 在出现时整体覆盖图片协议。
-5. `launch.env` 覆盖 profile 环境变量。
-6. `colorMode` 最后作用于颜色环境变量和 `capabilities.color`。
+4. `launch.env` 覆盖 profile 环境变量。
+5. `colorMode` 最后作用于颜色环境变量和 `capabilities.color`。
 
 会话结果通过 `terminalProfile` 返回解析后的 profile 名称。
 
@@ -151,25 +150,8 @@ const presets = listTerminalProfiles();
 已经完成的结果。
 
 录制保存最终解析出的渲染能力和应答，不保存环境变量或 profile 文件路径；回放不依赖外部 JSON
-profile 仍然存在。只有 `images` 的旧录制保持原有回放行为。
+profile 仍然存在。
 
 `examples/profile-matrix.json` 会用最小 DA1/DA2/XTVERSION/Kitty 探针运行全部内置 preset。
-
-## 已弃用的 `images`
-
-`images` 仍为兼容保留，内部映射到 `capabilities.graphics`：
-
-| `images` | SIXEL | Kitty | iTerm2 |
-| --- | --- | --- | --- |
-| `off` | false | false | false |
-| `sixel` | true | false | false |
-| `iterm` | false | false | true |
-| `all` | true | true | true |
-
-新代码使用正交覆盖：
-
-```json
-{ "graphics": { "sixel": true, "kitty": false, "iterm": false } }
-```
 
 profile、CLI/MCP schema 和 TypeScript SDK 共用同一模型。

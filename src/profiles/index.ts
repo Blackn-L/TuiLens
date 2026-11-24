@@ -1,7 +1,6 @@
 export {
   applyTerminalProfileOverrides,
   defaultTerminalProfile,
-  imageProfileGraphics,
   listTerminalProfiles,
   resolveTerminalProfile,
 } from "./resolver.js";

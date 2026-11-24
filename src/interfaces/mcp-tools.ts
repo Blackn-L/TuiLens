@@ -17,7 +17,7 @@ const MCP_INSTRUCTIONS_ZH =
  */
 const MCP_TOOLS_EN: McpToolDescriptions = {
   launch:
-    "Start a TuiLens session for an interactive terminal UI. Use when you need to run and drive a full-screen or menu-driven CLI (Ink, Textual, ratatui, bubbletea, curses, prompts, pagers); use a normal shell for simple non-interactive commands. Returns a session ID. Each agent should launch and own its own session; do not reuse another agent's active session ID. terminalProfile selects a built-in preset or JSON profile; graphics overrides image protocols; renderer selects dom (default) or webgl. Windows bare commands resolve through PATH/PATHEXT. When the session budget is full, the oldest exited sessions are reclaimed automatically; running sessions still require terminal_close.",
+    "Start a TuiLens session for an interactive terminal UI. Use when you need to run and drive a full-screen or menu-driven CLI (Ink, Textual, ratatui, bubbletea, curses, prompts, pagers); use a normal shell for simple non-interactive commands. Returns a session ID. Each agent should launch and own its own session; do not reuse another agent's active session ID. terminalProfile selects a built-in preset or JSON profile; graphics overrides image protocols. renderer defaults to headless; dom or webgl eagerly activates Chromium, while screenshots activate it on demand. Windows bare commands resolve through PATH/PATHEXT. When the session budget is full, the oldest exited sessions are reclaimed automatically; running sessions still require terminal_close.",
   list: "List all TuiLens sessions in the shared daemon. Use only to recover a session ID you created; do not take over another agent's running session.",
   observe:
     "Capture the current TUI screen from one frame as text plus PNG. Use this to inspect what an interactive CLI actually displays, especially when stdout logs are incomplete or the app uses the alternate screen. compact omits cells, trims line ends and defaults to no PNG; includeCells explicitly requests the full grid.",
@@ -46,7 +46,7 @@ const MCP_TOOLS_EN: McpToolDescriptions = {
 
 const MCP_TOOLS_ZH: McpToolDescriptions = {
   launch:
-    "在真实 PTY 中启动 TuiLens 交互式终端会话。需要运行并操作全屏或菜单式 CLI（Ink、Textual、ratatui、bubbletea、curses、提示符、分页器等）时使用；简单非交互命令请使用普通 shell。返回会话 ID；每个 agent 应自行 launch 并管理自己的会话，不要复用另一个 agent 正在使用的 ID。可用 terminalProfile 选择内置预设或 JSON profile，graphics 覆盖图片协议，renderer 选择 dom（默认）或 webgl；Windows 裸命令会按 PATH/PATHEXT 解析。会话额度满时会自动回收最旧的已退出会话；运行中的会话仍需 terminal_close。",
+    "在真实 PTY 中启动 TuiLens 交互式终端会话。需要运行并操作全屏或菜单式 CLI（Ink、Textual、ratatui、bubbletea、curses、提示符、分页器等）时使用；简单非交互命令请使用普通 shell。返回会话 ID；每个 agent 应自行 launch 并管理自己的会话，不要复用另一个 agent 正在使用的 ID。可用 terminalProfile 选择内置预设或 JSON profile，graphics 覆盖图片协议。renderer 默认 headless；显式 dom/webgl 会立即激活 Chromium，截图则按需激活。Windows 裸命令会按 PATH/PATHEXT 解析。会话额度满时会自动回收最旧的已退出会话；运行中的会话仍需 terminal_close。",
   list: "列出共享 daemon 中的所有 TuiLens 会话。只用于找回自己创建的会话 ID，不要接管另一个 agent 正在运行的会话。",
   observe:
     "截取当前 TUI 同一帧的画面，返回文字与 PNG。用于检查交互式 CLI 实际显示的内容，尤其是 stdout 日志不完整或应用使用备用屏幕时。compact 省略字符格、裁剪行尾且默认不截图；includeCells 才返回完整网格。",

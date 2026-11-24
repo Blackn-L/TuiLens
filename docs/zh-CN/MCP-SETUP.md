@@ -10,7 +10,7 @@ TuiLens 通过 MCP stdio 服务提供终端自动化能力。MCP 客户端会把
 - Node.js 22 或更高版本，以及 npm。
 - Windows 或 Linux。
 - 从源码安装时需要 Git。
-- 本机 Chrome、Edge，或 Playwright Chromium。
+- 纯文本会话不需要浏览器；截图和图片协议需要本机 Chrome、Edge，或 Playwright Chromium。
 - 如果 `node-pty` 没有可用的预编译包，需要对应平台的 C++ 构建工具。
 
 ## 构建服务

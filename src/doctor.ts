@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { chromium } from "playwright-core";
 import { errorRecord } from "./core/errors.js";
 import { pick } from "./core/i18n.js";
 import { resolveBrowserExecutable } from "./engine/browser-engine.js";
@@ -114,6 +113,7 @@ async function browserCheck(): Promise<DoctorCheck> {
   }
 
   try {
+    const { chromium } = await import("playwright-core");
     const bundled = chromium.executablePath();
     if (existsSync(bundled)) {
       return check(

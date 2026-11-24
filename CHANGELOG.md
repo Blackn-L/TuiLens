@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Text sessions now use a browser-free `@xterm/headless` terminal core by default.
+  Chromium and the xterm.js DOM/WebGL surface load lazily for explicit renderers, image protocols,
+  screenshots and visual comparisons.
+- `renderer` now reports `headless`, `dom` or `webgl` from live session state; `visualSyncDegraded`
+  marks a truncated 4 MiB visual replay when the browser layer attaches late.
+- `benchmark:overhead` accepts `--renderers headless,dom,webgl` for startup and RSS comparisons.
+- Recording headers move to version 2 with the renderer captured at recording start; the legacy
+  image-mode field and its replay mapping are gone.
+
+### Removed
+- Removed `launch.images`, CLI `--images`, `ImageProfile` and `imageProfileGraphics`.
+  Use `terminalProfile` capabilities or orthogonal `graphics` options.
+
 ## 0.5.5
 
 ### Fixed

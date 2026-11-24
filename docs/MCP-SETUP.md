@@ -11,7 +11,8 @@ the machine where the terminal sessions should execute.
 - Node.js 22 or newer and npm.
 - Windows or Linux.
 - Git, when installing from source.
-- Google Chrome, Microsoft Edge, or Playwright Chromium.
+- No browser is required for text-only sessions; Google Chrome, Microsoft Edge, or Playwright Chromium
+  is required for screenshots and image protocols.
 - Platform C++ build tools if `node-pty` cannot use a prebuilt binary.
 
 ## Build the server
@@ -26,7 +27,7 @@ npm ci
 npm run build
 ```
 
-Install the browser only when no system browser is available:
+For visual output, install the browser only when no system browser is available:
 
 ```powershell
 npx playwright-core install chromium

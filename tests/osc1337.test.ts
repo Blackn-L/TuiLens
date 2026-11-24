@@ -27,6 +27,14 @@ function redPixels(buffer: Buffer) {
   return total;
 }
 
+function graphicsFor(profile: "off" | "sixel" | "iterm" | "all") {
+  return {
+    sixel: profile === "sixel" || profile === "all",
+    kitty: profile === "all",
+    iterm: profile === "iterm" || profile === "all",
+  };
+}
+
 test("IIP 归一化支持可选 size、BEL/ST 和任意字节块边界", () => {
   const data = picture(),
     encoded = data.toString("base64");
@@ -103,7 +111,7 @@ test("IIP 内联 PNG 首张立即可截图；隔离模式不宣告 SIXEL", { tim
     const engine = await createBrowserEngine({
       cols: 30,
       rows: 10,
-      images: profile,
+      graphics: graphicsFor(profile),
       onData: (data) => responses.push(data),
     });
     try {
@@ -129,7 +137,7 @@ test("IIP 内联 PNG 首张立即可截图；隔离模式不宣告 SIXEL", { tim
 });
 
 test("IIP 分段图像支持缩放、区域截图、resize 与清屏", { timeout: 20000 }, async () => {
-  const engine = await createBrowserEngine({ cols: 30, rows: 10, images: "iterm", onData() {} });
+  const engine = await createBrowserEngine({ cols: 30, rows: 10, graphics: graphicsFor("iterm"), onData() {} });
   try {
     const encoded = picture().toString("base64");
     await engine.write(
@@ -157,8 +165,8 @@ test("IIP 分段图像支持缩放、区域截图、resize 与清屏", { timeout
   }
 });
 
-test("IIP 百分比与字符格尺寸按实际画布计算；GIF 使用首帧", { timeout: 15000 }, async () => {
-  const engine = await createBrowserEngine({ cols: 30, rows: 10, images: "iterm", onData() {} });
+test("IIP 百分比与字符格尺寸按实际画布计算；GIF 使用首帧", { timeout: 30000 }, async () => {
+  const engine = await createBrowserEngine({ cols: 30, rows: 10, graphics: graphicsFor("iterm"), onData() {} });
   try {
     await engine.write(`${ESC}[?25l`);
     const base = await engine.screenshot();
@@ -177,7 +185,7 @@ test("IIP 百分比与字符格尺寸按实际画布计算；GIF 使用首帧", 
 });
 
 test("IIP 保持比例同时约束宽高，取消控制字符串后可渲染", { timeout: 15000 }, async () => {
-  const engine = await createBrowserEngine({ cols: 30, rows: 10, images: "iterm", onData() {} });
+  const engine = await createBrowserEngine({ cols: 30, rows: 10, graphics: graphicsFor("iterm"), onData() {} });
   try {
     for (const prefix of [`${ESC}]0;title\x18`, `${ESC}Pqcancel\x1a`, ESC]) {
       await engine.write(
@@ -194,7 +202,12 @@ test("IIP 保持比例同时约束宽高，取消控制字符串后可渲染", {
 
 test("all 模式在取消字符串后仍能处理 IIP 与 Kitty", { timeout: 15000 }, async () => {
   const replies: string[] = [];
-  const engine = await createBrowserEngine({ cols: 30, rows: 10, images: "all", onData: (data) => replies.push(data) });
+  const engine = await createBrowserEngine({
+    cols: 30,
+    rows: 10,
+    graphics: graphicsFor("all"),
+    onData: (data) => replies.push(data),
+  });
   try {
     await engine.write(`${ESC}[?25l${ESC}Pqcancel\x18` + osc(`File=inline=1:${picture().toString("base64")}`));
     await engine.write(`${ESC}_Ga=q,i=7,f=24,s=1,v=1;/wAA${ESC}\\`);
@@ -223,7 +236,7 @@ test("IIP JPEG 解码并进入截图，损坏的同尺寸 JPEG 不阻塞终端",
   } finally {
     await browser.close();
   }
-  const engine = await createBrowserEngine({ cols: 30, rows: 10, images: "iterm", onData() {} });
+  const engine = await createBrowserEngine({ cols: 30, rows: 10, graphics: graphicsFor("iterm"), onData() {} });
   try {
     const bytes = Buffer.from(jpeg, "base64");
     // 保留 SOF 尺寸但损坏熵编码，走浏览器解码预检而非尺寸拒绝路径。
@@ -244,7 +257,7 @@ test("IIP JPEG 解码并进入截图，损坏的同尺寸 JPEG 不阻塞终端",
 });
 
 test("IIP 损坏数据、下载和其他扩展不阻塞后续合法图片", { timeout: 15000 }, async () => {
-  const engine = await createBrowserEngine({ cols: 30, rows: 10, images: "all", onData() {} });
+  const engine = await createBrowserEngine({ cols: 30, rows: 10, graphics: graphicsFor("all"), onData() {} });
   try {
     await engine.write(`${ESC}[?25l` + osc("File=inline=1;size=16:R0lGODlhAQABAIAAAAAAAA=="));
     await engine.write(osc("File=inline=0;name=c2FtcGxlLnBuZw==;size=4:AAAA") + osc("Copy=not-supported"));
@@ -259,9 +272,13 @@ test("IIP 损坏数据、下载和其他扩展不阻塞后续合法图片", { ti
 });
 
 test("IIP 经真实 PTY、启动协议与录制回放保持图片像素", { timeout: 30000 }, async () => {
-  launchOptions({ command: process.execPath, images: "iterm" });
+  launchOptions({ command: process.execPath, graphics: graphicsFor("iterm") });
   launchOptions({ command: process.execPath, renderer: "webgl" });
-  assert.equal(launchSchema.parse({ command: process.execPath, images: "iterm" }).images, "iterm");
+  assert.deepEqual(launchSchema.parse({ command: process.execPath, graphics: graphicsFor("iterm") }).graphics, {
+    sixel: false,
+    kitty: false,
+    iterm: true,
+  });
   assert.equal(launchSchema.parse({ command: process.execPath, renderer: "webgl" }).renderer, "webgl");
   const directory = await mkdtemp(join(tmpdir(), "tuilens-iip-"));
   const manager = new SessionManager({ artifactDir: directory });
@@ -273,7 +290,7 @@ test("IIP 经真实 PTY、启动协议与录制回放保持图片像素", { time
       args: ["-e", child],
       cols: 30,
       rows: 10,
-      images: "iterm",
+      graphics: graphicsFor("iterm"),
       recording: {},
     });
     await manager.wait(session.id, { conditions: [{ kind: "text", text: "IIP_READY" }] });

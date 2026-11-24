@@ -9,15 +9,15 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 
 ![TuiLens terminal automation for AI agents](docs/assets/tuilens-agent-banner.en.png)
 
-> **Status:** experimental, version 0.5.5. Designed for functional and visual testing.
-> The browser renderer is not a low-overhead performance measurement environment.
+> **Status:** experimental, version 0.5.5. Text observation runs on a browser-free
+> `TerminalCore`; Chromium starts lazily only for visual output.
 
 [Features](#features) · [Installation](#installation) · [Diagnostics](#diagnostics) · [Quick start](#quick-start) · [Interfaces](#interfaces) · [Development](#development) · [Documentation](#documentation) · [License](#license)
 
 ## Features
 
 - **Native images:** opt-in SIXEL, iTerm2 OSC 1337 inline images, and a bounded Kitty subset with Unicode virtual placements.
-- **Renderer selection:** DOM remains the default; opt-in WebGL is available for continuous block glyphs and high-fidelity screenshots. The resolved renderer is returned and recorded with visual artifacts.
+- **Renderer selection:** `headless` is the default. `dom` or `webgl` can be requested eagerly; screenshots, image protocols and visual comparisons activate the browser layer on demand. The actual renderer is returned with every session.
 - **Visual testing:** character-region screenshots, PNG comparisons, pixel masks, and inspectable diff artifacts.
 - **Interaction:** keys, bracketed paste, clicks, button down/up, drag, wheel coordinates, and modifiers.
 - **Recording and replay:** bounded output/input/resize recordings; offline replay never executes recorded input.
@@ -30,7 +30,7 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 - **Terminal profiles:** declarative presets or JSON-derived profiles control `TERM`, DA1/DA2/XTVERSION and Kitty query replies, image protocols, keyboard capability metadata and scrollback. Scenario/perf runs can compare a matrix of profiles.
 - **Scrollback assertions:** `observe.scrollback` returns history lines above the viewport, so content that scrolled away can still be asserted.
 - **Compact observation:** `observe --compact` trims line ends, omits cells and defaults to no screenshot; `watch` streams changed frames as JSONL, with `--control` as an explicit TTY handoff.
-- **Engine-side probes:** regional text/style waits are evaluated inside the browser terminal and only the matching frame is transferred.
+- **Engine-side probes:** regional text/style waits are evaluated in `TerminalCore`; no browser or full-grid transfer is needed before a match.
 - **Terminal reply guard:** late or unmatched DA1/DA2, CPR/DSR and related automatic replies are dropped by default; `suppress` preserves ordinary input.
 - **Scenario runner:** declarative steps with failure screenshots, reports, and automatic session cleanup.
 - **Performance testing:** declarative multi-round scenarios with setup history growth, process-tree RSS sampling, optional baseline files and regression gating.
@@ -43,7 +43,7 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 ## Requirements
 
 - Node.js **22 or newer**.
-- Windows, Linux, or macOS (experimental); a local Chrome/Chromium installation or Playwright's Chromium.
+- Windows, Linux, or macOS (experimental). Text-only sessions need no browser; screenshots and image protocols need local Chrome/Chromium or Playwright's Chromium.
 - Platform build tools if `node-pty` cannot use a prebuilt binary.
 
 ## Installation
@@ -57,7 +57,7 @@ npm ci
 npm run build
 ```
 
-TuiLens detects a system Chrome/Edge installation. Alternatively:
+For visual output, TuiLens detects a system Chrome/Edge installation. Alternatively:
 
 ```sh
 npx playwright-core install chromium
@@ -168,16 +168,24 @@ both `messageEn` and `messageZh`; `message` follows the active locale.
 
 ## Images and screenshots
 
-Use `launch --images sixel`, `launch --images iterm`, or `launch --images all`. Images are **off by default**.
-`iterm` enables OSC 1337 inline images, including multipart transport. `all` enables all three implemented
-image families; it does not mean full Kitty or OSC 1337 extension conformance.
+Image protocols are capabilities of the selected terminal profile. Use a preset such as
+`launch --terminal-profile kitty`, or provide explicit `graphics` in JSON launch options:
 
-`launch --renderer webgl` enables xterm.js's WebGL renderer; the default is `--renderer dom`. WebGL is
-recommended when block/box-drawing glyphs must be continuous in captured PNGs. It may round the cell width
-(for example, 160 columns can change from 1500px to 1440px), so re-record visual baselines when switching.
-`session.renderer`, recording headers, scenario/perf environments, observation JSON and comparison JSON
-contain the actual renderer. If WebGL cannot start, TuiLens falls back to DOM and reports `dom` rather than
-silently claiming WebGL.
+```json
+{ "command": "my-tui", "graphics": { "sixel": true, "kitty": true, "iterm": true } }
+```
+
+Images are **off by default**. The flags enable only the implemented families; they do not claim full
+Kitty or OSC 1337 extension conformance. Enabling any image protocol activates `VisualRenderer`.
+
+`launch --renderer webgl` eagerly enables xterm.js's WebGL renderer. The default is `headless`; a normal
+`observe` without a screenshot does not start Chromium. WebGL is recommended when block/box-drawing glyphs
+must be continuous in captured PNGs. It may round the cell width (for example, 160 columns can change from
+1500px to 1440px), so re-record visual baselines when switching.
+`session.renderer`, scenario/perf environments, observation JSON and comparison JSON contain live renderer
+state; recording headers contain the renderer at recording start. If WebGL cannot start, TuiLens falls back to DOM and reports `dom` rather than
+silently claiming WebGL. A session can start as `headless` and report `dom` after its first screenshot;
+`visualSyncDegraded` is set if the bounded replay window discarded history needed to reconstruct the screen.
 
 ```sh
 node dist/src/interfaces/cli.js observe SESSION_ID --region 0,0,40,10

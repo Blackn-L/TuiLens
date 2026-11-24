@@ -27,7 +27,7 @@ test("字体文件被嵌入页面并进入渲染指纹", { timeout: 30_000 }, as
     context.skip("no known system font is available");
     return;
   }
-  const engine = await createBrowserEngine({ cols: 12, rows: 2, onData() {}, fontFile });
+  const engine = await createBrowserEngine({ cols: 12, rows: 2, renderer: "dom", onData() {}, fontFile });
   try {
     await engine.write("FONT");
     const snapshot = await engine.snapshot(1);
@@ -44,7 +44,7 @@ test("损坏的字体文件返回 INVALID_FONT_FILE", { timeout: 30_000 }, async
   const fontFile = join(directory, "broken.ttf");
   await writeFile(fontFile, "not a font", "utf8");
   context.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
-  await assert.rejects(createBrowserEngine({ cols: 12, rows: 2, onData() {}, fontFile }), {
+  await assert.rejects(createBrowserEngine({ cols: 12, rows: 2, renderer: "dom", onData() {}, fontFile }), {
     code: "INVALID_FONT_FILE",
   });
 });
@@ -80,8 +80,10 @@ test("共享浏览器在字体加载失败后仍能启动后续会话", { timeou
   context.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
   const factory = createBrowserEngineFactory();
   try {
-    await assert.rejects(factory({ cols: 12, rows: 2, onData() {}, fontFile: broken }), { code: "INVALID_FONT_FILE" });
-    const engine = await factory({ cols: 12, rows: 2, onData() {}, fontFile });
+    await assert.rejects(factory({ cols: 12, rows: 2, renderer: "dom", onData() {}, fontFile: broken }), {
+      code: "INVALID_FONT_FILE",
+    });
+    const engine = await factory({ cols: 12, rows: 2, renderer: "dom", onData() {}, fontFile });
     try {
       await engine.write("OK");
       assert.equal((await engine.snapshot(1)).lines[0], "OK");

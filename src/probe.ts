@@ -90,7 +90,7 @@ export async function runProbe(
     ...(options.fontFamily === undefined ? {} : { fontFamily: options.fontFamily }),
     ...(options.fontFile === undefined ? {} : { fontFile: options.fontFile }),
     ...(options.fontSize === undefined ? {} : { fontSize: options.fontSize }),
-    ...(options.renderer === undefined ? {} : { renderer: options.renderer }),
+    renderer: options.renderer ?? "dom",
   });
   try {
     await engine.write(GLYPHS.map((glyph) => glyph.text).join(" "));

@@ -83,12 +83,13 @@ hitbox 以文字区域为基准向四周扩展；point 支持 center、left、ri
 ```
 
 `terminalProfile` 接受内置 preset 键/名称或 JSON profile 路径。返回的会话通过 `terminalProfile`
-给出解析后的名称。`graphics` 按单项覆盖图片协议；旧 `images` 仍兼容，但映射到相同能力。
-详见[终端能力画像](PROFILES.md)。
+给出解析后的名称。`graphics` 按单项覆盖图片协议。详见[终端能力画像](PROFILES.md)。
 
-`renderer` 选择 `dom`（默认）或 `webgl`。返回的会话通过 `renderer` 给出实际值；WebGL 启动失败会回退
-DOM 并返回 `dom`。实际 renderer 还会写入录制头、scenario/perf 环境、观察元数据和视觉比较 JSON。
-WebGL 可能使用整数格宽，截图尺寸会变化；切换后需要重新录制视觉基准。
+`renderer` 接受 `headless`（默认）、`dom` 或 `webgl`。`headless` 不加载 Chromium；显式
+`dom`/`webgl`、启用图片协议，或首次截图/视觉比较会激活可视化层。返回会话始终反映实时状态，
+因此可能从 `headless` 开始，之后变为 `dom`/`webgl`；`visualSyncDegraded: true` 表示懒加载时
+有界回放窗口被截断。WebGL 启动失败会回退 DOM 并返回 `dom`。WebGL 可能使用整数格宽，
+截图尺寸会变化；切换后需要重新录制视觉基准。
 
 ## 键盘协议
 
