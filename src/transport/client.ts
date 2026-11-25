@@ -429,6 +429,8 @@ export class IpcClient {
           detached: true,
           windowsHide: true,
           stdio: ["ignore", log.fd, log.fd],
+          // 不继承首个调用者的工作目录：daemon 是常驻进程，相对路径应由调用方显式锚定。
+          cwd: this.paths.home,
         }
       );
       let launchError: Error | null = null;

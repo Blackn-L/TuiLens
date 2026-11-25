@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, symlink, truncate, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -374,6 +374,113 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     await call("shutdown").catch(() => undefined);
     // 所有路径均来自 mkdtemp，不涉及用户目录。
     await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});
+
+test("跨目录调用：相对路径与未指定的 cwd 按调用方目录解析，而不是 daemon 启动目录", { timeout: 90000 }, async () => {
+  const home = await mkdtemp(join(tmpdir(), "tuilens-cwd-home-"));
+  const callerA = await mkdtemp(join(tmpdir(), "tuilens-cwd-a-"));
+  const callerB = await mkdtemp(join(tmpdir(), "tuilens-cwd-b-"));
+  // 比较规范化路径：macOS 的 tmpdir 在 /var 符号链接下，Windows runner 的 tmpdir 可能经 junction 重解析。
+  const canonical = async (path: string): Promise<string> => realpath(path);
+  const env = { ...process.env, TUILENS_HOME: home, TUILENS_LANG: "en" };
+  const call = async (args: string[], cwd: string) => {
+    const result = await run(process.execPath, [cli, ...args], {
+      cwd,
+      env,
+      maxBuffer: 20 * 1024 * 1024,
+    });
+    const payload = JSON.parse(result.stdout) as { ok: boolean; data: unknown };
+    assert.equal(payload.ok, true, result.stdout);
+    return payload.data;
+  };
+  try {
+    // 目录 A 先拉起常驻 daemon；这里用绝对路径，确保 daemon 成功启动。
+    const session = (await call(
+      ["launch", "--json", JSON.stringify({ command: process.execPath, args: [fixture], cols: 60, rows: 12 })],
+      callerA
+    )) as SessionInfo;
+    await call(["close", session.id], callerA);
+
+    // 目录 B 只放一个相对路径的场景文件和夹具副本，spec 不写 cwd。
+    const localFixture = join(callerB, "probe.js");
+    await writeFile(localFixture, await readFile(fixture, "utf8"), "utf8");
+    const specification = {
+      version: 1,
+      launch: { command: process.execPath, args: ["./probe.js"], cols: 60, rows: 12 },
+      steps: [
+        { type: "wait", conditions: [{ kind: "text", text: "TUILENS_READY" }] },
+        { type: "input", action: { type: "text", text: "PING" } },
+        { type: "wait", conditions: [{ kind: "text", text: "INPUT_RECEIVED" }] },
+        { type: "input", action: { type: "key", key: "Ctrl+q" } },
+        { type: "wait", conditions: [{ kind: "exited" }] },
+      ],
+    };
+    await writeFile(join(callerB, "scenario.json"), JSON.stringify(specification), "utf8");
+    const scenario = (await call(["scenario", "--file", "scenario.json"], callerB)) as {
+      pass: boolean;
+      steps: { result?: { cwd?: string } }[];
+    };
+    assert.equal(scenario.pass, true, JSON.stringify(scenario));
+
+    // 显式 --cwd 仍然优先于调用方目录。
+    await writeFile(join(callerA, "probe.js"), await readFile(fixture, "utf8"), "utf8");
+    const explicit = (await call(
+      [
+        "launch",
+        "--cwd",
+        callerA,
+        "--json",
+        JSON.stringify({ command: process.execPath, args: ["./probe.js"], cols: 60, rows: 12 }),
+      ],
+      callerB
+    )) as { id: string };
+    // 夹具只在 A 目录存在；等待成功即证明 --cwd 优先于调用方目录。
+    await call(["wait", explicit.id, "--text", "TUILENS_READY"], callerB);
+    await call(["close", explicit.id], callerB);
+
+    // perf 的 --write-baseline 相对路径写到调用方目录，而不是 daemon 目录。
+    await writeFile(
+      join(callerB, "perf.json"),
+      JSON.stringify({
+        version: 1,
+        launch: { command: process.execPath, args: ["./probe.js"], cols: 60, rows: 12 },
+        ready: [{ kind: "text", text: "TUILENS_READY" }],
+        warmupRounds: 0,
+        rounds: 1,
+        repeats: 1,
+        phases: [
+          {
+            name: "ping",
+            samples: [
+              {
+                input: { type: "text", text: "PING" },
+                observe: [{ kind: "text", text: "INPUT_RECEIVED" }],
+              },
+            ],
+          },
+        ],
+      }),
+      "utf8"
+    );
+    const perf = (await call(["perf", "--file", "perf.json", "--write-baseline", "baseline.json"], callerB)) as {
+      pass: boolean;
+      baselinePath?: string;
+    };
+    assert.equal(perf.pass, true, JSON.stringify(perf));
+    const written = join(callerB, "baseline.json");
+    await stat(written);
+    assert.equal(await canonical(perf.baselinePath ?? ""), await canonical(written));
+  } finally {
+    await run(process.execPath, [cli, "shutdown"], { env }).catch(() => undefined);
+    // daemon 进程退出后才会释放日志文件句柄；重试几次再清理。
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await rm(home, { recursive: true, force: true }).catch(() => undefined);
+      if (!(await stat(home).catch(() => undefined))) break;
+      await sleep(250);
+    }
+    await rm(callerA, { recursive: true, force: true });
+    await rm(callerB, { recursive: true, force: true });
   }
 });
 

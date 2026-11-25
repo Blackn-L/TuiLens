@@ -4,6 +4,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { errorRecord } from "./core/errors.js";
 import { pick } from "./core/i18n.js";
+import { isSupportedNode, MIN_NODE_MAJOR } from "./core/node-version.js";
 import { resolveBrowserExecutable } from "./engine/browser-engine.js";
 import { request } from "./transport/client.js";
 import { runtimePaths } from "./transport/paths.js";
@@ -33,15 +34,17 @@ function check(code: string, status: DoctorStatus, message: string, details?: Re
 }
 
 function nodeCheck(): DoctorCheck {
-  const major = Number.parseInt(process.versions.node, 10);
-  return major >= 22
+  return isSupportedNode()
     ? check("runtime.node", "ok", pick("Node.js meets the minimum version.", "Node.js 版本满足要求。"), {
         node: process.versions.node,
       })
     : check(
         "runtime.node",
         "error",
-        pick("TuiLens requires Node.js 22 or newer.", "TuiLens 需要 Node.js 22 或更高版本。"),
+        pick(
+          `TuiLens requires Node.js ${MIN_NODE_MAJOR} or newer.`,
+          `TuiLens 需要 Node.js ${MIN_NODE_MAJOR} 或更高版本。`
+        ),
         {
           node: process.versions.node,
         }
