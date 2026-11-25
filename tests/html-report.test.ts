@@ -4,8 +4,11 @@ import { mkdtemp, readFile, rm, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { PNG } from "pngjs";
+import { chromium } from "playwright-core";
+import { resolveBrowserExecutable } from "../src/engine/browser-engine.js";
 import type { PerfMatrixResult, PerfResult } from "../src/perf/runner.js";
 import type { ScenarioMatrixResult, ScenarioResult } from "../src/scenario/runner.js";
 import { buildPerfEvidence, buildScenarioEvidence, writeEvidenceBundle } from "../src/reporting/bundle.js";
@@ -65,6 +68,10 @@ test("scenario HTML 报告包含时间轴、对比滑块、矩阵标签和转义
     assert.equal(report.manifest.kind, "scenario-matrix");
     assert.equal(report.inlineImages, 4);
     assert.match(report.html, /data-compare=/u);
+    assert.match(report.html, /\.compare-clip\{position:absolute;inset:0;/u);
+    assert.match(report.html, /\.compare\{[^}]*width:fit-content/u);
+    assert.match(report.html, /clip\.style\.clipPath = "inset\(0 0 0 " \+ \(100 - value\) \+ "%\)"/u);
+    assert.doesNotMatch(report.html, /clip\.style\.right/u);
     assert.match(report.html, /Matrix summary/u);
     assert.match(report.html, /data-tab="scenario-run-1"/u);
     assert.match(report.html, /Difference image/u);
@@ -111,6 +118,85 @@ test("HTML 报告按单图和总预算降级图片，不使报告失败", { time
     });
     assert.equal(tooLarge.inlineImages, 0);
     assert.match(tooLarge.html, /single-image limit/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("scenario HTML 对比滑块按固定几何裁剪，拖动不缩放且左侧为 Baseline", { timeout: 30000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tuilens-html-compare-"));
+  try {
+    const baseline = join(directory, "baseline.png");
+    const actual = join(directory, "actual.png");
+    const diff = join(directory, "diff.png");
+    await Promise.all([
+      writeFile(baseline, solidPng(480, 300, [205, 45, 55])),
+      writeFile(actual, solidPng(480, 300, [30, 95, 210])),
+      writeFile(diff, solidPng(480, 300, [30, 95, 210])),
+    ]);
+    const scenario = scenarioResult(directory, {
+      steps: [
+        {
+          index: 0,
+          type: "compare",
+          elapsedMs: 1,
+          result: { pass: false, baseline, actual, diff, mismatchPixels: 9 },
+        },
+      ],
+    });
+    const report = await renderScenarioHtmlReport(scenario, { generatedAt: "2026-01-01T00:00:00.000Z" });
+    const reportPath = join(directory, "report.html");
+    await writeFile(reportPath, report.html);
+    const executablePath = resolveBrowserExecutable();
+    const browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
+    try {
+      const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+      await page.goto(pathToFileURL(reportPath).href, { waitUntil: "load" });
+      const sizes = await page.evaluate(() => {
+        const root = document.querySelector("[data-compare]");
+        const baselineImage = root?.querySelector(".compare-stage > img");
+        const clip = root?.querySelector(".compare-clip");
+        const actualImage = clip?.querySelector("img");
+        const range = root?.querySelector("input[type=range]");
+        if (
+          !(baselineImage instanceof HTMLImageElement) ||
+          !(clip instanceof HTMLElement) ||
+          !(actualImage instanceof HTMLImageElement) ||
+          !(range instanceof HTMLInputElement)
+        ) {
+          throw new Error("compare widget is incomplete");
+        }
+        return [20, 50, 80].map((value) => {
+          range.value = String(value);
+          range.dispatchEvent(new Event("input", { bubbles: true }));
+          return {
+            value,
+            baselineWidth: baselineImage.getBoundingClientRect().width,
+            actualWidth: actualImage.getBoundingClientRect().width,
+            actualHeight: actualImage.getBoundingClientRect().height,
+            clipPath: getComputedStyle(clip).clipPath,
+          };
+        });
+      });
+      for (const size of sizes) {
+        assert.ok(Math.abs(size.actualWidth - size.baselineWidth) < 0.5, JSON.stringify(size));
+        assert.ok(Math.abs(size.actualWidth - sizes[0]!.actualWidth) < 0.5, JSON.stringify(sizes));
+        assert.match(size.clipPath, /inset/u);
+      }
+      await page.evaluate(() => {
+        const range = document.querySelector("[data-compare] input[type=range]");
+        if (!(range instanceof HTMLInputElement)) throw new Error("compare range is missing");
+        range.value = "50";
+        range.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      const stage = PNG.sync.read(await page.locator(".compare-stage").screenshot());
+      const left = pixelAt(stage, 0.25, 0.5);
+      const right = pixelAt(stage, 0.75, 0.5);
+      assert.ok(left[0] > 150 && left[1] < 100 && left[2] < 100, JSON.stringify(left));
+      assert.ok(right[2] > 150 && right[0] < 100, JSON.stringify(right));
+    } finally {
+      await browser.close();
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -314,6 +400,19 @@ function scenarioResult(directory: string, overrides: Partial<ScenarioResult> = 
     steps: [{ index: 0, type: "wait", name: "ready", detail: 'wait text "READY"', elapsedMs: 3 }],
     ...overrides,
   };
+}
+
+function solidPng(width: number, height: number, color: [number, number, number]): Buffer {
+  const png = new PNG({ width, height });
+  for (let offset = 0; offset < png.data.length; offset += 4) png.data.set([...color, 255], offset);
+  return PNG.sync.write(png);
+}
+
+function pixelAt(image: PNG, xRatio: number, yRatio: number): [number, number, number] {
+  const x = Math.floor(image.width * xRatio);
+  const y = Math.floor(image.height * yRatio);
+  const offset = (y * image.width + x) * 4;
+  return [image.data[offset]!, image.data[offset + 1]!, image.data[offset + 2]!];
 }
 
 function perfResult(directory: string): PerfResult {
