@@ -371,6 +371,8 @@ resize/exit metadata. The embedded `EvidenceManifest` registers every artifact e
 All text is escaped and embedded JSON is script-safe. Images are inlined only up to 8 MiB each and
 24 MiB total; larger images fall back to their path and size. See [evidence reports](docs/REPORTING.md).
 
+![TuiLens performance evidence report](docs/assets/evidence-report.png)
+
 ## Testing API
 
 The SDK exposes a playwright-style handle for test files:
@@ -416,8 +418,9 @@ server instructions read them automatically; add a client-level rule or skill wh
 agent still needs deterministic routing.
 
 Available tools: `terminal_launch`, `terminal_list`, `terminal_observe`, `terminal_find`,
-`terminal_clickText`, `terminal_input`, `terminal_inputAndWait`, `terminal_resize`, `terminal_wait`, `terminal_compare`,
-`terminal_replay`, `terminal_scenario`, `terminal_perf`, `terminal_metrics`, and `terminal_close`.
+`terminal_clickText`, `terminal_input`, `terminal_inputAndWait`, `terminal_resize`, `terminal_wait`,
+`terminal_metrics`, `terminal_close`, `terminal_compare`, `terminal_replay`, `terminal_scenario`,
+and `terminal_perf`.
 `terminal_observe`, `terminal_replay`, and screenshot-enabled `terminal_inputAndWait` return PNG image content as well as text metadata.
 Disconnecting releases sessions created by that MCP connection.
 Long-running wait, inputAndWait, replay, scenario and perf calls forward real server progress when the

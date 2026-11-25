@@ -32,7 +32,7 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
   图片协议、键盘能力元数据和回滚缓冲；场景/性能测试可运行 profile 矩阵。
 - **回滚区断言：** `observe.scrollback` 返回视口上方的历史行，滚出屏幕的内容仍可断言。
 - **声明式观察：** `observe --view compact|full|cells|diff` 选择返回结构；`diff --from-frame` 仅返回变化行和元数据。截图需显式开启，`watch` 以 JSONL 流式输出紧凑帧。
-- **引擎侧探测：** 区域文本/样式等待在浏览器终端内判断，只有命中后才传输轻量快照。
+- **引擎侧探测：** 区域文本/样式等待在 `TerminalCore` 内判断，命中前不需要浏览器或整屏字符格传输。
 - **终端应答护栏：** 默认丢弃超时或无查询匹配的 DA1/DA2、CPR/DSR 等自动应答；`suppress` 保留普通输入。
 - **场景执行：** 声明式步骤、失败截图、报告和自动清理。
 - **性能测试：** 多轮声明式场景，支持历史增长准备、进程树内存采样、可选基线文件与劣化判定。
@@ -363,6 +363,8 @@ stability、启动耗时、进程树 RSS、SVG 延迟柱状图、RSS 时间线�
 所有文本都会转义，内嵌 JSON 可安全出现在 `<script>` 中。单图最多内联 8 MiB，全部图片共享
 24 MiB 预算；超限时降级为路径和体积。详见[证据报告](docs/zh-CN/REPORTING.md)。
 
+![TuiLens 性能证据报告](docs/assets/evidence-report.png)
+
 ## 测试断言
 
 SDK 提供接近 playwright 的句柄：
@@ -407,8 +409,9 @@ TuiLens，并配合面向使用意图的工具描述。支持 server instruction
 如果某个 Agent 仍然不能稳定选择，再为它增加客户端级规则或 Skill。
 
 工具包括 `terminal_launch`、`terminal_list`、`terminal_observe`、`terminal_find`、
-`terminal_clickText`、`terminal_input`、`terminal_inputAndWait`、`terminal_resize`、`terminal_wait`、`terminal_compare`、
-`terminal_replay`、`terminal_scenario`、`terminal_perf`、`terminal_metrics`、`terminal_close`。
+`terminal_clickText`、`terminal_input`、`terminal_inputAndWait`、`terminal_resize`、`terminal_wait`、
+`terminal_metrics`、`terminal_close`、`terminal_compare`、`terminal_replay`、`terminal_scenario`、
+`terminal_perf`。
 观察、回放和启用截图的 inputAndWait 返回 PNG image content 和文字元数据；MCP 断开时回收该连接创建的会话。
 客户端请求 progress token 时，wait、inputAndWait、replay、scenario 和 perf 会转发真实服务端进度；
 取消 MCP 请求会中止对应的 daemon 操作。
