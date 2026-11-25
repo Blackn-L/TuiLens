@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, truncate, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -381,6 +381,8 @@ test("跨目录调用：相对路径与未指定的 cwd 按调用方目录解析
   const home = await mkdtemp(join(tmpdir(), "tuilens-cwd-home-"));
   const callerA = await mkdtemp(join(tmpdir(), "tuilens-cwd-a-"));
   const callerB = await mkdtemp(join(tmpdir(), "tuilens-cwd-b-"));
+  // macOS 的 tmpdir 位于 /var 符号链接之下；daemon 返回的是规范化后的真实路径。
+  const realB = await realpath(callerB);
   const env = { ...process.env, TUILENS_HOME: home, TUILENS_LANG: "en" };
   const call = async (args: string[], cwd: string) => {
     const result = await run(process.execPath, [cli, ...args], {
@@ -466,7 +468,7 @@ test("跨目录调用：相对路径与未指定的 cwd 按调用方目录解析
       baselinePath?: string;
     };
     assert.equal(perf.pass, true, JSON.stringify(perf));
-    assert.equal(join(perf.baselinePath ?? ""), join(callerB, "baseline.json"));
+    assert.equal(join(perf.baselinePath ?? ""), join(realB, "baseline.json"));
     await stat(join(callerB, "baseline.json"));
   } finally {
     await run(process.execPath, [cli, "shutdown"], { env }).catch(() => undefined);
