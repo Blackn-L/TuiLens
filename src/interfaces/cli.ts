@@ -7,6 +7,7 @@ import { methodSchemas, type Method } from "./schemas.js";
 import { readBoundedFile } from "../core/bounded-file.js";
 import { VERSION } from "../version.js";
 import { pick, resolveLocale } from "../core/i18n.js";
+import { isSupportedNode, unsupportedNodeMessage } from "../core/node-version.js";
 import { buildMcpConfig } from "./mcp-config.js";
 import type { PerfRunResult } from "../perf/runner.js";
 import type { ScenarioRunResult } from "../scenario/runner.js";
@@ -132,7 +133,63 @@ function helpText(): string {
   return resolveLocale() === "zh-CN" ? HELP_ZH : HELP_EN;
 }
 
+/**
+ * 调用方的相对路径必须相对调用方 cwd 解析，而不是 daemon 的启动目录。
+ * 未显式给出 launch.cwd 时同样补上调用方 cwd，避免跨目录执行时找错程序或场景文件。
+ */
+function anchorPaths(method: string, params: unknown, options: { callerCwd: string; explicitCwd?: string }): unknown {
+  const { callerCwd, explicitCwd } = options;
+  const absolute = (value: unknown): unknown =>
+    typeof value === "string" && value ? resolve(callerCwd, value) : value;
+  // 显式 --cwd 优先；否则保留 spec 里的 cwd；都没有时补调用方 cwd。
+  const withCwd = (launch: unknown): unknown => {
+    if (!launch || typeof launch !== "object" || Array.isArray(launch)) return launch;
+    const record = launch as Record<string, unknown>;
+    if (explicitCwd !== undefined) return { ...record, cwd: resolve(explicitCwd) };
+    return record.cwd === undefined ? { ...record, cwd: callerCwd } : launch;
+  };
+  const withSpecificationCwd = (specification: unknown): unknown => {
+    if (!specification || typeof specification !== "object" || Array.isArray(specification)) return specification;
+    const record = specification as Record<string, unknown>;
+    return { ...record, launch: withCwd(record.launch) };
+  };
+  if (!params || typeof params !== "object" || Array.isArray(params)) return params;
+  const record = params as Record<string, unknown>;
+  switch (method) {
+    case "launch":
+      return withCwd(record);
+    case "scenario":
+      return { ...record, specification: withSpecificationCwd(record.specification) };
+    case "perf":
+      return {
+        ...record,
+        specification: withSpecificationCwd(record.specification),
+        ...(record.baseline === undefined ? {} : { baseline: absolute(record.baseline) }),
+        ...(record.writeBaseline === undefined ? {} : { writeBaseline: absolute(record.writeBaseline) }),
+      };
+    case "replay":
+      return { ...record, path: absolute(record.path) };
+    case "compare": {
+      const compareOptions = (record.options ?? {}) as Record<string, unknown>;
+      return {
+        ...record,
+        options: {
+          ...compareOptions,
+          ...(compareOptions.baseline === undefined ? {} : { baseline: absolute(compareOptions.baseline) }),
+        },
+      };
+    }
+    default:
+      return record;
+  }
+}
+
 async function main(): Promise<void> {
+  if (!isSupportedNode()) {
+    process.stderr.write(`${unsupportedNodeMessage()}\n`);
+    process.exitCode = 1;
+    return;
+  }
   const [command, ...rest] = process.argv.slice(2);
   if (!command || command === "--help" || command === "help") {
     process.stdout.write(helpText());
@@ -533,6 +590,10 @@ async function main(): Promise<void> {
   if ((method === "input" || method === "inputAndWait") && values.frame !== undefined) {
     params = { ...(params as object), guard: { frameId: Number(values.frame) } };
   }
+  params = anchorPaths(method, params, {
+    callerCwd: process.cwd(),
+    ...(values.cwd ? { explicitCwd: values.cwd } : {}),
+  });
   if (!Object.hasOwn(methodSchemas, method)) {
     throw new TuiLensError("UNKNOWN_METHOD", "未知命令", undefined, "Unknown command.");
   }

@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { runDoctor } from "../src/doctor.js";
+import { isSupportedNode, nodeMajor, unsupportedNodeMessage } from "../src/core/node-version.js";
 import { VERSION } from "../src/version.js";
 
 const execute = promisify(execFile);
@@ -16,6 +17,37 @@ function restoreEnv(name: string, value: string | undefined): void {
   if (value === undefined) delete process.env[name];
   else process.env[name] = value;
 }
+
+test("Node 版本护栏：主版本解析、最低版本判定与双语提示", () => {
+  assert.equal(nodeMajor("18.20.4"), 18);
+  assert.equal(nodeMajor("22.0.0"), 22);
+  assert.equal(nodeMajor("v24.1.0"), 24);
+  assert.equal(nodeMajor("garbage"), 0);
+  assert.equal(isSupportedNode("18.20.4"), false);
+  assert.equal(isSupportedNode("21.7.3"), false);
+  assert.equal(isSupportedNode("22.0.0"), true);
+  assert.equal(isSupportedNode("24.1.0"), true);
+  assert.match(unsupportedNodeMessage("18.20.4", "en"), /requires Node\.js 22 or newer.*18\.20\.4/);
+  assert.match(unsupportedNodeMessage("18.20.4", "zh-CN"), /需要 Node\.js 22 或更高版本.*18\.20\.4/);
+});
+
+test("低版本 Node 直接运行命令时在加载 PTY 前快速退出并给出明确提示", async () => {
+  // 不真的降级 Node：在子进程里把 process.versions.node 伪装成 18，再加载 CLI。
+  const shim = [
+    "Object.defineProperty(process.versions, 'node', { value: '18.20.4' });",
+    `await import(${JSON.stringify(`file://${cli.replace(/\\/g, "/")}`)});`,
+  ].join("\n");
+  const failure = (await execute(process.execPath, ["--input-type=module", "-e", shim], {
+    env: { ...process.env, TUILENS_LANG: "en" },
+    maxBuffer: 1024 * 1024,
+  }).then(
+    () => undefined,
+    (error: unknown) => error
+  )) as { code?: number; stdout?: string; stderr?: string };
+  assert.equal(failure.code, 1);
+  assert.equal(failure.stdout, "");
+  assert.match(failure.stderr ?? "", /TuiLens requires Node\.js 22 or newer \(current: 18\.20\.4\)/);
+});
 
 test("doctor 聚合运行时、浏览器、PTY、存储和 idle daemon 状态", { timeout: 30_000 }, async () => {
   const home = await mkdtemp(join(tmpdir(), "tuilens-doctor-"));
