@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
+import { resolve } from "node:path";
 import { errorRecord, TuiLensError } from "../core/errors.js";
 import { isDaemonUnavailable, request } from "../transport/client.js";
 import { methodSchemas, type Method } from "./schemas.js";
@@ -7,6 +8,8 @@ import { readBoundedFile } from "../core/bounded-file.js";
 import { VERSION } from "../version.js";
 import { pick, resolveLocale } from "../core/i18n.js";
 import { buildMcpConfig } from "./mcp-config.js";
+import type { PerfRunResult } from "../perf/runner.js";
+import type { ScenarioRunResult } from "../scenario/runner.js";
 
 const HELP_EN = `TuiLens ${VERSION} - terminal observation and control for agents
 
@@ -44,9 +47,10 @@ doctor                               diagnose runtime, browser, PTY, storage and
 probe [--font-file <path>] [--font-family <css>] [--strict-font]
                                      render fixed glyph samples and report font/grid fingerprints
 watch <id> [--interval 250] [--timeout 0] [--control]  daemon-pushed JSONL screen stream; --control forwards terminal input
-scenario --file <JSON>               run a declarative scenario, retain failure evidence and release the session
+scenario --file <JSON> [--html <path>] [--junit <path>]
+                                     run a declarative scenario, retain failure evidence and release the session
                                      the spec may include profiles:[...] to run a terminal matrix
-perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>]
+perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>] [--html <path>]
        [--max-regression 0.15] [--allow-env-mismatch]
                                      performance scenario: multi-round sampling, process-tree memory,
                                      baseline comparison and regression gating
@@ -56,6 +60,8 @@ shutdown                             release all sessions and stop the local ser
 mcp                                  start the MCP stdio interface
 mcp-config [--client json|codex|claude-code|cursor|gemini] [--mode global|npx|absolute]
                                      print copy-paste MCP client configuration
+report <result.json|recording.jsonl> --out <report.html>
+                                     render a zero-dependency offline evidence report
 
 Environment: TUILENS_HOME sets runtime data; TUILENS_BROWSER_PATH selects Chrome/Chromium;
 TUILENS_FONT_FILE pins a screenshot font file; TUILENS_FONT_FAMILY overrides the fallback stack;
@@ -100,9 +106,10 @@ doctor                               诊断运行时、浏览器、PTY、存储�
 probe [--font-file <路径>] [--font-family <CSS>] [--strict-font]
                                      渲染固定字形样本并报告字体/网格指纹
 watch <id> [--interval 250] [--timeout 0] [--control]  服务端推送的 JSONL 实时画面流；--control 转发终端输入
-scenario --file <JSON>              执行声明式场景，失败留证并释放会话
+scenario --file <JSON> [--html <路径>] [--junit <路径>]
+                                     执行声明式场景，失败留证并释放会话
                                     规格可含 profiles:[...]，按终端 profile 运行矩阵
-perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>]
+perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>] [--html <路径>]
        [--max-regression 0.15] [--allow-env-mismatch]
                                      性能场景：多轮采样、进程树内存、基线比较与劣化判定
                                     规格可含 profiles:[...]，输出按 profile 的对比表
@@ -111,6 +118,8 @@ shutdown                            释放所有会话并关闭本机服务
 mcp                                 启动 MCP stdio 接口
 mcp-config [--client json|codex|claude-code|cursor|gemini] [--mode global|npx|absolute]
                                      输出可直接复制的 MCP 客户端配置
+report <结果.json|录制.jsonl> --out <报告.html>
+                                     离线生成零外部依赖的证据报告
 
 环境：TUILENS_HOME 指定运行数据；TUILENS_BROWSER_PATH 指定 Chrome/Chromium；
 TUILENS_FONT_FILE 固定截图字体文件；TUILENS_FONT_FAMILY 覆盖回退字体栈；
@@ -151,6 +160,10 @@ async function main(): Promise<void> {
     });
     const config = buildMcpConfig({ client: values.client, mode: values.mode });
     process.stdout.write(`${config.content}\n`);
+    return;
+  }
+  if (command === "report") {
+    await runReport(rest);
     return;
   }
   if (command === "doctor") {
@@ -238,6 +251,7 @@ async function main(): Promise<void> {
       "max-regression": { type: "string" },
       junit: { type: "string" },
       "allow-env-mismatch": { type: "boolean" },
+      html: { type: "string" },
     },
   });
   if (command === "watch") {
@@ -539,6 +553,17 @@ async function main(): Promise<void> {
     data = { stopped: true, alreadyStopped: true };
   }
   process.stdout.write(JSON.stringify({ ok: true, data }) + "\n");
+  if (values.html !== undefined) {
+    if (method !== "scenario" && method !== "perf") {
+      throw new TuiLensError(
+        "INVALID_ARGUMENT",
+        "--html 只适用于 scenario 或 perf",
+        undefined,
+        "--html is only valid for scenario or perf."
+      );
+    }
+    await writeHtml(values.html, method, data);
+  }
   if (values.junit) await writeJunit(values.junit, method, data);
   if (data && typeof data === "object" && "pass" in data && data.pass === false) process.exitCode = 1;
 }
@@ -636,6 +661,60 @@ async function writeJunit(path: string, method: string, data: unknown): Promise<
   await mkdir(dirname(target), { recursive: true, mode: 0o700 });
   await writeFile(target, renderJunit(suites), { mode: 0o644 });
   process.stderr.write(`${pick("JUnit report written to", "JUnit 报告已写入")} ${target}\n`);
+}
+
+async function writeHtml(path: string, method: "scenario" | "perf", data: unknown): Promise<void> {
+  const { renderPerfHtmlReport, renderScenarioHtmlReport, writeHtmlReport } = await import(
+    "../reporting/html-report.js"
+  );
+  const report =
+    method === "scenario"
+      ? await renderScenarioHtmlReport(data as ScenarioRunResult)
+      : await renderPerfHtmlReport(data as PerfRunResult);
+  await writeHtmlReport(path, report);
+  process.stderr.write(`${pick("HTML report written to", "HTML 报告已写入")} ${resolve(path)}\n`);
+}
+
+async function runReport(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      out: { type: "string" },
+    },
+  });
+  const input = positionals[0];
+  const output = values.out;
+  if (!input) {
+    throw new TuiLensError(
+      "INVALID_ARGUMENT",
+      "report 需要输入 JSON 或录制 JSONL",
+      undefined,
+      "report requires a JSON result or JSONL recording."
+    );
+  }
+  if (!output) {
+    throw new TuiLensError(
+      "INVALID_ARGUMENT",
+      "report 需要 --out <report.html>",
+      undefined,
+      "report requires --out <report.html>."
+    );
+  }
+  const { renderEvidenceFileHtmlReport, writeHtmlReport } = await import("../reporting/html-report.js");
+  const report = await renderEvidenceFileHtmlReport(input);
+  await writeHtmlReport(output, report);
+  process.stdout.write(
+    JSON.stringify({
+      ok: true,
+      data: {
+        path: resolve(output),
+        kind: report.manifest.kind,
+        inlineImages: report.inlineImages,
+        inlineImageBytes: report.inlineImageBytes,
+      },
+    }) + "\n"
+  );
 }
 
 /** 只读实时观察：每个变化帧输出一行 JSONL，不发送输入，也不会自动关闭会话。 */

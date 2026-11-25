@@ -1,2 +1,2 @@
 // Generated from package.json by scripts/sync-version.mjs.
-export const VERSION = "0.5.5";
+export const VERSION = "0.6.0";

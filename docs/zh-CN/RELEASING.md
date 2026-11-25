@@ -28,7 +28,7 @@ npm run smoke:install
 2. 执行 `npm run version:sync`。
 3. 更新 `CHANGELOG.md` 与路线图。
 4. 执行上面的发布前检查并提交。
-5. 创建并推送与包版本一致的 annotated tag，例如 `v0.5.5`。
+5. 创建并推送与包版本一致的 annotated tag，例如 `v0.6.0`。
 
 tag 会触发 `.github/workflows/release.yml`。工作流重复质量门禁、执行干净安装烟测、校验
 `GITHUB_REF_NAME === v${package.version}`、带 provenance 发布 npm，并从自动生成说明创建 GitHub Release。

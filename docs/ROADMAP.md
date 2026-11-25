@@ -21,8 +21,8 @@
 
 ## 0.5.x plan
 
-0.5.1–0.5.4 are landed. The current patch version is 0.5.5, which closes the release and quality-gate
-work instead of deferring it.
+0.5.1–0.5.5 are landed. The current release is 0.6.0, which completes the architecture redesign and
+evidence/reporting finalization.
 
 ### 0.5.0 Delivery foundation (landed)
 
@@ -124,6 +124,19 @@ diff without returning the full viewport on every turn.
 
 Exit: long calls report real progress, resources and prompts are discoverable, artifact traversal is
 rejected, and client setup works without hand-writing absolute paths.
+
+### 0.6.0 PR-5 evidence bundle and HTML reports (landed)
+
+- Add versioned scenario, perf and recording evidence manifests with explicit artifact roles.
+- Render zero-dependency single-file HTML reports with timelines, compare sliders, SVG charts and
+  matrix tabs; escape all dynamic content and use script-safe JSON.
+- Bound inline images at 8 MiB each and 24 MiB total, recording replay text at 2 MiB and RSS timeline
+  points at 512.
+- Add `scenario --html`, `perf --html`, `tuilens report`, SDK exports and CI artifact generation.
+- Finalize npm-first documentation and the 0.6.0 package version.
+
+Exit: all three evidence classes render offline, XSS/limit cases fail safely, and CI archives a
+self-contained performance report.
 
 ## Later
 

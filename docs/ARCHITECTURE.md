@@ -11,6 +11,7 @@
 | `src/profiles` | Built-in terminal presets, JSON profile inheritance, capability/reply resolution |
 | `src/session` | PTY lifecycle, optional PTY worker, ordered output, observation barriers, waits and resource limits |
 | `src/recording` | Bounded versioned journals and offline replay |
+| `src/reporting` | Evidence manifests, bounded artifact loading and zero-dependency single-file HTML reports |
 | `src/visual` | PNG validation, pixel comparison and diff artifacts |
 | `src/scenario` | Declarative execution and failure reports |
 | `src/perf` | Performance scenarios, process-tree sampling, statistics and baseline comparison |
@@ -103,6 +104,8 @@ See [performance](PERFORMANCE.md), [images](IMAGES.md) and [roadmap](ROADMAP.md)
 - Recordings are opt-in. They retain terminal content and mark dropped/truncated output explicitly.
 - Baseline images are never overwritten by comparisons.
 - Scenario failure attempts bounded evidence capture and always closes its session.
+- Scenario, performance and recording outputs can be represented by a versioned `EvidenceManifest`;
+  HTML reports escape all dynamic text, embed script-safe JSON, and never execute recorded input.
 
 ## Bounds
 
@@ -114,6 +117,8 @@ MCP resource reads and tool image content cap screenshots at 32 MiB and artifact
 listings scan at most 1024 directory entries and return at most 256 resources. `wait`, `inputAndWait`
 and `replay` throttle daemon progress to 100 events; `scenario`/`perf` emit per step/round, and the
 MCP adapter coalesces forwarded notifications to 100 per tool call.
+Evidence HTML caps each inline image at 8 MiB and the total at 24 MiB, recording replay text at 2 MiB,
+the event inventory at 200 rows and the RSS timeline at 512 points.
 See [images](IMAGES.md), [recording](RECORDING.md), and [visual testing](VISUAL.md).
 
 Windows uses named pipes; Linux uses abstract Unix sockets. A local token authenticates requests.

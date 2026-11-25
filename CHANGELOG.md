@@ -1,8 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
 ### Added
+- Scenario, performance and recording outputs now share a versioned Evidence Bundle with explicit
+  artifact roles for screenshots, failure evidence, compare images, baselines and recordings.
+- `scenario --html` and `perf --html` render zero-dependency single-file HTML reports with timelines,
+  compare sliders, SVG charts, matrix tabs and bounded image inlining. `tuilens report` renders an
+  existing JSON result or JSONL recording offline.
+- HTML reports escape dynamic text and script JSON, inline at most 8 MiB per image and 24 MiB total,
+  bound recording replay text to 2 MiB, and expose the Evidence Manifest as embedded JSON.
+- SDK exports the three HTML renderers, Evidence Bundle types/builders, image budgets and the bounded
+  recording parser.
 - MCP v2 exposes bounded `tuilens://` resources for sessions, compact screens, PNG screenshots,
   metrics and artifacts, plus `tui_reproduce_bug` and `tui_visual_regression` prompts.
 - `tuilens mcp-config` generates JSON, Codex TOML and Claude Code commands for global, npx and
@@ -29,6 +38,8 @@
   returns changed lines plus a wide-character-aware bounding region, and falls back to compact text
   after the 16-frame lightweight history is exhausted.
 - Screenshots are opt-in with `screenshot:true` for every observation view.
+- Performance results retain a bounded RSS timeline for reporting; scenario steps record a human-readable
+  action/condition detail plus grid dimensions.
 
 ### Fixed
 - Visual replay now rebases its initial grid when evicted resize events are no longer available, and
@@ -40,6 +51,8 @@
   display width, so callers can crop or compare every shifted cell.
 - `observe` with `view:"diff"` keeps explicitly requested scrollback on a cache hit while still
   omitting viewport text and cells.
+- `mcp-config` invalid client/mode errors now expose the specific English message instead of placing it
+  in `details`.
 
 ### Removed
 - Removed the per-request short IPC connection protocol.
@@ -174,6 +187,11 @@
 - Initial PTY, browser engine, CLI, MCP, SDK, observation and input support.
 
 ## 简体中文
+
+0.6.0：完成 TerminalCore/VisualRenderer 分层、持久化 IPC v2、声明式观察与增量 diff、
+Agent 原生 MCP v2 与统一 Evidence Bundle。新增零外部依赖单文件 HTML 报告、`scenario/perf --html`、
+`tuilens report`、三类报告 SDK 导出与 CI 证据归档；单图内联上限 8 MiB、总计 24 MiB，
+动态文本与内嵌 JSON 均安全转义。版本升级至 0.6.0，npm 发布保持手动安排。
 
 0.5.5：修复 macOS 进程树采样、组合等待 `FRAME_PENDING`/退避/末次检查、浏览器宿主 dispose 竞态、
 本机 IPC 自动启动竞态、macOS 残留 socket 和回放槽位回收；`playwright` 替换为 `playwright-core`，
