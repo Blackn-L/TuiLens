@@ -9,10 +9,10 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 
 ![TuiLens terminal automation for AI agents](docs/assets/tuilens-agent-banner.en.png)
 
-> **Status:** experimental, version 0.5.5. Text observation runs on a browser-free
+> **Status:** experimental, version 0.6.0. Text observation runs on a browser-free
 > `TerminalCore`; Chromium starts lazily only for visual output.
 
-[Features](#features) · [Installation](#installation) · [Diagnostics](#diagnostics) · [Quick start](#quick-start) · [Interfaces](#interfaces) · [Development](#development) · [Documentation](#documentation) · [License](#license)
+[Features](#features) · [Installation](#installation) · [Diagnostics](#diagnostics) · [Quick start](#quick-start) · [Interfaces](#interfaces) · [Reporting](#evidence-reports) · [Development](#development) · [Documentation](#documentation) · [License](#license)
 
 ## Features
 
@@ -34,6 +34,7 @@ keyboard and mouse input through a JSON CLI, MCP server, and TypeScript SDK.
 - **Terminal reply guard:** late or unmatched DA1/DA2, CPR/DSR and related automatic replies are dropped by default; `suppress` preserves ordinary input.
 - **Scenario runner:** declarative steps with failure screenshots, reports, and automatic session cleanup.
 - **Performance testing:** declarative multi-round scenarios with setup history growth, process-tree RSS sampling, optional baseline files and regression gating.
+- **Evidence reports:** scenario/perf/recording evidence bundles and zero-dependency single-file HTML reports with timelines, compare sliders, SVG charts, matrix tabs and bounded image inlining.
 - **Test assertions:** a playwright-style `Terminal` handle with expected/actual/screenshot on failure, plus JUnit XML output for CI.
 - **Local diagnostics:** `doctor` checks runtime, browser, `node-pty`, storage and daemon state without starting the daemon.
 - **Rendering fingerprint:** `probe` renders fixed glyph samples and reports cell metrics, renderer and a stable font/grid fingerprint.
@@ -350,6 +351,26 @@ Baselines are optional measurement snapshots, not required configuration. They r
 comparing across a different environment is refused unless you pass `--allow-env-mismatch`. Measurement
 boundaries are documented in [performance](docs/PERFORMANCE.md).
 
+## Evidence reports
+
+Scenario, performance and recording evidence can be rendered as one offline HTML file with no CDN,
+external font or network request:
+
+```sh
+tuilens scenario --file examples/scenario.json --html artifacts/scenario.html
+tuilens perf --file examples/perf.json --html artifacts/perf.html
+tuilens report artifacts/perf-....json --out perf-report.html
+tuilens report artifacts/session.recording.jsonl --out recording-report.html
+```
+
+Scenario reports show the step timeline, failure screenshot and baseline/actual compare slider.
+Performance reports include p50/p95/p99, stability, startup, process-tree RSS, SVG latency bars,
+RSS timeline and baseline regressions. Recording reports provide a draggable offline timeline with
+resize/exit metadata. The embedded `EvidenceManifest` registers every artifact explicitly.
+
+All text is escaped and embedded JSON is script-safe. Images are inlined only up to 8 MiB each and
+24 MiB total; larger images fall back to their path and size. See [evidence reports](docs/REPORTING.md).
+
 ## Testing API
 
 The SDK exposes a playwright-style handle for test files:
@@ -460,6 +481,7 @@ Set `TUILENS_HOME` to isolate its state directory (default: `~/.tuilens`). No pu
 | Protocol | [PROTOCOL.md](docs/PROTOCOL.md) | [协议示例](docs/zh-CN/PROTOCOL.md) |
 | Terminal profiles | [PROFILES.md](docs/PROFILES.md) | [终端能力画像](docs/zh-CN/PROFILES.md) |
 | Recording and scenarios | [RECORDING.md](docs/RECORDING.md) | [录制与场景](docs/zh-CN/RECORDING.md) |
+| Evidence reports | [REPORTING.md](docs/REPORTING.md) | [证据报告](docs/zh-CN/REPORTING.md) |
 | Images | [IMAGES.md](docs/IMAGES.md) | [图片支持](docs/zh-CN/IMAGES.md) |
 | Visual comparisons | [VISUAL.md](docs/VISUAL.md) | [视觉比较](docs/zh-CN/VISUAL.md) |
 | Validation | [VALIDATION.md](docs/VALIDATION.md) | [验证](docs/zh-CN/VALIDATION.md) |

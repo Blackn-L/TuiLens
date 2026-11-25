@@ -38,6 +38,7 @@ export type {
   PerfMatrixResult,
   PerfMatrixRun,
   PerfResult,
+  PerfRssPoint,
   PerfRunOptions,
 } from "./perf/runner.js";
 export type { PerfSpec } from "./perf/schema.js";
@@ -48,3 +49,41 @@ export {
   listTerminalProfiles,
   resolveTerminalProfile,
 } from "./profiles/index.js";
+export {
+  buildPerfEvidence,
+  buildRecordingEvidence,
+  buildScenarioEvidence,
+  EVIDENCE_BUNDLE_VERSION,
+  isPerfMatrixResult,
+  isScenarioMatrixResult,
+  MAX_RECORDING_REPORT_BYTES,
+  MAX_RECORDING_REPORT_EVENTS,
+  mimeTypeForPath,
+  readRecordingReport,
+  writeEvidenceBundle,
+  writeEvidenceManifest,
+} from "./reporting/bundle.js";
+export type {
+  EvidenceArtifact,
+  EvidenceArtifactRole,
+  EvidenceEnvironment,
+  EvidenceKind,
+  EvidenceManifest,
+  EvidenceSummary,
+  RecordingHeaderReport,
+  RecordingReport,
+  RecordingReportEvent,
+} from "./reporting/bundle.js";
+export {
+  escapeHtml,
+  jsonForScript,
+  MAX_INLINE_IMAGE_BYTES,
+  MAX_RECORDING_REPORT_TEXT_BYTES,
+  MAX_SINGLE_INLINE_IMAGE_BYTES,
+  renderEvidenceFileHtmlReport,
+  renderPerfHtmlReport,
+  renderRecordingHtmlReport,
+  renderScenarioHtmlReport,
+  writeHtmlReport,
+} from "./reporting/html-report.js";
+export type { HtmlReportOptions, HtmlReportResult } from "./reporting/html-report.js";

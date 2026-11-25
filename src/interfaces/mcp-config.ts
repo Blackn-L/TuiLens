@@ -35,6 +35,7 @@ export function buildMcpConfig(options: McpConfigOptions = {}): McpConfigResult 
     throw new TuiLensError(
       "INVALID_ARGUMENT",
       `--client 必须是 ${MCP_CONFIG_CLIENTS.join("、")}`,
+      undefined,
       `--client must be one of ${MCP_CONFIG_CLIENTS.join(", ")}.`
     );
   }
@@ -42,6 +43,7 @@ export function buildMcpConfig(options: McpConfigOptions = {}): McpConfigResult 
     throw new TuiLensError(
       "INVALID_ARGUMENT",
       `--mode 必须是 ${MCP_CONFIG_MODES.join("、")}`,
+      undefined,
       `--mode must be one of ${MCP_CONFIG_MODES.join(", ")}.`
     );
   }

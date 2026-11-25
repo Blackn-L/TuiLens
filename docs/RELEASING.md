@@ -28,7 +28,7 @@ Chromium before running it. The local coverage gate is 70% lines, 65% branches a
 2. Run `npm run version:sync`.
 3. Update `CHANGELOG.md` and the roadmap.
 4. Run the preflight above and commit the release.
-5. Create and push an annotated tag matching the package version, for example `v0.5.5`.
+5. Create and push an annotated tag matching the package version, for example `v0.6.0`.
 
 The tag triggers `.github/workflows/release.yml`. It repeats the quality gates, runs the clean-install
 smoke, verifies `GITHUB_REF_NAME === v${package.version}`, publishes with npm provenance and creates a

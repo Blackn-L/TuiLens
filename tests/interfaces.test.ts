@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { TuiLensError } from "../src/core/errors.js";
 import type { Observation, SessionInfo } from "../src/core/types.js";
 import { mcpImageContent } from "../src/interfaces/mcp.js";
 import { buildMcpConfig, MCP_CONFIG_CLIENTS, MCP_CONFIG_MODES } from "../src/interfaces/mcp-config.js";
@@ -444,8 +445,16 @@ test("mcp-config 覆盖所有客户端与启动模式并输出可粘贴格式", 
     assert.match(absolute.content, /'\/opt\/node path\/node'/u);
     assert.match(absolute.content, /'\/opt\/Tui Lens\/dist\/src\/interfaces\/cli\.js' mcp$/u);
   }
-  assert.throws(() => buildMcpConfig({ client: "unknown" }), { code: "INVALID_ARGUMENT" });
-  assert.throws(() => buildMcpConfig({ mode: "unknown" }), { code: "INVALID_ARGUMENT" });
+  assert.throws(
+    () => buildMcpConfig({ client: "unknown" }),
+    (error: unknown) =>
+      error instanceof TuiLensError && error.code === "INVALID_ARGUMENT" && error.messageEn.includes("--client")
+  );
+  assert.throws(
+    () => buildMcpConfig({ mode: "unknown" }),
+    (error: unknown) =>
+      error instanceof TuiLensError && error.code === "INVALID_ARGUMENT" && error.messageEn.includes("--mode")
+  );
 
   const cliCases = [
     { client: "json", mode: "absolute", pattern: /^\{/u },

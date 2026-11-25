@@ -17,9 +17,19 @@ import type { VisualOptions } from "../visual/artifacts.js";
 export interface ScenarioResult {
   pass: boolean;
   reportPath: string;
+  cols?: number;
+  rows?: number;
   terminalProfile?: string;
   renderer?: RendererKind;
-  steps: { index: number; type: string; name?: string; elapsedMs: number; result?: unknown; error?: unknown }[];
+  steps: {
+    index: number;
+    type: string;
+    name?: string;
+    detail?: string;
+    elapsedMs: number;
+    result?: unknown;
+    error?: unknown;
+  }[];
   failureScreenshot?: string;
   cleanupError?: unknown;
 }
@@ -108,6 +118,8 @@ async function runScenarioSingle(
     if (signal?.aborted) throw new TuiLensError("ABORTED", "场景已取消");
     const launched = await manager.launch(spec.launch as LaunchOptions);
     id = launched.id;
+    result.cols = launched.cols;
+    result.rows = launched.rows;
     if (launched.terminalProfile) result.terminalProfile = launched.terminalProfile;
     if (launched.renderer) result.renderer = launched.renderer;
     for (const [index, step] of spec.steps.entries()) {
@@ -116,6 +128,7 @@ async function runScenarioSingle(
         index,
         type: step.type,
         elapsedMs: 0,
+        detail: describeStep(step),
         ...(step.name ? { name: step.name } : {}),
       };
       result.steps.push(record);
@@ -205,4 +218,39 @@ async function runScenarioSingle(
     await writeFile(result.reportPath, JSON.stringify(result, null, 2), { mode: 0o600 });
   }
   return result;
+}
+
+function describeStep(step: ScenarioSpec["steps"][number]): string {
+  const value = (() => {
+    switch (step.type) {
+      case "input": {
+        const action = step.action as InputAction & { text?: string; key?: string; x?: number; y?: number };
+        const target = action.text ?? action.key ?? "";
+        return `input ${action.type}${target ? ` ${JSON.stringify(target.slice(0, 80))}` : ""}`;
+      }
+      case "resize":
+        return `resize ${step.cols}x${step.rows}`;
+      case "wait":
+        return `wait ${step.conditions.map(describeCondition).join(" AND ")}`;
+      case "observe":
+        return `observe ${step.region ? `region ${step.region.x},${step.region.y},${step.region.width},${step.region.height}` : "full view"}${step.cursor ? ` cursor=${step.cursor}` : ""}`;
+      case "clickText":
+        return `clickText ${JSON.stringify(step.text.slice(0, 80))}`;
+      case "compare":
+        return `compare ${step.options.baseline}`;
+    }
+  })();
+  return value.length <= 1000 ? value : `${value.slice(0, 997)}...`;
+}
+
+type ScenarioCondition = Extract<ScenarioSpec["steps"][number], { type: "wait" }>["conditions"][number];
+
+function describeCondition(condition: ScenarioCondition): string {
+  if (condition.kind === "text") {
+    return `text ${JSON.stringify(condition.text.slice(0, 80))}${condition.absent ? " absent" : ""}`;
+  }
+  if (condition.kind === "size") return `size ${condition.cols}x${condition.rows}`;
+  if (condition.kind === "stable") return `stable ${condition.durationMs ?? 250}ms`;
+  if (condition.kind === "cursor") return "cursor";
+  return "exited";
 }

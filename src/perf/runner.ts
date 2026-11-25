@@ -73,6 +73,14 @@ export interface PerfError {
   error: ErrorRecord;
 }
 
+export interface PerfRssPoint {
+  round: number;
+  atMs: number;
+  rssBytes: number;
+  rootRssBytes: number;
+  processes: number;
+}
+
 export interface PerfResult {
   pass: boolean;
   reportPath: string;
@@ -89,6 +97,8 @@ export interface PerfResult {
     errors: number;
     lastError?: string;
     intervalMs: number;
+    /** 有界采样时间线，供 HTML 报告绘图；完整峰值仍以 peak 字段为准。 */
+    timeline?: PerfRssPoint[];
     /** 采样频率有限，峰值是下界而不是精确值。 */
     approximate: true;
   };
@@ -306,6 +316,7 @@ async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: P
   let rssErrors = 0;
   let rssLastError: string | undefined;
   let rssIntervalMs = 0;
+  const rssTimeline: PerfRssPoint[] = [];
   let warmupStartupMs: number | null = null;
   let terminalProfile = spec.launch.terminalProfile ?? "xterm-256color";
   let renderer: RendererKind | undefined;
@@ -391,6 +402,10 @@ async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: P
         rssErrors += sampled.errors;
         if (sampled.lastError !== undefined) rssLastError = sampled.lastError;
         rssIntervalMs = sampled.intervalMs;
+        for (const point of sampled.timeline) {
+          if (rssTimeline.length >= 512) break;
+          rssTimeline.push({ round: roundNumber, ...point });
+        }
       }
       if (sessionId) {
         try {
@@ -489,6 +504,7 @@ async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: P
       errors: rssErrors,
       ...(rssLastError === undefined ? {} : { lastError: rssLastError }),
       intervalMs: rssIntervalMs,
+      timeline: rssTimeline,
       approximate: true,
     },
     rounds: collected,

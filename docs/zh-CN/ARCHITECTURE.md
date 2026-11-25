@@ -17,6 +17,7 @@ TuiLens 提供面向 Agent 的终端运行环境。会话默认使用零浏览�
 - `src/profiles/`：内置终端 preset、JSON profile 继承、能力与应答解析。
 - `src/session/`：PTY、可选 PTY worker、输出顺序、观察屏障、等待、进程退出和证据。
 - `src/recording/`、`src/visual/`、`src/scenario/`：有界录制回放、视觉比较和声明式场景。
+- `src/reporting/`：Evidence Manifest、有界 artifact 读取与零依赖单文件 HTML 报告。
 - `src/transport/`：持久化本机 IPC v2 与守护进程；一次鉴权、多路复用请求，并由服务端推送 watch/scenario/perf 事件。
 - `src/interfaces/`：JSON CLI 与 MCP stdio，调用相同应用服务。
 - `src/doctor.ts`：本地诊断运行时、浏览器、PTY、存储和 daemon 状态，不启动 daemon。
@@ -89,6 +90,8 @@ CLI 返回结构化 JSON，MCP 使用 stdio。没有远程公开 HTTP 控制服�
 MCP 资源读取和工具图片内容对截图设 32 MiB、artifact 设 16 MiB 上限；artifact 列表最多扫描
 1024 个目录项并返回 256 项。`wait`、`inputAndWait` 和 `replay` 的 daemon 进度最多 100 条；
 `scenario`/`perf` 按 step/round 上报，MCP 转发层会把单个工具调用的通知合并到最多 100 条。
+证据 HTML 单图最多内联 8 MiB、总计 24 MiB，录制回放文本最多 2 MiB，事件清单最多 200 行，
+RSS 时间线最多 512 点。
 
 浏览器视觉模式不作为低干扰性能宿主；纯文本路径已与浏览器解耦。性能设计与后续边界见
 [性能边界](PERFORMANCE.md) 和 [后续迭代](ROADMAP.md)。

@@ -1,6 +1,6 @@
 {
   "name": "tuilens",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "description": "Terminal automation for AI agents with PTY sessions, image-aware capture, visual testing, performance regression baselines and MCP.",
   "license": "MIT",
   "repository": {

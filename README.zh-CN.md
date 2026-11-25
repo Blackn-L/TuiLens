@@ -9,10 +9,10 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 
 ![TuiLens：面向 AI Agent 的终端自动化工具](docs/assets/tuilens-agent-banner.zh-CN.png)
 
-> **状态：** 0.5.5 实验版本。文本观察默认运行零浏览器 `TerminalCore`，
+> **状态：** 0.6.0 实验版本。文本观察默认运行零浏览器 `TerminalCore`，
 > 只有视觉产物才按需启动 Chromium。
 
-[功能](#功能) · [安装](#安装) · [诊断](#诊断) · [快速开始](#快速开始) · [接口](#接口) · [开发](#开发) · [文档](#文档) · [许可证](#许可证)
+[功能](#功能) · [安装](#安装) · [诊断](#诊断) · [快速开始](#快速开始) · [接口](#接口) · [证据报告](#证据报告) · [开发](#开发) · [文档](#文档) · [许可证](#许可证)
 
 ## 功能
 
@@ -36,6 +36,8 @@ TuiLens 在真实 PTY 中运行终端程序，通过 JSON CLI、MCP 和 TypeScri
 - **终端应答护栏：** 默认丢弃超时或无查询匹配的 DA1/DA2、CPR/DSR 等自动应答；`suppress` 保留普通输入。
 - **场景执行：** 声明式步骤、失败截图、报告和自动清理。
 - **性能测试：** 多轮声明式场景，支持历史增长准备、进程树内存采样、可选基线文件与劣化判定。
+- **证据报告：** 统一 scenario/perf/recording Evidence Bundle，生成零外部依赖单文件 HTML，
+  包含时间轴、对比滑块、SVG 图表、矩阵标签页与有界图片内联。
 - **断言层：** playwright 风格的 `Terminal` 句柄，失败时给出期望/实际/截图，并可输出 JUnit XML。
 - **本地诊断：** `doctor` 检查运行时、浏览器、`node-pty`、存储和 daemon 状态，不启动 daemon。
 - **渲染指纹：** `probe` 渲染固定字形样本，报告字符度量、renderer 与稳定的字体/网格指纹。
@@ -343,6 +345,24 @@ tuilens perf --file examples/perf.json \
 基线是可选测量快照，不是必需配置。它记录平台与网格；环境不一致时默认拒绝比较，
 确需比较时使用 `--allow-env-mismatch`。测量边界见[性能文档](docs/zh-CN/PERFORMANCE.md)。
 
+## 证据报告
+
+scenario、perf 与 recording 可统一生成一份离线 HTML，不依赖 CDN、外部字体或网络请求：
+
+```sh
+tuilens scenario --file examples/scenario.json --html artifacts/scenario.html
+tuilens perf --file examples/perf.json --html artifacts/perf.html
+tuilens report artifacts/perf-....json --out perf-report.html
+tuilens report artifacts/session.recording.jsonl --out recording-report.html
+```
+
+Scenario 报告包含步骤时间轴、失败截图与基准/实际对比滑块；性能报告包含 p50/p95/p99、
+stability、启动耗时、进程树 RSS、SVG 延迟柱状图、RSS 时间线与基线回归；录制报告提供可拖动
+离线时间轴以及 resize/exit 元信息。内嵌 `EvidenceManifest` 显式登记所有 artifact。
+
+所有文本都会转义，内嵌 JSON 可安全出现在 `<script>` 中。单图最多内联 8 MiB，全部图片共享
+24 MiB 预算；超限时降级为路径和体积。详见[证据报告](docs/zh-CN/REPORTING.md)。
+
 ## 测试断言
 
 SDK 提供接近 playwright 的句柄：
@@ -452,6 +472,7 @@ IPC v2 使用持久连接，一次鉴权后多路复用请求，并推送 `watch
 | 协议 | [协议示例](docs/zh-CN/PROTOCOL.md) | [PROTOCOL.md](docs/PROTOCOL.md) |
 | 终端能力画像 | [终端能力画像](docs/zh-CN/PROFILES.md) | [PROFILES.md](docs/PROFILES.md) |
 | 录制与场景 | [录制与场景](docs/zh-CN/RECORDING.md) | [RECORDING.md](docs/RECORDING.md) |
+| 证据报告 | [证据报告](docs/zh-CN/REPORTING.md) | [REPORTING.md](docs/REPORTING.md) |
 | 图片支持 | [图片支持](docs/zh-CN/IMAGES.md) | [IMAGES.md](docs/IMAGES.md) |
 | 视觉比较 | [视觉比较](docs/zh-CN/VISUAL.md) | [VISUAL.md](docs/VISUAL.md) |
 | 验证 | [验证](docs/zh-CN/VALIDATION.md) | [VALIDATION.md](docs/VALIDATION.md) |

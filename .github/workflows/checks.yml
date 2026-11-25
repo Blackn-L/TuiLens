@@ -65,6 +65,7 @@ jobs:
         id: perf
         run: node dist/src/interfaces/cli.js perf --file examples/perf.json
           --junit artifacts/junit-perf.xml
+          --html artifacts/perf-report.html
         env:
           TUILENS_HOME: ${{ runner.temp }}/tuilens
         continue-on-error: true
