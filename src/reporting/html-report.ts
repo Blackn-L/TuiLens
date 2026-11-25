@@ -738,7 +738,7 @@ const REPORT_SCRIPT = `
     if (!(range instanceof HTMLInputElement) || !(clip instanceof HTMLElement) || !(divider instanceof HTMLElement)) continue;
     const update = () => {
       const value = Number(range.value);
-      clip.style.clipPath = "inset(0 0 0 " + (100 - value) + "%)";
+      clip.style.clipPath = "inset(0 0 0 " + value + "%)";
       divider.style.left = value + "%";
     };
     range.addEventListener("input", update);

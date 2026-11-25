@@ -70,7 +70,7 @@ test("scenario HTML 报告包含时间轴、对比滑块、矩阵标签和转义
     assert.match(report.html, /data-compare=/u);
     assert.match(report.html, /\.compare-clip\{position:absolute;inset:0;/u);
     assert.match(report.html, /\.compare\{[^}]*width:fit-content/u);
-    assert.match(report.html, /clip\.style\.clipPath = "inset\(0 0 0 " \+ \(100 - value\) \+ "%\)"/u);
+    assert.match(report.html, /clip\.style\.clipPath = "inset\(0 0 0 " \+ value \+ "%\)"/u);
     assert.doesNotMatch(report.html, /clip\.style\.right/u);
     assert.match(report.html, /Matrix summary/u);
     assert.match(report.html, /data-tab="scenario-run-1"/u);
@@ -123,7 +123,7 @@ test("HTML 报告按单图和总预算降级图片，不使报告失败", { time
   }
 });
 
-test("scenario HTML 对比滑块按固定几何裁剪，拖动不缩放且左侧为 Baseline", { timeout: 30000 }, async () => {
+test("scenario HTML 对比滑块固定几何裁剪，25% 处分隔线与图层边界一致", { timeout: 30000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), "tuilens-html-compare-"));
   try {
     const baseline = join(directory, "baseline.png");
@@ -186,12 +186,12 @@ test("scenario HTML 对比滑块按固定几何裁剪，拖动不缩放且左侧
       await page.evaluate(() => {
         const range = document.querySelector("[data-compare] input[type=range]");
         if (!(range instanceof HTMLInputElement)) throw new Error("compare range is missing");
-        range.value = "50";
+        range.value = "25";
         range.dispatchEvent(new Event("input", { bubbles: true }));
       });
       const stage = PNG.sync.read(await page.locator(".compare-stage").screenshot());
-      const left = pixelAt(stage, 0.25, 0.5);
-      const right = pixelAt(stage, 0.75, 0.5);
+      const left = pixelAt(stage, 0.22, 0.5);
+      const right = pixelAt(stage, 0.28, 0.5);
       assert.ok(left[0] > 150 && left[1] < 100 && left[2] < 100, JSON.stringify(left));
       assert.ok(right[2] > 150 && right[0] < 100, JSON.stringify(right));
     } finally {
