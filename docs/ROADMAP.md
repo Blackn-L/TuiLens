@@ -21,8 +21,9 @@
 
 ## 0.5.x plan
 
-0.5.1–0.5.5 are landed. The current release is 0.6.0, which completes the architecture redesign and
-evidence/reporting finalization.
+0.5.1–0.5.5 are landed. Version 0.6.0 completed the architecture and reporting work. The current
+release, 0.6.1, adds MCP session ownership and explicit handoff. It also fixes caller-relative paths,
+Unicode diff regions and performance baseline reporting.
 
 ### 0.5.0 Delivery foundation (landed)
 

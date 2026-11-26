@@ -44,6 +44,6 @@ tuilens close SESSION_ID
 - **渲染效果。** 按字符格截取区域，和已确认的基准图逐像素比较。终端配置可启用 SIXEL、iTerm2 内联图片或已支持的 Kitty 图形协议子集。[视觉比较](docs/zh-CN/VISUAL.md) · [图片支持](docs/zh-CN/IMAGES.md) · [终端能力配置](docs/zh-CN/PROFILES.md)
 - **回归。** 回放录制的终端输出，把一组操作写成可重复运行的场景，或分轮测量从发送输入到出现结果的延迟。场景和性能测试可输出 JUnit XML 与离线 HTML 报告。[录制与场景](docs/zh-CN/RECORDING.md) · [性能测试](docs/zh-CN/PERFORMANCE.md) · [证据报告](docs/zh-CN/REPORTING.md)
 
-> **状态：** 0.6.0 实验版本。支持 Windows 和 Linux，macOS 支持处于实验阶段。截图与视觉比较需要 Chrome、Edge 或 Chromium。
+> **状态：** 0.6.1 实验版本。支持 Windows 和 Linux，macOS 支持处于实验阶段。截图与视觉比较需要 Chrome、Edge 或 Chromium。
 
 [贡献指南](docs/zh-CN/CONTRIBUTING.md) · [安全问题](SECURITY.md) · [MIT 许可证](LICENSE) · [第三方许可证](THIRD_PARTY.md)

@@ -44,6 +44,6 @@ The observation contains the typed expression and a separate line with Node's an
 - **Rendering.** Capture a region in character cells and compare its pixels with a reviewed baseline. Terminal profiles can enable SIXEL, iTerm2 inline images or the supported Kitty graphics subset. [Visual comparisons](docs/VISUAL.md) · [Image support](docs/IMAGES.md) · [Terminal profiles](docs/PROFILES.md)
 - **Regressions.** Replay recorded terminal output, reproduce a sequence as a scenario, or measure input-to-visible-response latency across rounds. Scenario and performance runs can produce JUnit XML and offline HTML reports. [Recording and scenarios](docs/RECORDING.md) · [Performance](docs/PERFORMANCE.md) · [Reports](docs/REPORTING.md)
 
-> **Status:** experimental, version 0.6.0. Runs on Windows and Linux, with experimental macOS support. Screenshots and visual comparisons require Chrome, Edge or Chromium.
+> **Status:** experimental, version 0.6.1. Runs on Windows and Linux, with experimental macOS support. Screenshots and visual comparisons require Chrome, Edge or Chromium.
 
 [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [MIT license](LICENSE) · [Third-party licenses](THIRD_PARTY.md)
