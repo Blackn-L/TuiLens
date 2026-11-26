@@ -17,6 +17,8 @@
 
 安装 Node.js 22 或更高版本后，运行以下命令。在任意目录都能启动 Node 交互提示符。
 
+**在 Windows 上升级已有版本时**，请先结束正在使用的 TuiLens 会话，运行 `tuilens shutdown`，再执行下面的 npm 安装命令。安装完成后重启 MCP 客户端。[Windows 升级步骤与 `EBUSY` 处理](docs/zh-CN/GETTING-STARTED.md#windows-全局升级)
+
 ```sh
 npm install -g tuilens
 tuilens launch --cols 64 --rows 8 "--" node -i

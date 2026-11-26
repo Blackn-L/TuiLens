@@ -22,7 +22,7 @@ Agent 应当读到 `42`。MCP 启动结果中的 `id` 是会话标识，观察�
 
 ## CLI
 
-全局安装 CLI 并检查本机环境。
+首次全局安装可运行下面的命令。在 Windows 上升级已有安装时，请[先停止 daemon，再更新](#windows-全局升级)。
 
 ```sh
 npm install -g tuilens
@@ -117,6 +117,23 @@ node dist/src/interfaces/cli.js scenario --file examples/scenario.json --html sc
 ```
 
 打开 `scenario.html` 查看步骤和截图。CI 中可以加上 `--junit scenario.xml`。如果要测量示例程序的性能，用同一个 CLI 运行 `perf --file examples/perf.json --html perf.html`。[场景源文件](https://github.com/Blackn-L/TuiLens/blob/main/examples/scenario.json) · [录制与场景](RECORDING.md) · [性能测量](PERFORMANCE.md) · [报告格式](REPORTING.md)
+
+## Windows 全局升级
+
+即使最后一个终端已经关闭，仍在运行的 TuiLens daemon 也可能占用 ConPTY 原生文件。如果 npm 在重命名全局 `tuilens` 目录时提示 `EBUSY: resource busy or locked, rename`，同样可以按下面的顺序升级。
+
+1. 等正在使用 TuiLens 的任务结束，包括其他 MCP 客户端在同一 daemon 上的会话。`shutdown` 会关闭该 daemon 上的所有会话。升级期间暂停其他 CLI 和 MCP 调用，以免它们重新启动 daemon。
+2. 在 PowerShell 中依次运行以下命令。
+
+   ```powershell
+   tuilens shutdown
+   npm install -g tuilens@latest
+   tuilens --version
+   ```
+
+3. 确认 CLI 显示新版本后，重启使用该全局安装的 MCP 客户端，使其加载新版适配器。
+
+如果仍提示 `EBUSY`，请等 daemon 进程退出后重试安装。若多个 daemon 共用这份全局安装，请分别在各自的 `TUILENS_HOME` 环境中运行 `tuilens shutdown`，再重试。
 
 ## 安装与诊断
 

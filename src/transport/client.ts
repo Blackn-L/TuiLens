@@ -51,9 +51,9 @@ function errorCode(error: unknown): string | null {
 function scopedProtocolError(): TuiLensError {
   return new TuiLensError(
     "PROTOCOL_VERSION",
-    "本机 daemon 不支持 MCP 会话归属。请在现有会话结束后重启已升级的 TuiLens daemon。",
+    "本机 daemon 不支持 MCP 会话归属。请等该 daemon 上的任务结束后，在相同的 TUILENS_HOME 环境中运行 tuilens shutdown，再用新版 TuiLens 重启 MCP 客户端。",
     undefined,
-    "The local daemon does not support MCP session ownership. Once existing sessions are finished, restart the daemon with the updated TuiLens."
+    "The local daemon does not support MCP session ownership. Finish active work on that daemon, run tuilens shutdown with the same TUILENS_HOME, then restart your MCP client using the updated TuiLens."
   );
 }
 

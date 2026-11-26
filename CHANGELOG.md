@@ -11,8 +11,7 @@
   and the regression exit status. Recording bundles include the original replayable JSONL.
 - Added bilingual getting-started guides and a reproducible terminal demo.
 
-When upgrading, finish active sessions before restarting the daemon and MCP clients. To use both versions
-at once, give the new daemon a separate `TUILENS_HOME`. [MCP upgrade and handoff guide](docs/MCP-SETUP.md#multi-agent-use)
+On Windows, finish active sessions and run `tuilens shutdown` before updating the global package. Restart MCP clients after installation. To run two versions side by side, use separate installations and `TUILENS_HOME` directories. [Windows upgrade steps](docs/GETTING-STARTED.md#windows-global-upgrades) · [Session handoff](docs/MCP-SETUP.md#multi-agent-use)
 
 ## 0.6.0
 
@@ -205,8 +204,7 @@ at once, give the new daemon a separate `TUILENS_HOME`. [MCP upgrade and handoff
 0.6.1 为每个 MCP 实例分配独立的会话归属。跨实例操作终端前，通过一次性令牌交接控制权和断开清理责任。
 CLI 和 MCP 按调用方目录解析相对路径，修复了 Unicode 差异区域和无输出退出时的输入确认。
 性能报告记录实际渲染器，更新基线时保留旧测量值和回归退出状态。录制包保留可回放的原始 JSONL。
-新增双语入门指南和可复现的终端演示。升级时请待活动会话结束后重启 daemon 和 MCP 客户端。
-并行使用两个版本时，为新版指定独立的 `TUILENS_HOME`。[升级与交接说明](docs/zh-CN/MCP-SETUP.md#多-agent-协作)
+新增双语入门指南和可复现的终端演示。Windows 全局升级时，请待活动会话结束后运行 `tuilens shutdown`，再安装新版并重启 MCP 客户端。并行使用两个版本时，请分别使用独立的安装目录和 `TUILENS_HOME`。[Windows 升级步骤](docs/zh-CN/GETTING-STARTED.md#windows-全局升级) · [会话交接](docs/zh-CN/MCP-SETUP.md#多-agent-协作)
 
 0.6.0：完成 TerminalCore/VisualRenderer 分层、持久化 IPC v2、声明式观察与增量 diff、
 Agent 原生 MCP v2 与统一 Evidence Bundle。新增零外部依赖单文件 HTML 报告、`scenario/perf --html`、

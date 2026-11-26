@@ -22,7 +22,7 @@ Use `--client claude-code`, `cursor`, `gemini`, or `json` for other clients. If 
 
 ## CLI
 
-Install the command globally and check the local runtime.
+For a first install, run the commands below. For an existing global install on Windows, [stop the daemon before upgrading](#windows-global-upgrades).
 
 ```sh
 npm install -g tuilens
@@ -117,6 +117,23 @@ node dist/src/interfaces/cli.js scenario --file examples/scenario.json --html sc
 ```
 
 Open `scenario.html` to inspect the steps and screenshots. Add `--junit scenario.xml` for CI. Run the same CLI with `perf --file examples/perf.json --html perf.html` for the example performance workload. [Scenario source](https://github.com/Blackn-L/TuiLens/blob/main/examples/scenario.json) · [Recordings](RECORDING.md) · [Performance measurement](PERFORMANCE.md) · [Report formats](REPORTING.md)
+
+## Windows global upgrades
+
+A running TuiLens daemon can keep the native ConPTY files loaded even after the last terminal closes. These steps also apply if npm reports `EBUSY: resource busy or locked, rename` on the global `tuilens` directory.
+
+1. Let active TuiLens work finish, including sessions in other MCP clients sharing the daemon. The shutdown command closes every session on that daemon. Pause other CLI and MCP calls until npm finishes so they do not restart it.
+2. Run these commands in order in PowerShell.
+
+   ```powershell
+   tuilens shutdown
+   npm install -g tuilens@latest
+   tuilens --version
+   ```
+
+3. Once the CLI reports the new version, restart each MCP client that uses the global installation to load the updated adapter.
+
+If `EBUSY` persists, allow the daemon process to exit before retrying the install. If several daemons use this installation, run `tuilens shutdown` with each daemon's `TUILENS_HOME` selected before retrying.
 
 ## Installation and diagnostics
 

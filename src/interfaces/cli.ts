@@ -60,7 +60,7 @@ perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>] [--html <path>]
                                      baseline comparison and regression gating
                                      the spec may include profiles:[...] for a comparison table
 close <id>                           release one session
-shutdown                             release all sessions and stop the local service
+shutdown                             close all sessions and stop the local service (run before a Windows global upgrade)
 mcp                                  start the MCP stdio interface
 mcp-config [--client json|codex|claude-code|cursor|gemini] [--mode global|npx|absolute]
                                      print copy-paste MCP client configuration
@@ -120,7 +120,7 @@ perf --file <JSON> [--baseline <JSON>] [--write-baseline <JSON>] [--html <路径
                                      性能场景：多轮采样、进程树内存、基线比较与劣化判定
                                     规格可含 profiles:[...]，输出按 profile 的对比表
 close <id>                          释放一个会话
-shutdown                            释放所有会话并关闭本机服务
+shutdown                            关闭所有会话并停止本机服务（Windows 全局升级前运行）
 mcp                                 启动 MCP stdio 接口
 mcp-config [--client json|codex|claude-code|cursor|gemini] [--mode global|npx|absolute]
                                      输出可直接复制的 MCP 客户端配置
