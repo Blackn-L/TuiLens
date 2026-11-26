@@ -116,7 +116,7 @@ async function runScenarioSingle(
   const scenarioStarted = performance.now();
   try {
     if (signal?.aborted) throw new TuiLensError("ABORTED", "场景已取消");
-    const launched = await manager.launch(spec.launch as LaunchOptions);
+    const launched = await manager.launchWorkflow(spec.launch as LaunchOptions);
     id = launched.id;
     result.cols = launched.cols;
     result.rows = launched.rows;

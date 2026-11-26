@@ -13,6 +13,10 @@ The daemon accepts only persistent NDJSON connections. The first frame authentic
 {"type":"auth","version":2,"token":"<hex>"}
 ```
 
+MCP instances also send a private UUID in the auth frame’s `ownerId` field and require `scoped: true`
+in the `auth_ok` reply. The identity persists across reconnects for the lifetime of the MCP instance. CLI
+connections omit this field and share the CLI session scope. [Ownership and handoff](MCP-SETUP.md#multi-agent-use)
+
 The daemon answers `auth_ok` with its pid and version, or `auth_error` and closes the connection. The
 default handshake timeout is 15 seconds. After authentication, one connection multiplexes requests:
 
@@ -233,7 +237,7 @@ MCP clients can discover these read-only resources:
 
 | URI | MIME | Content |
 | --- | --- | --- |
-| `tuilens://sessions` | `application/json` | Safe session metadata, no environment variables or credentials. |
+| `tuilens://sessions` | `application/json` | Session metadata for this MCP owner. |
 | `tuilens://sessions/{id}/screen` | `text/plain` | Compact screen from the browser-free core. |
 | `tuilens://sessions/{id}/screenshot` | `image/png` | On-demand screenshot, 32 MiB read cap. |
 | `tuilens://sessions/{id}/metrics` | `application/json` | Backpressure and protocol counters. |

@@ -45,10 +45,18 @@ test("MCP descriptions have English and Chinese variants", () => {
   assert.match(mcpTools("zh-CN").launch, /启动 TuiLens 交互式终端会话/u);
   assert.match(mcpInstructions("en"), /preferred tool for interactive terminal\/TUI work/u);
   assert.match(mcpInstructions("zh-CN"), /TuiLens 是处理交互式终端\/TUI 的首选工具/u);
-  assert.match(mcpInstructions("en"), /Each agent should launch and own its own session/u);
-  assert.match(mcpInstructions("zh-CN"), /每个 agent 应自行 launch 并管理自己的会话/u);
-  assert.match(mcpTools("en").list, /shared daemon/u);
-  assert.match(mcpTools("zh-CN").close, /不校验归属/u);
+  assert.match(mcpInstructions("en"), /terminal_list.*owned by this MCP instance.*terminal_handoff.*terminal_adopt/u);
+  assert.match(mcpInstructions("zh-CN"), /terminal_list.*当前 MCP 实例持有.*terminal_handoff.*terminal_adopt/u);
+  const en = mcpTools("en");
+  const zh = mcpTools("zh-CN");
+  assert.match(en.list, /owned by this MCP instance.*includeAll.*shared daemon/u);
+  assert.match(zh.list, /当前 MCP 实例持有.*includeAll.*共享 daemon/u);
+  assert.match(en.close, /Close a session owned by this MCP instance/u);
+  assert.match(zh.close, /关闭当前 MCP 实例持有的会话/u);
+  assert.match(en.handoff, /one-time transfer token.*session ID and token/u);
+  assert.match(zh.handoff, /一次性交接令牌.*会话 ID 和令牌/u);
+  assert.match(en.adopt, /ID and the current owner's one-time transfer token/u);
+  assert.match(zh.adopt, /会话 ID 和持有者提供的一次性令牌/u);
 });
 
 test("CLI help and errors honor TUILENS_LANG", async () => {

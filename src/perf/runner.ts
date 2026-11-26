@@ -338,7 +338,7 @@ async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: P
     let sessionId: string | undefined;
     let sampler: ProcessTreeSampler | undefined;
     try {
-      const session = await manager.launch(launch);
+      const session = await manager.launchWorkflow(launch);
       sessionId = session.id;
       terminalProfile = session.terminalProfile ?? terminalProfile;
       // 就绪条件必须在测量开始前成立：程序进入 raw mode 之前的输入会被吞掉，

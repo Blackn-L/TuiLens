@@ -23,7 +23,9 @@ launch --cwd <path> [--terminal-profile kitty|wezterm|...|<JSON>]
        [--protocol-replies auto|forward|suppress] [--protocol-reply-latency 250] -- <program> [args...]
                                      headless is the default; dom/webgl activate Chromium on demand
 launch --json <JSON>                 also accepts --file <path> or --stdin
-list                                 list sessions
+list [--all]                         list CLI sessions or inventory the shared daemon
+handoff <id>                         issue a one-time token for a CLI-owned session
+adopt --stdin                         read a JSON object with id and token to transfer a session to the CLI
 observe <id> [--view compact|diff|full|cells] [--from-frame <id>] [--screenshot] [--show-cursor] [--region x,y,w,h]
 type <id> <text>                     send text without submitting
 paste <id> <text>                    use negotiated bracketed paste
@@ -82,7 +84,9 @@ launch --cwd <路径> [--terminal-profile kitty|wezterm|...|<JSON>]
        [--protocol-replies auto|forward|suppress] [--protocol-reply-latency 250] -- <程序> [参数...]
                                      默认 headless；dom/webgl 按需激活 Chromium
 launch --json <JSON>                 也可使用 --file <文件> 或 --stdin
-list                                列出会话
+list [--all]                        列出 CLI 会话，或查看共享 daemon 的会话概况
+handoff <id>                        为 CLI 持有的会话签发一次性交接令牌
+adopt --stdin                       从标准输入读取含 id 和 token 的 JSON 对象，将会话交给 CLI
 observe <id> [--view compact|diff|full|cells] [--from-frame <id>] [--screenshot] [--show-cursor] [--region x,y,w,h]
 type <id> <文本>                     输入文本，不自动提交
 paste <id> <文本>                    使用已协商的括号粘贴
@@ -231,6 +235,7 @@ async function main(): Promise<void> {
       timeout: { type: "string" },
       interval: { type: "string" },
       control: { type: "boolean" },
+      all: { type: "boolean" },
       absent: { type: "boolean" },
       exited: { type: "boolean" },
       renderer: { type: "string" },
@@ -492,6 +497,7 @@ async function main(): Promise<void> {
         params = { path: id, speed: Number(values.speed ?? 0), allowTruncated: values["allow-truncated"] ?? false };
         break;
       case "metrics":
+      case "handoff":
       case "close":
         params = { id };
         break;
@@ -523,7 +529,16 @@ async function main(): Promise<void> {
           "perf requires a performance scenario via --file or --json."
         );
       }
+      case "adopt":
+        throw new TuiLensError(
+          "INVALID_ARGUMENT",
+          "请通过 --stdin、--file 或 --json 提供会话 ID 和令牌",
+          undefined,
+          "Supply the session ID and token via --stdin, --file or --json."
+        );
       case "list":
+        params = values.all ? { includeAll: true } : {};
+        break;
       case "ping":
       case "shutdown":
         params = {};
@@ -541,7 +556,7 @@ async function main(): Promise<void> {
     params = { ...(params as object), guard: { frameId: Number(values.frame) } };
   }
   params = anchorRequestPaths(method, params, values.cwd);
-  if (!Object.hasOwn(methodSchemas, method)) {
+  if (method === "releaseOwned" || method === "releaseAcquisition" || !Object.hasOwn(methodSchemas, method)) {
     throw new TuiLensError("UNKNOWN_METHOD", "未知命令", undefined, "Unknown command.");
   }
   const validated = methodSchemas[method as Method].safeParse(params);

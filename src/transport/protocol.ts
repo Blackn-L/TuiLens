@@ -18,6 +18,7 @@ export const authFrameSchema = z
     type: z.literal("auth"),
     version: z.literal(IPC_VERSION),
     token: tokenSchema,
+    ownerId: z.string().uuid().optional(),
   })
   .strict();
 
@@ -52,6 +53,7 @@ export interface AuthOkFrame {
   version: typeof IPC_VERSION;
   daemonPid: number;
   daemonVersion: string;
+  scoped?: true | undefined;
 }
 
 export interface AuthErrorFrame {
@@ -99,6 +101,7 @@ export const serverFrameSchema = z.discriminatedUnion("type", [
       version: z.literal(IPC_VERSION),
       daemonPid: z.number().int().positive(),
       daemonVersion: z.string().min(1),
+      scoped: z.literal(true).optional(),
     })
     .strict(),
   z.object({ type: z.literal("auth_error"), error: errorFrameSchema }).strict(),

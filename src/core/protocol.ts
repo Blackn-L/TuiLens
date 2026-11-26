@@ -276,7 +276,11 @@ const inputWaitSchema = z
 export const methodSchemas = {
   ping: z.object({}).strict(),
   launch: launchSchema,
-  list: z.object({}).strict(),
+  list: z.object({ includeAll: z.boolean().optional() }).strict(),
+  handoff: z.object({ id: idSchema }).strict(),
+  adopt: z.object({ id: idSchema, token: z.string().min(1).max(256) }).strict(),
+  releaseOwned: z.object({}).strict(),
+  releaseAcquisition: z.object({ id: idSchema.optional(), acquisitionId: idSchema }).strict(),
   metrics: z.object({ id: idSchema }).strict(),
   find: z
     .object({

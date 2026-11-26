@@ -1,11 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { CallToolResult, ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { Observation, OperationProgress, SessionInfo } from "../core/types.js";
 import { readBoundedFile } from "../core/bounded-file.js";
-import { errorRecord } from "../core/errors.js";
-import { request } from "../transport/client.js";
+import { errorRecord, TuiLensError } from "../core/errors.js";
+import { createOwnedRequest, isDaemonUnavailable, type request as daemonRequest } from "../transport/client.js";
 import { methodSchemas } from "./schemas.js";
 import { mcpInstructions, mcpTools, type McpMethod } from "./mcp-tools.js";
 import { MCP_SCREENSHOT_MAX_BYTES, registerMcpPrompts, registerMcpResources } from "./mcp-resources.js";
@@ -16,7 +17,7 @@ import { pick } from "../core/i18n.js";
 
 const PROGRESS_METHODS = new Set<McpMethod>(["wait", "inputAndWait", "scenario", "perf", "replay"]);
 
-/** MCP 与 CLI 共用同一应用协议；断开时只释放此连接创建的会话。 */
+/** A stdio adapter owns its sessions across idle daemon socket reconnects. */
 export async function startMcp(): Promise<void> {
   const server = new McpServer(
     { name: "tuilens", version: VERSION },
@@ -24,10 +25,11 @@ export async function startMcp(): Promise<void> {
       instructions: mcpInstructions(),
     }
   );
-  registerMcpResources(server);
+  const request = createOwnedRequest(randomUUID());
+  registerMcpResources(server, request);
   registerMcpPrompts(server);
   const tools = mcpTools();
-  const owned = new Set<string>();
+  let mayOwnSessions = false;
   const disconnect = new AbortController();
   const pending = new Set<Promise<CallToolResult>>();
   for (const method of Object.keys(tools) as McpMethod[]) {
@@ -42,34 +44,24 @@ export async function startMcp(): Promise<void> {
         args: Record<string, unknown>,
         extra: RequestHandlerExtra<ServerRequest, ServerNotification>
       ): Promise<CallToolResult> => {
-        // Track the whole handler, not only the daemon request. Otherwise disconnect cleanup can
-        // snapshot `owned` after launch resolves but before this handler records the new session.
+        const acquisitionId = method === "launch" || method === "adopt" ? randomUUID() : undefined;
+        // Even the first acquisition can commit before an IPC error reaches this adapter.
+        if (acquisitionId) mayOwnSessions = true;
         const task = (async (): Promise<CallToolResult> => {
           try {
-            const data = await requestWithProgress(
-              method,
-              anchorRequestPaths(method, args),
-              extra,
-              AbortSignal.any([extra.signal, disconnect.signal])
-            );
-            // 连接断开与启动返回竞争时，不能把迟到会话加到已经清空的 owned 中。
-            if (method === "launch" && disconnect.signal.aborted) {
-              await request("close", { id: (data as SessionInfo).id }, { autoStart: false });
-              return {
-                isError: true,
-                content: [
-                  {
-                    type: "text",
-                    text: pick(
-                      "MCP connection closed; the late session was released.",
-                      "MCP 连接已关闭，迟到会话已释放"
-                    ),
-                  },
-                ],
-              };
+            const signal = AbortSignal.any([extra.signal, disconnect.signal]);
+            const params = anchorRequestPaths(method, args);
+            const data = acquisitionId
+              ? await request(method, params, { signal, acquisitionId })
+              : await requestWithProgress(request, method, params, extra, signal);
+            if (acquisitionId && signal.aborted) {
+              await request(
+                "releaseAcquisition",
+                { id: (data as SessionInfo).id, acquisitionId },
+                { autoStart: false, timeoutMs: 20000 }
+              );
+              throw new TuiLensError("ABORTED", "操作已取消");
             }
-            if (method === "launch") owned.add((data as SessionInfo).id);
-            if (method === "close") owned.delete((args as { id: string }).id);
             const content: CallToolResult["content"] = [{ type: "text", text: JSON.stringify(data) }];
             const observation = imageObservation(method, data);
             if (observation?.screenshot) {
@@ -95,17 +87,14 @@ export async function startMcp(): Promise<void> {
     (cleaning ??= (async () => {
       disconnect.abort();
       await Promise.allSettled([...pending]);
-      const results = await Promise.allSettled(
-        [...owned].map((id) => request("close", { id }, { autoStart: false, timeoutMs: 20000 }))
-      );
-      for (const result of results) {
-        if (result.status === "rejected") {
-          process.stderr.write(
-            `${pick("Session cleanup failed: ", "会话清理失败：")}${errorRecord(result.reason).message}\n`
-          );
+      if (!mayOwnSessions) return;
+      try {
+        await request("releaseOwned", {}, { autoStart: false, timeoutMs: 20000 });
+      } catch (error) {
+        if (!isDaemonUnavailable(error)) {
+          process.stderr.write(`${pick("Session cleanup failed: ", "会话清理失败：")}${errorRecord(error).message}\n`);
         }
       }
-      owned.clear();
     })());
   server.server.onclose = () => {
     void cleanup();
@@ -126,6 +115,7 @@ export async function startMcp(): Promise<void> {
  * 转成 MCP notifications/progress。没有服务端进度就不发心跳。
  */
 async function requestWithProgress(
+  request: typeof daemonRequest,
   method: McpMethod,
   args: unknown,
   extra: RequestHandlerExtra<ServerRequest, ServerNotification>,

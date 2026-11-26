@@ -819,6 +819,60 @@ test("closeAll 等待正在创建的引擎完成清理，不遗漏迟到启动",
   assert.deepEqual(manager.list(), []);
 });
 
+test("丢失启动响应后，只按获取标记取消匹配的在途启动", { timeout: 10_000 }, async () => {
+  const started = deferred<void>();
+  const finish = deferred<void>();
+  const memory = memoryEngine();
+  const manager = new SessionManager({
+    artifactDir: tmpdir(),
+    engineFactory: async () => {
+      started.resolve();
+      await finish.promise;
+      return memory.engine;
+    },
+  });
+  try {
+    // Cancelling while the engine is being created must also prevent spawning the program.
+    const launch = manager.launch({ command: "tuilens-absent-cancelled-program" }, "owner", "pending");
+    await started.promise;
+    assert.equal(await manager.releaseAcquisition(undefined, "pending", "other"), false);
+    assert.equal(await manager.releaseAcquisition(undefined, "unrelated", "owner"), false);
+    const released = manager.releaseAcquisition(undefined, "pending", "owner");
+    const rejected = assert.rejects(launch, { code: "ABORTED" });
+    finish.resolve();
+    await rejected;
+    assert.equal(await released, true);
+    assert.deepEqual(manager.list(), []);
+    assert.equal(memory.counts().closes, 1);
+    assert.equal(await manager.releaseAcquisition(undefined, "pending", "owner"), false);
+  } finally {
+    finish.resolve();
+    await manager.closeAll();
+  }
+});
+
+test("丢失接管响应后，只按获取标记释放当前代的会话", { timeout: 10_000 }, async () => {
+  const manager = new SessionManager({ artifactDir: tmpdir(), engineFactory: async () => memoryEngine().engine });
+  const options = { command: process.execPath, args: ["-e", "setInterval(()=>{},1000)"] };
+  try {
+    const sibling = await manager.launch(options, "owner", "sibling");
+    const { id } = await manager.launch(options, "owner", "initial");
+    manager.adopt(id, manager.handoff(id, "owner").token, "recipient", "away");
+    manager.adopt(id, manager.handoff(id, "recipient").token, "owner", "current");
+    assert.equal(await manager.releaseAcquisition(undefined, "initial", "owner"), false);
+    assert.equal(await manager.releaseAcquisition(undefined, "current", "recipient"), false);
+    assert.equal(await manager.releaseAcquisition(sibling.id, "current", "owner"), false);
+    assert.equal(await manager.releaseAcquisition(undefined, "current", "owner"), true);
+    assert.equal(await manager.releaseAcquisition(undefined, "current", "owner"), false);
+    assert.deepEqual(
+      manager.listOwned("owner").map((entry) => entry.id),
+      [sibling.id]
+    );
+  } finally {
+    await manager.closeAll();
+  }
+});
+
 test("并发 launch 不再被首个引擎准备阶段串行阻塞", { timeout: 10_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), "tuilens-concurrent-launch-"));
   const firstStarted = deferred<void>();
@@ -1194,6 +1248,45 @@ test("取消排队中的输入和 resize 后不执行迟到操作", async () => 
   } finally {
     gate.resolve();
     await f.session.close();
+  }
+});
+
+test("取消已开始的 resize 后，完成尺寸更新才能交接会话", { timeout: 10000 }, async () => {
+  const entered = deferred<void>();
+  const finish = deferred<void>();
+  const manager = new SessionManager({
+    artifactDir: tmpdir(),
+    engineFactory: async () => ({
+      ...memoryEngine().engine,
+      resize: async () => {
+        entered.resolve();
+        await finish.promise;
+      },
+    }),
+  });
+  try {
+    const { id } = await manager.launch(
+      { command: process.execPath, args: ["-e", "setInterval(()=>{},1000)"] },
+      "owner"
+    );
+    const { token } = manager.handoff(id, "owner");
+    const controller = new AbortController();
+    const resize = manager.withOwnedSession(id, "owner", () =>
+      manager.resize(id, 82, 23, { signal: controller.signal })
+    );
+    await entered.promise;
+    controller.abort();
+    await assert.rejects(resize, { code: "ABORTED" });
+    assert.throws(() => manager.adopt(id, token, "recipient"), { code: "SESSION_BUSY" });
+
+    finish.resolve();
+    await manager.observe(id, { screenshot: false });
+    const adopted = manager.adopt(id, token, "recipient");
+    assert.equal(adopted.cols, 82);
+    assert.equal(adopted.rows, 23);
+  } finally {
+    finish.resolve();
+    await manager.closeAll();
   }
 });
 

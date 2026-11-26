@@ -2,6 +2,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { chmod, lstat, mkdir, unlink, writeFile } from "node:fs/promises";
 import { connect, createServer, type Socket } from "node:net";
 import { errorRecord, TuiLensError, type ErrorRecord } from "../core/errors.js";
+import { methodSchemas } from "../core/protocol.js";
 import { SessionManager } from "../session/manager.js";
 import { VERSION } from "../version.js";
 import { dispatch, type DispatchEmit } from "./dispatcher.js";
@@ -165,6 +166,7 @@ export async function serve(): Promise<void> {
   function openConnection(socket: Socket): void {
     socket.setEncoding("utf8");
     let authenticated = false;
+    let ownerId: string | undefined;
     let inputOpen = true;
     let buffer = "";
     const inflight = new Map<string, AbortController>();
@@ -239,6 +241,7 @@ export async function serve(): Promise<void> {
           return;
         }
         authenticated = true;
+        ownerId = parsed.data.ownerId;
         clearTimeout(handshakeTimer);
         if (Number.isFinite(configuredIpcTimeout) && configuredIpcTimeout > 0) {
           socket.setTimeout(configuredIpcTimeout, () => socket.destroy());
@@ -248,6 +251,7 @@ export async function serve(): Promise<void> {
           version: IPC_VERSION,
           daemonPid: process.pid,
           daemonVersion: VERSION,
+          ...(ownerId ? { scoped: true } : {}),
         });
         return;
       }
@@ -292,12 +296,18 @@ export async function serve(): Promise<void> {
         sendFrame(state, { type: "event", id: request.id, event, data }, true);
       };
       void (async () => {
-        let shutdownRequested = false;
         let response: ServerFrame;
         try {
           if (stopping) throw new TuiLensError("SHUTTING_DOWN", "服务正在关闭");
-          shutdownRequested = request.method === "shutdown";
-          const data = await dispatch(manager, request.method, request.params, controller.signal, emit);
+          const data = await dispatch(
+            manager,
+            request.method,
+            request.params,
+            controller.signal,
+            emit,
+            ownerId,
+            request.id
+          );
           response = { type: "res", id: request.id, ok: true, data };
         } catch (error) {
           response = {
@@ -309,7 +319,12 @@ export async function serve(): Promise<void> {
         } finally {
           inflight.delete(request.id);
         }
-        if (shutdownRequested) {
+        // A valid admin shutdown disposes the manager even if resource cleanup rejects.
+        if (
+          request.method === "shutdown" &&
+          ownerId === undefined &&
+          methodSchemas.shutdown.safeParse(request.params).success
+        ) {
           writeFrameBeforeStop(
             socket,
             response,

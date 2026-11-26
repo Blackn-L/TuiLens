@@ -7,7 +7,7 @@ import { readBoundedFile } from "../core/bounded-file.js";
 import { TuiLensError } from "../core/errors.js";
 import { pick, resolveLocale } from "../core/i18n.js";
 import type { Observation, SessionInfo } from "../core/types.js";
-import { isDaemonUnavailable, request } from "../transport/client.js";
+import { isDaemonUnavailable, type request as daemonRequest } from "../transport/client.js";
 import { runtimePaths } from "../transport/paths.js";
 
 export const MCP_SCREENSHOT_MAX_BYTES = 32 * 1024 * 1024;
@@ -52,7 +52,11 @@ export interface McpResourceOptions {
   artifactDir?: string;
 }
 
-export function registerMcpResources(server: McpServer, options: McpResourceOptions = {}): void {
+export function registerMcpResources(
+  server: McpServer,
+  request: typeof daemonRequest,
+  options: McpResourceOptions = {}
+): void {
   const artifactDir = options.artifactDir ?? runtimePaths().artifactDir;
   const description = (en: string, zh: string): string => pick(en, zh);
 
@@ -72,7 +76,7 @@ export function registerMcpResources(server: McpServer, options: McpResourceOpti
         {
           uri: uri.toString(),
           mimeType: "application/json",
-          text: JSON.stringify(await safeSessions(extra.signal), null, 2),
+          text: JSON.stringify(await safeSessions(request, extra.signal), null, 2),
         },
       ],
     })
@@ -86,7 +90,7 @@ export function registerMcpResources(server: McpServer, options: McpResourceOpti
   ): ResourceTemplate =>
     new ResourceTemplate(`tuilens://sessions/{id}/${kind}`, {
       list: async (extra) => ({
-        resources: (await safeSessions(extra.signal)).map((session) => ({
+        resources: (await safeSessions(request, extra.signal)).map((session) => ({
           uri: `tuilens://sessions/${session.id}/${kind}`,
           name: `${session.id}-${kind}`,
           description: `${description(en, zh)}: ${session.id}`,
@@ -309,9 +313,12 @@ export function registerMcpPrompts(server: McpServer): void {
   );
 }
 
-async function safeSessions(signal?: AbortSignal): Promise<ReturnType<typeof safeSession>[]> {
+async function safeSessions(
+  request: typeof daemonRequest,
+  signal: AbortSignal
+): Promise<ReturnType<typeof safeSession>[]> {
   try {
-    const sessions = (await request("list", {}, { autoStart: false, ...(signal ? { signal } : {}) })) as SessionInfo[];
+    const sessions = (await request("list", {}, { autoStart: false, signal })) as SessionInfo[];
     return sessions.map(safeSession);
   } catch (error) {
     if (isDaemonUnavailable(error)) return [];

@@ -123,7 +123,10 @@ See [images](IMAGES.md), [recording](RECORDING.md), and [visual testing](VISUAL.
 
 Windows uses named pipes; Linux uses abstract Unix sockets. A local token authenticates requests.
 The daemon verifies live endpoints instead of treating an on-disk state file as proof of liveness.
-MCP disconnect cancels pending requests and releases connection-owned sessions.
+MCP stdio instances authenticate with a private owner identity that survives IPC reconnections. The
+daemon checks it for live session operations and resource reads. A graceful MCP disconnect cancels
+pending requests and releases sessions the instance still owns. Adoption transfers ownership and
+cleanup together. CLI invocations share a separate owner across processes. [Session handoff](MCP-SETUP.md#multi-agent-use)
 
 The browser path is an observation environment, not a zero-overhead performance probe.
 [Performance boundaries](PERFORMANCE.md) remain part of every measurement claim.

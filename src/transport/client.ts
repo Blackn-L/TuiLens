@@ -4,7 +4,8 @@ import { lstat, mkdir, open, readFile, stat, unlink, type FileHandle } from "nod
 import { connect, type Socket } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { TuiLensError } from "../core/errors.js";
+import { errorRecord, TuiLensError } from "../core/errors.js";
+import { pick } from "../core/i18n.js";
 import type { Method } from "../interfaces/schemas.js";
 import { daemonEnvironment, runtimePaths, type RuntimePaths } from "./paths.js";
 import {
@@ -28,10 +29,13 @@ const CLEANUP_LOCK_POLL_MS = 25;
 const START_ATTEMPTS = 100;
 const START_RETRY_MS = 100;
 const IDLE_CLOSE_MS = 30_000;
+const ACQUISITION_CLEANUP_TIMEOUT_MS = 20_000;
 
 export type IpcEventHandler = (event: IpcEventName, data: unknown) => void;
 
 export interface RequestOptions {
+  /** Wire ID retained by the MCP adapter for cancellation after a successful acquisition. */
+  acquisitionId?: ReturnType<typeof randomUUID>;
   autoStart?: boolean;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -42,6 +46,15 @@ export interface RequestOptions {
 function errorCode(error: unknown): string | null {
   if (error instanceof TuiLensError) return error.code;
   return (error as NodeJS.ErrnoException | null)?.code ?? null;
+}
+
+function scopedProtocolError(): TuiLensError {
+  return new TuiLensError(
+    "PROTOCOL_VERSION",
+    "本机 daemon 不支持 MCP 会话归属。请在现有会话结束后重启已升级的 TuiLens daemon。",
+    undefined,
+    "The local daemon does not support MCP session ownership. Once existing sessions are finished, restart the daemon with the updated TuiLens."
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -295,6 +308,8 @@ interface PendingRequest {
   timer?: NodeJS.Timeout;
   abortListener?: () => void;
   sent: boolean;
+  unconfirmedAcquisition: boolean;
+  earlyRelease?: Promise<boolean>;
 }
 
 interface AuthWaiter {
@@ -316,7 +331,8 @@ export class IpcClient {
 
   constructor(
     private readonly paths: RuntimePaths,
-    private readonly connectSocket: typeof connect = connect
+    private readonly connectSocket: typeof connect = connect,
+    private readonly ownerId?: string
   ) {}
 
   async call(method: Method, params: unknown, options: RequestOptions = {}): Promise<unknown> {
@@ -342,7 +358,7 @@ export class IpcClient {
       if (this.inflight.size >= MAX_INFLIGHT_PER_CONNECTION) {
         throw new TuiLensError("TOO_MANY_INFLIGHT", "单连接在途请求超过 64 个");
       }
-      const id = randomUUID();
+      const id = options.acquisitionId ?? randomUUID();
       let requestFrame: string;
       try {
         requestFrame = encodeFrame({
@@ -369,12 +385,33 @@ export class IpcClient {
           ...(options.onEvent ? { onEvent: options.onEvent } : {}),
           ...(timer ? { timer } : {}),
           sent: false,
+          unconfirmedAcquisition: this.ownerId !== undefined && (method === "launch" || method === "adopt"),
         };
         const abort = (): void => {
+          const error = abortError(controlled.signal);
           if (pending.sent && this.socket?.writable) {
             this.socket.write(encodeFrame({ type: "cancel", id }));
+            if (pending.unconfirmedAcquisition) {
+              // A second pipe may reach the daemon before the original request. If this
+              // happens, use a late successful reply for a second, equally fenced release.
+              pending.earlyRelease = this.releaseUnconfirmedAcquisition(id);
+              pending.resolve = (data) => {
+                if (isRecord(data) && typeof data.id === "string") {
+                  void this.releaseUnconfirmedAcquisition(id, data.id, pending.earlyRelease);
+                }
+              };
+              void pending.earlyRelease.then((matched) => {
+                if (!matched) return;
+                pending.unconfirmedAcquisition = false;
+                this.completePending(pending, error);
+              });
+              if (pending.timer) clearTimeout(pending.timer);
+              pending.timer = setTimeout(() => this.completePending(pending, error), ACQUISITION_CLEANUP_TIMEOUT_MS);
+              reject(new TuiLensError(error.code, error.messageZh, { sent: true }, error.messageEn));
+              return;
+            }
           }
-          this.completePending(pending, abortError(controlled.signal));
+          this.completePending(pending, error);
         };
         pending.abortListener = abort;
         this.inflight.set(id, pending);
@@ -397,6 +434,36 @@ export class IpcClient {
       if (timer) clearTimeout(timer);
       options.signal?.removeEventListener("abort", externalAbort);
     }
+  }
+
+  private async releaseUnconfirmedAcquisition(
+    acquisitionId: string,
+    id?: string,
+    earlyRelease?: Promise<boolean>
+  ): Promise<boolean> {
+    if (earlyRelease && (await earlyRelease)) return true;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const cleanup = new IpcClient(this.paths, this.connectSocket, this.ownerId);
+      try {
+        const result = await cleanup.call(
+          "releaseAcquisition",
+          { acquisitionId, ...(id === undefined ? {} : { id }) },
+          { timeoutMs: ACQUISITION_CLEANUP_TIMEOUT_MS }
+        );
+        return isRecord(result) && result.released === true;
+      } catch (error) {
+        if (attempt === 0) {
+          await sleep(100);
+          continue;
+        }
+        process.stderr.write(
+          `${pick("Session cleanup failed: ", "会话清理失败：")}${acquisitionId}: ${errorRecord(error).message}\n`
+        );
+      } finally {
+        cleanup.resetConnection();
+      }
+    }
+    return false;
   }
 
   async ensureDaemon(signal?: AbortSignal): Promise<void> {
@@ -600,7 +667,7 @@ export class IpcClient {
           fail(abortError(signal));
           return;
         }
-        socket.write(encodeFrame({ type: "auth", version: IPC_VERSION, token }));
+        socket.write(encodeFrame({ type: "auth", version: IPC_VERSION, token, ownerId: this.ownerId }));
       });
       socket.on("data", (chunk: string) => this.handleData(socket, chunk));
       socket.on("error", (error: NodeJS.ErrnoException) => {
@@ -656,12 +723,20 @@ export class IpcClient {
         this.failConnection(new TuiLensError("PROTOCOL_ERROR", "未请求的鉴权响应"));
         return;
       }
+      if (this.ownerId && !frame.scoped) {
+        this.authWaiter.reject(scopedProtocolError());
+        return;
+      }
       this.authenticated = true;
       this.authWaiter.resolve();
       this.updateIdleState();
       return;
     }
     if (frame.type === "auth_error") {
+      if (this.ownerId && frame.error.code === "PROTOCOL_ERROR" && this.authWaiter) {
+        this.authWaiter.reject(scopedProtocolError());
+        return;
+      }
       const error = new TuiLensError(
         frame.error.code,
         frame.error.messageZh || frame.error.message,
@@ -688,6 +763,7 @@ export class IpcClient {
     }
     const pending = this.inflight.get(frame.id);
     if (!pending) return;
+    pending.unconfirmedAcquisition = false;
     if (frame.ok) {
       this.completePending(pending, null, frame.data);
     } else {
@@ -763,8 +839,18 @@ export class IpcClient {
     if (pending.abortListener) pending.controller.signal.removeEventListener("abort", pending.abortListener);
     this.inflight.delete(pending.id);
     this.updateIdleState();
-    if (error !== null) pending.reject(error);
-    else pending.resolve(data);
+    if (error === null) {
+      pending.resolve(data);
+      return;
+    }
+    if (pending.sent && pending.unconfirmedAcquisition) {
+      void this.releaseUnconfirmedAcquisition(pending.id, undefined, pending.earlyRelease);
+      // Never replay a possibly committed acquisition after an ambiguous transport failure.
+      if (error instanceof TuiLensError && isStartableFailure(error)) {
+        error = new TuiLensError(error.code, error.messageZh, { sent: true }, error.messageEn);
+      }
+    }
+    pending.reject(error);
   }
 
   private updateIdleState(): void {
@@ -812,7 +898,36 @@ function clientFor(paths: RuntimePaths): IpcClient {
 }
 
 export async function request(method: Method, params: unknown = {}, options: RequestOptions = {}): Promise<unknown> {
-  const client = clientFor(runtimePaths());
+  return requestUsing(clientFor(runtimePaths()), method, params, options);
+}
+
+/** Each MCP stdio adapter retains its owner when its idle IPC socket reconnects. */
+export function createOwnedRequest(ownerId: string): typeof request {
+  const paths = runtimePaths();
+  const client = new IpcClient(paths, undefined, ownerId);
+  return async (method, params = {}, options = {}) => {
+    if (method !== "releaseOwned" && method !== "releaseAcquisition")
+      return requestUsing(client, method, params, options);
+    // A disconnect can leave the original socket half-closed or full of cancelled calls.
+    const release = () =>
+      requestUsing(new IpcClient(paths, undefined, ownerId), method, params, { ...options, autoStart: false });
+    try {
+      return await release();
+    } catch (error) {
+      if (!isDaemonUnavailable(error) && errorCode(error) !== "IPC_TIMEOUT" && errorCode(error) !== "TOO_MANY_INFLIGHT")
+        throw error;
+      await sleepWithSignal(100, options.signal);
+      return release();
+    }
+  };
+}
+
+async function requestUsing(
+  client: IpcClient,
+  method: Method,
+  params: unknown,
+  options: RequestOptions
+): Promise<unknown> {
   try {
     return await client.call(method, params, options);
   } catch (error) {
