@@ -84,7 +84,9 @@ TuiLens 提供面向 Agent 的终端运行环境。会话默认使用零浏览�
 ## 首版边界
 
 Node.js 22+，Windows ConPTY 与 Linux PTY；真实验收分别记录。
-CLI 返回结构化 JSON，MCP 使用 stdio。没有远程公开 HTTP 控制服务。
+CLI 返回结构化 JSON，MCP 使用 stdio。没有远程公开 HTTP 控制服务。每个 MCP 实例使用独立的私有身份，IPC 重连沿用该身份。
+daemon 校验实时终端操作和会话资源读取的归属。MCP 正常断开时取消未完成的请求，并释放它仍持有的会话。
+交接会一并转移操作权和清理责任。CLI 调用跨进程共用独立身份。[会话交接](MCP-SETUP.md#多-agent-协作)
 纯文本只依赖 `@xterm/headless`；截图与图片协议通过 Playwright 使用已安装的 Chrome/Chromium。
 新增命令复用 core/session 接口，避免在 CLI 与 MCP 内复制业务逻辑。
 MCP 资源读取和工具图片内容对截图设 32 MiB、artifact 设 16 MiB 上限；artifact 列表最多扫描

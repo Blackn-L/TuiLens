@@ -337,6 +337,11 @@ export class ManagedSession {
     return result;
   }
 
+  /** Operations already queued may still be committing after their caller was cancelled. */
+  whenQueuedOperationsSettle(): Promise<void> {
+    return this.tail;
+  }
+
   private assertUsable(requireRunning = false): void {
     if (this.closing || this.details.status === "closed") {
       throw new TuiLensError("SESSION_CLOSED", "会话已关闭");

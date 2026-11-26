@@ -1197,6 +1197,45 @@ test("取消排队中的输入和 resize 后不执行迟到操作", async () => 
   }
 });
 
+test("取消已开始的 resize 后，完成尺寸更新才能交接会话", { timeout: 10000 }, async () => {
+  const entered = deferred<void>();
+  const finish = deferred<void>();
+  const manager = new SessionManager({
+    artifactDir: tmpdir(),
+    engineFactory: async () => ({
+      ...memoryEngine().engine,
+      resize: async () => {
+        entered.resolve();
+        await finish.promise;
+      },
+    }),
+  });
+  try {
+    const { id } = await manager.launch(
+      { command: process.execPath, args: ["-e", "setInterval(()=>{},1000)"] },
+      "owner"
+    );
+    const { token } = manager.handoff(id, "owner");
+    const controller = new AbortController();
+    const resize = manager.withOwnedSession(id, "owner", () =>
+      manager.resize(id, 82, 23, { signal: controller.signal })
+    );
+    await entered.promise;
+    controller.abort();
+    await assert.rejects(resize, { code: "ABORTED" });
+    assert.throws(() => manager.adopt(id, token, "recipient"), { code: "SESSION_BUSY" });
+
+    finish.resolve();
+    await manager.observe(id, { screenshot: false });
+    const adopted = manager.adopt(id, token, "recipient");
+    assert.equal(adopted.cols, 82);
+    assert.equal(adopted.rows, 23);
+  } finally {
+    finish.resolve();
+    await manager.closeAll();
+  }
+});
+
 test("显式关闭丢弃在途输出时录制标记不完整", async () => {
   const directory = await mkdtemp(join(tmpdir(), "tuilens-incomplete-"));
   const writer = await RecordingWriter.create(directory, "close", {

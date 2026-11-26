@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -82,11 +82,34 @@ function getEnv(env: Record<string, string>, key: string): string | undefined {
   return existing === undefined ? undefined : env[existing];
 }
 
+// undefined is the shared CLI scope. A workflow session stays private until its runner closes it.
+const WORKFLOW_OWNER = Symbol("workflow");
+type Owner = string | typeof WORKFLOW_OWNER | undefined;
+interface SessionEntry {
+  session: ManagedSession;
+  owner: Owner;
+  acquisitionId: string | undefined;
+  token: Buffer | undefined;
+  operations: number;
+  closing: boolean;
+}
+
+interface LaunchScope {
+  owner: Owner;
+  released: boolean;
+  cleanup?: Promise<void>;
+}
+
+function notOwned(): TuiLensError {
+  return new TuiLensError("SESSION_NOT_OWNED", "当前调用方未获授权操作此会话");
+}
+
 /** 应用服务同时供 CLI 与 MCP 使用，不依赖具体传输协议。 */
 export class SessionManager {
-  private readonly sessions = new Map<string, ManagedSession>();
+  private readonly sessions = new Map<string, SessionEntry>();
+  private readonly scopedLaunches = new Map<LaunchScope, Promise<SessionInfo>>();
   private readonly pendingLaunches = new Set<Promise<{ info: SessionInfo; session: ManagedSession }>>();
-  private readonly closedIds = new Set<string>();
+  private readonly closedIds = new Map<string, Owner>();
   private readonly launchCleanupErrors: unknown[] = [];
   private readonly offline = new Map<Promise<unknown>, AbortController>();
   private disposed = false;
@@ -114,10 +137,35 @@ export class SessionManager {
     }
   }
 
-  async launch(options: LaunchOptions): Promise<SessionInfo> {
+  async launch(options: LaunchOptions, ownerId?: string, acquisitionId?: string): Promise<SessionInfo> {
+    const scope = { owner: ownerId, released: false };
+    const task = this.launchSession(options, scope, acquisitionId);
+    if (ownerId === undefined) return task;
+    // Include launches queued for admission when their MCP connection disconnects.
+    this.scopedLaunches.set(scope, task);
+    try {
+      return await task;
+    } finally {
+      this.scopedLaunches.delete(scope);
+    }
+  }
+
+  launchWorkflow(options: LaunchOptions): Promise<SessionInfo> {
+    return this.launchSession(options, { owner: WORKFLOW_OWNER, released: false });
+  }
+
+  private async launchSession(
+    options: LaunchOptions,
+    scope: LaunchScope,
+    acquisitionId?: string
+  ): Promise<SessionInfo> {
     launchOptions(options);
     if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
     const release = await this.reserveSlot(`最多同时保留 ${this.maxSessions} 个会话，请先关闭不再使用的会话`);
+    if (scope.released) {
+      release();
+      throw new TuiLensError("ABORTED", "会话启动已取消");
+    }
     const pending = this.launchProcess(options);
     this.pendingLaunches.add(pending);
     // 槽位已由 pendingLaunches 占用；释放准入锁，让其他启动可以并行准备引擎。
@@ -125,7 +173,19 @@ export class SessionManager {
     try {
       const launched = await pending;
       this.pendingLaunches.delete(pending);
-      this.sessions.set(launched.info.id, launched.session);
+      this.sessions.set(launched.info.id, {
+        session: launched.session,
+        owner: scope.owner,
+        acquisitionId,
+        token: undefined,
+        operations: 0,
+        closing: false,
+      });
+      if (scope.released) {
+        scope.cleanup = this.close(launched.info.id);
+        await scope.cleanup;
+        throw new TuiLensError("ABORTED", "会话启动已取消");
+      }
       return launched.info;
     } catch (error) {
       this.pendingLaunches.delete(pending);
@@ -174,7 +234,8 @@ export class SessionManager {
   private async reclaimExitedSessions(): Promise<void> {
     while (this.slotsUsed() >= this.maxSessions) {
       const oldestExited = [...this.sessions.values()]
-        .map((session) => session.info())
+        .filter((entry) => entry.operations === 0 && entry.owner !== WORKFLOW_OWNER)
+        .map((entry) => entry.session.info())
         .filter((session) => session.status === "exited")
         .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0];
       if (!oldestExited) return;
@@ -339,14 +400,76 @@ export class SessionManager {
     }
   }
 
+  private entry(id: string): SessionEntry {
+    const entry = this.sessions.get(id);
+    if (!entry) throw new TuiLensError("SESSION_NOT_FOUND", "未找到指定会话", { id });
+    return entry;
+  }
+
   private session(id: string): ManagedSession {
-    const session = this.sessions.get(id);
-    if (!session) throw new TuiLensError("SESSION_NOT_FOUND", "未找到指定会话", { id });
-    return session;
+    return this.entry(id).session;
+  }
+
+  private ownedEntry(id: string, ownerId: string | undefined): SessionEntry {
+    const entry = this.entry(id);
+    if (entry.owner !== ownerId) throw notOwned();
+    return entry;
+  }
+
+  async withOwnedSession<T>(id: string, ownerId: string | undefined, operation: () => Promise<T>): Promise<T> {
+    const entry = this.ownedEntry(id, ownerId);
+    if (entry.closing) throw new TuiLensError("SESSION_CLOSED", "会话已关闭");
+    entry.operations++;
+    try {
+      const result = await operation();
+      entry.operations--;
+      return result;
+    } catch (error) {
+      // Deliver cancellation immediately. A resize already inside the engine must still
+      // commit its PTY geometry before a recipient can take ownership.
+      void entry.session.whenQueuedOperationsSettle().then(() => {
+        entry.operations--;
+      });
+      throw error;
+    }
+  }
+
+  handoff(id: string, ownerId: string | undefined): { token: string } {
+    const entry = this.ownedEntry(id, ownerId);
+    if (entry.closing) throw new TuiLensError("SESSION_CLOSED", "会话已关闭");
+    entry.token = randomBytes(32);
+    return { token: entry.token.toString("hex") };
+  }
+
+  adopt(id: string, token: string, ownerId: string | undefined, acquisitionId?: string): SessionInfo {
+    const entry = this.entry(id);
+    if (!entry.token || !/^[a-f0-9]{64}$/u.test(token) || !timingSafeEqual(Buffer.from(token, "hex"), entry.token)) {
+      throw notOwned();
+    }
+    if (entry.operations > 0 || entry.closing) {
+      throw new TuiLensError("SESSION_BUSY", "会话操作或关闭正在进行，暂时无法交接");
+    }
+    entry.owner = ownerId;
+    entry.acquisitionId = acquisitionId;
+    entry.token = undefined;
+    return entry.session.info();
   }
 
   list(): SessionInfo[] {
-    return [...this.sessions.values()].map((session) => session.info());
+    return [...this.sessions.values()].map((entry) => entry.session.info());
+  }
+
+  listOwned(ownerId: string | undefined, includeAll = false): SessionInfo[] {
+    const sessions: SessionInfo[] = [];
+    for (const entry of this.sessions.values()) {
+      if (entry.owner === ownerId) {
+        sessions.push(entry.session.info());
+      } else if (includeAll) {
+        const { id, pid, cols, rows, status, exitCode, createdAt } = entry.session.info();
+        sessions.push({ id, pid, cols, rows, status, exitCode, createdAt });
+      }
+    }
+    return sessions;
   }
 
   /** 供 daemon 健康检查使用的轻量状态，不读取引擎或字符格。 */
@@ -758,12 +881,50 @@ export class SessionManager {
 
   async close(id: string): Promise<void> {
     if (this.closedIds.has(id)) return;
-    const session = this.session(id);
-    await session.close();
+    const entry = this.entry(id);
+    entry.closing = true;
+    await entry.session.close();
     this.sessions.delete(id);
-    this.closedIds.add(id);
+    this.closedIds.set(id, entry.owner);
     // 幂等窗口有界，避免长驻服务持续关闭会话时积累无限标识。
-    if (this.closedIds.size > 64) this.closedIds.delete(this.closedIds.values().next().value!);
+    if (this.closedIds.size > 64) this.closedIds.delete(this.closedIds.keys().next().value!);
+  }
+
+  async closeOwned(id: string, ownerId: string | undefined): Promise<void> {
+    if (this.closedIds.has(id)) {
+      if (this.closedIds.get(id) !== ownerId) throw notOwned();
+      return;
+    }
+    this.ownedEntry(id, ownerId);
+    await this.close(id);
+  }
+
+  async releaseAcquisition(id: string, acquisitionId: string, ownerId: string | undefined): Promise<boolean> {
+    const entry = this.sessions.get(id);
+    // The original owner may have handed this session away and acquired it again.
+    if (!entry || entry.owner !== ownerId || entry.acquisitionId !== acquisitionId) return false;
+    await this.close(id);
+    return true;
+  }
+
+  async releaseOwned(ownerId: string): Promise<number> {
+    const pending: Promise<void>[] = [];
+    for (const [scope, task] of this.scopedLaunches) {
+      if (scope.owner !== ownerId) continue;
+      scope.released = true;
+      // A cancelled/failed launch is expected. Propagate any error releasing a late PTY.
+      pending.push(task.catch(() => {}).then(() => scope.cleanup));
+    }
+    // Start every close synchronously so adoption cannot interleave with the owner check.
+    const closing: Promise<void>[] = [];
+    for (const [id, entry] of this.sessions) {
+      if (entry.owner === ownerId) closing.push(this.close(id));
+    }
+    const results = await Promise.allSettled([...closing, ...pending]);
+    for (const result of results) {
+      if (result.status === "rejected") throw result.reason;
+    }
+    return closing.length;
   }
 
   closeAll(): Promise<void> {
@@ -777,13 +938,7 @@ export class SessionManager {
     await Promise.allSettled([...this.offline.keys()]);
     // 启动中的引擎也属于本管理器；closeAll 不能在它们完成清理前返回。
     await Promise.allSettled([...this.pendingLaunches]);
-    const entries = [...this.sessions.entries()];
-    const results = await Promise.allSettled(
-      entries.map(async ([id, session]) => {
-        await session.close();
-        this.sessions.delete(id);
-      })
-    );
+    const results = await Promise.allSettled([...this.sessions.keys()].map((id) => this.close(id)));
     // 会话全部关闭后再释放共享浏览器；顺序反过来会让仍在关闭的页面失去宿主。
     try {
       await this.shutdownEngine?.();

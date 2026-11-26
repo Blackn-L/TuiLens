@@ -13,6 +13,9 @@ CLI 使用 `--json`、`--file` 或 `--stdin`；MCP 接收相同对象。
 {"type":"auth","version":2,"token":"<hex>"}
 ```
 
+MCP 实例在鉴权帧的 `ownerId` 字段中附带私有 UUID，并要求 `auth_ok` 响应包含 `scoped: true`。在同一个 MCP 实例的生命周期内，
+每次 IPC 重连都沿用该身份。CLI 连接省略该字段，共用独立的 CLI 会话范围。[会话归属与交接](MCP-SETUP.md#多-agent-协作)
+
 成功返回 `auth_ok`（含 pid 与版本），失败返回 `auth_error` 后断开。默认握手超时为 15 秒。
 鉴权后同一连接多路复用请求：
 
@@ -206,7 +209,7 @@ MCP 客户端可发现以下只读资源：
 
 | URI | MIME | 内容 |
 | --- | --- | --- |
-| `tuilens://sessions` | `application/json` | 安全会话元数据，不含环境变量或凭据。 |
+| `tuilens://sessions` | `application/json` | 当前 MCP 实例持有的会话元数据。 |
 | `tuilens://sessions/{id}/screen` | `text/plain` | 无浏览器内核读取的 compact 画面。 |
 | `tuilens://sessions/{id}/screenshot` | `image/png` | 按需截图，读取上限 32 MiB。 |
 | `tuilens://sessions/{id}/metrics` | `application/json` | 背压与协议计数。 |

@@ -195,6 +195,8 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     const expectedTools = [
       "terminal_launch",
       "terminal_list",
+      "terminal_handoff",
+      "terminal_adopt",
       "terminal_observe",
       "terminal_input",
       "terminal_inputAndWait",
@@ -209,7 +211,6 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
       "terminal_scenario",
       "terminal_perf",
     ];
-    assert.equal(tools.tools.length, 15);
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), expectedTools.sort());
     const launchTool = tools.tools.find((tool) => tool.name === "terminal_launch");
     const observeTool = tools.tools.find((tool) => tool.name === "terminal_observe");
@@ -372,13 +373,13 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     client = undefined;
     let remaining: unknown = null;
     for (let i = 0; i < 100; i += 1) {
-      remaining = await call("list");
+      remaining = await call("list", { includeAll: true });
       if (Array.isArray(remaining) && !remaining.length) break;
       await sleep(100);
     }
     assert.deepEqual(remaining, [], "MCP 断开后不能留下孤儿会话");
     await sleep(1200);
-    assert.deepEqual(await call("list"), [], "迟到 launch 也必须回收");
+    assert.deepEqual(await call("list", { includeAll: true }), [], "迟到 launch 也必须回收");
   } finally {
     await client?.close();
     await call("shutdown").catch(() => undefined);

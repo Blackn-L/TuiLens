@@ -173,7 +173,7 @@ MCP 服务提供只读资源：
 
 | URI | 内容 |
 | --- | --- |
-| `tuilens://sessions` | 安全会话元数据，不含环境变量或凭据。 |
+| `tuilens://sessions` | 当前 MCP 实例持有的会话元数据。 |
 | `tuilens://sessions/{id}/screen` | 无浏览器的 compact 文本画面。 |
 | `tuilens://sessions/{id}/screenshot` | 当前 PNG，32 MiB 上限。 |
 | `tuilens://sessions/{id}/metrics` | 背压、队列与协议应答计数。 |
@@ -227,14 +227,20 @@ Prompt 文案和描述跟随 `TUILENS_LANG`（默认英文，`zh-CN` 为中文�
 
 ## 多 Agent 协作
 
-TuiLens 的隔离边界是 terminal 会话 ID，不是 Agent 身份。所有 MCP 连接共享同一个 daemon，
-`terminal_list` 返回全局会话，任何持有有效 ID 的调用者都能观察或关闭它。
+每个 MCP stdio 实例持有自己启动或接手的会话，底层 IPC 空闲重连后仍保留归属。多个 Agent
+共用同一个 MCP 实例时也共享该实例的会话。`terminal_list` 和 `tuilens://sessions`
+默认只列出当前实例持有的会话。用 `terminal_list` 传入 `{"includeAll":true}` 可查看整个 daemon
+的会话概况。操作其他实例持有的会话会返回 `SESSION_NOT_OWNED`。
 
-- 每个 Agent 应自行 launch 并 close 自己的会话。
-- 同一会话同一时刻只保留一个写者。
-- 交接视为显式所有权转移。
-- 不要从 `terminal_list` 接管其他 Agent 正在运行的会话。
-- MCP 连接断开时只回收该连接创建的会话。
+交接前先结束会话上正在执行的操作，然后按以下顺序移交。
+
+1. 当前持有者用会话 ID 调用 `terminal_handoff`，将 ID 和返回的令牌交给接手方。重新签发会使前一枚令牌失效。
+2. 接手方用 `{"id":"<会话 ID>","token":"<令牌>"}` 调用 `terminal_adopt`。成功后令牌失效，操作权和断开时的清理责任同时转移。收到 `SESSION_BUSY` 时，等待在途操作完成后可用同一枚令牌重试。
+3. 接手成功前请保持原 MCP 实例连接。MCP 正常断开时会释放它仍持有的会话。强制终止 MCP 进程可能留下运行中的会话。可用 `tuilens list --all` 查看状态，待同一 daemon 上的其他工作结束后，再用 `tuilens shutdown` 释放剩余会话。
+
+多次 CLI 调用共用独立的 CLI 身份，脚本可以跨命令继续操作 CLI 会话。旧版 MCP 适配器也使用这个 CLI 身份，每个适配器升级后才会拥有独立身份。
+从 CLI 移交时用 `tuilens handoff <id>`，接手时用 `tuilens adopt --stdin` 传入上述 JSON。
+会话归属校验覆盖实时终端操作。共享产物目录中的录制、截图等文件仍遵循本机用户的文件权限。
 
 默认会话额度为 8，可用 `TUILENS_MAX_SESSIONS` 调整。额度满时只回收最旧的已退出会话，
 不会抢占运行中的会话。
@@ -245,6 +251,7 @@ TuiLens 的隔离边界是 terminal 会话 ID，不是 Agent 身份。所有 MCP
 | --- | --- | --- |
 | `spawn tuilens ENOENT` | GUI 客户端没有继承 shell `PATH` | 使用 `tuilens mcp-config --client <客户端> --mode absolute` |
 | `Cannot find module .../cli.js` | 绝对配置指向已删除的安装 | 重新安装 TuiLens 并用 `--mode absolute` 重新生成 |
+| 升级后会话归属鉴权失败 | 旧版 daemon 仍在运行 | 完成现有工作后运行 `tuilens shutdown`，用新版程序重启 MCP 客户端。需要并行时，可为新版 daemon 设置独立的 `TUILENS_HOME`。 |
 | 重启后没有工具 | 客户端没有重新加载 MCP 配置 | 重启客户端或新开会话 |
 | `node-pty` 安装失败 | pnpm/npm 阻止了构建脚本，或缺少 C++ 工具 | 用 `pnpm approve-builds -g` 批准 `node-pty`，或安装构建工具 |
 | 浏览器启动失败 | 没有检测到 Chrome/Edge/Chromium | 安装浏览器或运行 `npx playwright-core install chromium` |

@@ -178,7 +178,7 @@ The server exposes read-only resources:
 
 | URI | Content |
 | --- | --- |
-| `tuilens://sessions` | Safe session metadata; no environment variables or credentials. |
+| `tuilens://sessions` | Metadata for sessions owned by this MCP instance. |
 | `tuilens://sessions/{id}/screen` | Compact text screen, browser-free. |
 | `tuilens://sessions/{id}/screenshot` | Current PNG, 32 MiB cap. |
 | `tuilens://sessions/{id}/metrics` | Backpressure, queue and protocol-reply counters. |
@@ -233,14 +233,28 @@ available.
 
 ## Multi-agent use
 
-TuiLens isolates terminal sessions by ID, not by agent identity. All MCP connections share one daemon.
-`terminal_list` returns every session, and any caller with a valid ID can observe or close it.
+Each MCP stdio instance owns the sessions it launches or adopts. Its identity survives idle IPC
+reconnections. Agents sharing a single MCP instance also share its sessions. `terminal_list` and
+`tuilens://sessions` show the current owner's sessions. Use `terminal_list` with `{"includeAll":true}`
+for a daemon-wide inventory. Operating on a session held by another owner returns `SESSION_NOT_OWNED`.
 
-- Each agent should launch and close its own session.
-- Keep one writer per session.
-- Treat a handoff as an explicit ownership transfer.
-- Do not use `terminal_list` to take over another agent's running session.
-- Disconnecting an MCP connection releases only sessions created by that connection.
+To hand off a running session, finish pending operations, then:
+
+1. The current owner calls `terminal_handoff` with the session ID and gives that ID and the returned
+   token to the recipient. Issuing a replacement token invalidates the earlier one.
+2. The recipient calls `terminal_adopt` with `{"id":"<session-id>","token":"<token>"}`. Successful
+   adoption consumes the token and moves control and disconnect cleanup to the recipient.
+   If adoption returns `SESSION_BUSY`, wait for the pending operation to finish and retry with the same token.
+3. Keep the original MCP instance connected until adoption succeeds. A normal MCP disconnect
+   closes the sessions that instance still owns. A forcibly killed adapter can leave sessions
+   running. `tuilens list --all` shows their status. After other work on the daemon has finished,
+   `tuilens shutdown` releases the remaining sessions.
+
+CLI invocations share a separate owner, so scripts can continue a CLI session across commands.
+Older MCP adapters use this same CLI scope. Upgrade each adapter to give it an independent owner.
+Use `tuilens handoff <id>` to transfer from the CLI or `tuilens adopt --stdin` with the same JSON to
+receive a session. Session ownership covers live terminal access. Files such as recordings and
+screenshots in the shared artifacts directory retain the local user's filesystem permissions.
 
 The default session budget is eight and can be changed with `TUILENS_MAX_SESSIONS`. When full, only
 the oldest exited sessions are reclaimed; running sessions are never preempted.
@@ -251,6 +265,7 @@ the oldest exited sessions are reclaimed; running sessions are never preempted.
 | --- | --- | --- |
 | `spawn tuilens ENOENT` | GUI client does not inherit shell `PATH` | Use `tuilens mcp-config --client <client> --mode absolute` |
 | `Cannot find module .../cli.js` | Absolute configuration points at a removed install | Reinstall TuiLens and regenerate with `--mode absolute` |
+| Scoped authentication fails after an upgrade | An older daemon is still running | Finish active work, run `tuilens shutdown`, then restart MCP clients with the updated binary. A separate `TUILENS_HOME` can run the new daemon alongside existing sessions. |
 | No tools after restart | Client did not reload MCP configuration | Restart the client or start a new session |
 | `node-pty` install failure | pnpm/npm blocked the build script or C++ tools are missing | Approve `node-pty` with `pnpm approve-builds -g`, or install build tools |
 | Browser launch failure | No Chrome/Edge/Chromium detected | Install a browser or run `npx playwright-core install chromium` |

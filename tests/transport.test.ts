@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
+import { EventEmitter, once } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { connect, createServer, Socket, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -1279,6 +1281,215 @@ test("macOS 强杀守护进程后残留 socket 可恢复", {
     assert.notEqual(restarted.pid, first.pid);
   } finally {
     await execute(process.execPath, [cli, "shutdown"], { env, timeout: 10000 }).catch(() => null);
+    await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});
+
+test("独立归属的 IPC 客户端在空闲连接断开后继续拥有会话", { timeout: 25000 }, async () => {
+  const home = await mkdtemp(join(tmpdir(), "tuilens-owner-reconnect-"));
+  const previousHome = process.env.TUILENS_HOME;
+  process.env.TUILENS_HOME = home;
+  const sockets: Socket[] = [];
+  const connector = ((path: string) => {
+    const socket = connect(path);
+    sockets.push(socket);
+    return socket;
+  }) as typeof connect;
+  try {
+    await request("ping", {}, { timeoutMs: 5000 });
+    const paths = runtimePaths();
+    const owner = new IpcClient(paths, connector, randomUUID());
+    const recipient = new IpcClient(paths, undefined, randomUUID());
+    const { id } = (await owner.call("launch", { command: process.execPath, args: [fixture] })) as SessionInfo;
+    const oldSocket = sockets[0]!;
+    const disconnected = new Promise<void>((resolve) => oldSocket.once("close", () => resolve()));
+    oldSocket.destroy();
+    await disconnected;
+    assert.deepEqual(
+      ((await owner.call("list", {})) as SessionInfo[]).map((row) => row.id),
+      [id]
+    );
+    assert.equal(sockets.length, 2);
+    assert.deepEqual(await recipient.call("list", {}), []);
+
+    const { token } = (await owner.call("handoff", { id })) as { token: string };
+    await owner.call("wait", { id, conditions: [{ kind: "text", text: "TUILENS_READY" }], timeoutMs: 5000 });
+    let onReady!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      onReady = resolve;
+    });
+    const wait = owner.call(
+      "wait",
+      { id, conditions: [{ kind: "text", text: "INPUT_RECEIVED" }], timeoutMs: 5000 },
+      {
+        onEvent: (event) => {
+          if (event === "progress") onReady();
+        },
+      }
+    );
+    await Promise.race([ready, wait]);
+    await assert.rejects(recipient.call("adopt", { id, token }), { code: "SESSION_BUSY" });
+    await owner.call("input", { id, action: { type: "text", text: "PING" } });
+    await wait;
+    assert.equal(((await recipient.call("adopt", { id, token })) as SessionInfo).id, id);
+    assert.deepEqual(await owner.call("releaseOwned", {}), { released: 0 });
+    assert.deepEqual(await recipient.call("releaseOwned", {}), { released: 1 });
+    assert.deepEqual(await owner.call("list", { includeAll: true }), []);
+    await assert.rejects(recipient.call("shutdown", {}), { code: "UNAUTHORIZED" });
+    await assert.rejects(request("releaseOwned"), { code: "UNAUTHORIZED" });
+    await request("ping", {}, { autoStart: false });
+  } finally {
+    await request("shutdown", {}, { autoStart: false }).catch(() => null);
+    restoreEnv("TUILENS_HOME", previousHome);
+    await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});
+
+async function withScopedIpcStub(
+  handle: (socket: Socket, frame: ClientFrame) => void,
+  exercise: (client: IpcClient) => Promise<void>
+): Promise<void> {
+  const home = await mkdtemp(join(tmpdir(), "tuilens-scoped-stub-"));
+  const previousHome = process.env.TUILENS_HOME;
+  process.env.TUILENS_HOME = home;
+  let server: Server | undefined;
+  try {
+    const paths = runtimePaths();
+    await writeFile(paths.state, JSON.stringify({ token: "aa", pid: process.pid }));
+    server = await startIpcStub(paths.socket, (socket) => {
+      const reader = createInterface({ input: socket });
+      reader.on("line", (line) => handle(socket, JSON.parse(line) as ClientFrame));
+      socket.once("close", () => reader.close());
+    });
+    await exercise(new IpcClient(paths, undefined, randomUUID()));
+  } finally {
+    await closeIpcStub(server);
+    restoreEnv("TUILENS_HOME", previousHome);
+    await rm(home, { recursive: true, force: true, maxRetries: 5 });
+  }
+}
+
+test("独立归属握手遇到旧 daemon 时拒绝发送业务请求", async (t) => {
+  for (const response of [
+    { type: "auth_ok", version: 2, daemonPid: process.pid, daemonVersion: "test" },
+    { type: "auth_error", error: errorFrame("PROTOCOL_ERROR") },
+  ] as const) {
+    await t.test(response.type, async () => {
+      const requests: string[] = [];
+      await withScopedIpcStub(
+        (socket, frame) => {
+          requests.push(frame.type);
+          if (frame.type === "auth") socket.write(encodeFrame(response));
+          else socket.end();
+        },
+        async (client) => {
+          await assert.rejects(client.call("list", {}, { timeoutMs: 2000 }), { code: "PROTOCOL_VERSION" });
+          assert.deepEqual(requests, ["auth"]);
+        }
+      );
+    });
+  }
+});
+
+test("独立归属客户端取消获取会话后清理迟到的成功响应", { timeout: 10000 }, async (t) => {
+  for (const method of ["launch", "adopt"] as const) {
+    await t.test(method, async () => {
+      const sessionId = randomUUID();
+      const events = new EventEmitter();
+      const requested = once(events, "acquire");
+      const cancelled = once(events, "cancel");
+      const cleaned = once(events, "cleaned");
+      const attempts: { method: string; params: unknown }[] = [];
+      await withScopedIpcStub(
+        (socket, frame) => {
+          if (frame.type === "auth") {
+            socket.write(
+              encodeFrame({ type: "auth_ok", version: 2, daemonPid: process.pid, daemonVersion: "test", scoped: true })
+            );
+          } else if (frame.type === "cancel") {
+            events.emit("cancel", frame.id);
+          } else if (frame.method === method) {
+            events.emit("acquire", socket, frame.id);
+          } else {
+            attempts.push({ method: frame.method, params: frame.params });
+            if (attempts.length === 1) {
+              socket.write(encodeFrame({ type: "res", id: frame.id, ok: false, error: errorFrame("INTERNAL") }));
+            } else {
+              socket.write(encodeFrame({ type: "res", id: frame.id, ok: true, data: { released: true } }));
+              events.emit("cleaned");
+            }
+          }
+        },
+        async (client) => {
+          const controller = new AbortController();
+          const acquisition = client.call(method, {}, { signal: controller.signal });
+          const [socket, requestId] = (await requested) as [Socket, string];
+          controller.abort();
+          await assert.rejects(acquisition, { code: "ABORTED" });
+          assert.deepEqual(await cancelled, [requestId]);
+          socket.write(encodeFrame({ type: "res", id: requestId, ok: true, data: { id: sessionId } }));
+          await cleaned;
+          const expected = { method: "releaseAcquisition", params: { id: sessionId, acquisitionId: requestId } };
+          assert.deepEqual(attempts, [expected, expected]);
+        }
+      );
+    });
+  }
+});
+
+test("会话回到原持有者后，迟到的回收只匹配原获取请求", { timeout: 20000 }, async () => {
+  const home = await mkdtemp(join(tmpdir(), "tuilens-owner-roundtrip-"));
+  const previousHome = process.env.TUILENS_HOME;
+  process.env.TUILENS_HOME = home;
+  let raw: RawIpcClient | undefined;
+  try {
+    await request("ping", {}, { timeoutMs: 5000 });
+    const paths = runtimePaths();
+    const ownerId = randomUUID();
+    const owner = new IpcClient(paths, undefined, ownerId);
+    const recipient = new IpcClient(paths, undefined, randomUUID());
+    const channel = await RawIpcClient.open(paths.socket);
+    raw = channel;
+    channel.writeFrame({ type: "auth", version: 2, token: await daemonToken(), ownerId });
+    const auth = await channel.next((frame) => frame.type === "auth_ok" || frame.type === "auth_error");
+    assert.ok(auth.type === "auth_ok" && auth.scoped);
+
+    async function acquire(method: "launch" | "adopt", params: object) {
+      const requestId = randomUUID();
+      channel.writeFrame({ type: "req", id: requestId, method, params });
+      const response = await channel.next((frame) => frame.type === "res" && frame.id === requestId);
+      assert.ok(response.type === "res" && response.ok);
+      return { acquisitionId: requestId, session: response.data as SessionInfo };
+    }
+    const initial = await acquire("launch", { command: process.execPath, args: [fixture] });
+    const id = initial.session.id;
+    const acquisitions = [initial.acquisitionId];
+    for (let round = 0; round < 2; round++) {
+      const outgoing = (await owner.call("handoff", { id })) as { token: string };
+      await recipient.call("adopt", { id, token: outgoing.token });
+      const incoming = (await recipient.call("handoff", { id })) as { token: string };
+      const returned = await acquire("adopt", { id, token: incoming.token });
+      assert.equal(returned.session.id, id);
+      acquisitions.push(returned.acquisitionId);
+    }
+
+    const current = { id, acquisitionId: acquisitions[2]! };
+    for (const acquisitionId of acquisitions.slice(0, -1)) {
+      assert.deepEqual(await owner.call("releaseAcquisition", { id, acquisitionId }), { released: false });
+    }
+    assert.deepEqual(await recipient.call("releaseAcquisition", current), { released: false });
+    assert.deepEqual(
+      ((await owner.call("list", {})) as SessionInfo[]).map((row) => row.id),
+      [id]
+    );
+    await owner.call("wait", { id, conditions: [{ kind: "text", text: "TUILENS_READY" }], timeoutMs: 5000 });
+    assert.deepEqual(await owner.call("releaseAcquisition", current), { released: true });
+    assert.deepEqual(await owner.call("releaseAcquisition", current), { released: false });
+    assert.deepEqual(await owner.call("list", {}), []);
+  } finally {
+    await raw?.close();
+    await request("shutdown", {}, { autoStart: false }).catch(() => null);
+    restoreEnv("TUILENS_HOME", previousHome);
     await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
