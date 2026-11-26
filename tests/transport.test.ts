@@ -1383,7 +1383,11 @@ test("独立归属握手遇到旧 daemon 时拒绝发送业务请求", async (t)
           else socket.end();
         },
         async (client) => {
-          await assert.rejects(client.call("list", {}, { timeoutMs: 2000 }), { code: "PROTOCOL_VERSION" });
+          await assert.rejects(client.call("list", {}, { timeoutMs: 2000 }), {
+            code: "PROTOCOL_VERSION",
+            messageEn: /tuilens shutdown/u,
+            messageZh: /tuilens shutdown/u,
+          });
           assert.deepEqual(requests, ["auth"]);
         }
       );

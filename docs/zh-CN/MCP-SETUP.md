@@ -21,7 +21,7 @@ TuiLens 通过 MCP stdio 服务提供终端自动化能力。MCP 客户端会把
 
 ## 安装
 
-全局安装：
+在 Windows 上升级已有的全局安装时，请[先停止 daemon，再更新](GETTING-STARTED.md#windows-全局升级)。首次全局安装可运行以下命令。
 
 ```sh
 npm install -g tuilens
@@ -251,7 +251,8 @@ Prompt 文案和描述跟随 `TUILENS_LANG`（默认英文，`zh-CN` 为中文�
 | --- | --- | --- |
 | `spawn tuilens ENOENT` | GUI 客户端没有继承 shell `PATH` | 使用 `tuilens mcp-config --client <客户端> --mode absolute` |
 | `Cannot find module .../cli.js` | 绝对配置指向已删除的安装 | 重新安装 TuiLens 并用 `--mode absolute` 重新生成 |
-| 升级后会话归属鉴权失败 | 旧版 daemon 仍在运行 | 完成现有工作后运行 `tuilens shutdown`，用新版程序重启 MCP 客户端。需要并行时，可为新版 daemon 设置独立的 `TUILENS_HOME`。 |
+| Windows 上 npm 重命名全局 `tuilens` 目录时报 `EBUSY` | 正在运行的 daemon 可能仍占用 ConPTY 文件 | 等活动任务结束，运行 `tuilens shutdown`，待 daemon 退出后重试安装。[Windows 升级步骤](GETTING-STARTED.md#windows-全局升级) |
+| 升级后会话归属鉴权失败 | 旧版 daemon 仍在运行 | 完成现有工作后运行 `tuilens shutdown`，用新版程序重启 MCP 客户端。并行使用两个版本时，请分别使用独立的安装目录和 `TUILENS_HOME`。 |
 | 重启后没有工具 | 客户端没有重新加载 MCP 配置 | 重启客户端或新开会话 |
 | `node-pty` 安装失败 | pnpm/npm 阻止了构建脚本，或缺少 C++ 工具 | 用 `pnpm approve-builds -g` 批准 `node-pty`，或安装构建工具 |
 | 浏览器启动失败 | 没有检测到 Chrome/Edge/Chromium | 安装浏览器或运行 `npx playwright-core install chromium` |

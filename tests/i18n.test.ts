@@ -63,12 +63,14 @@ test("CLI help and errors honor TUILENS_LANG", async () => {
   const english = await run(process.execPath, [cli, "--help"], { env: envWithoutLocale() });
   assert.match(english.stdout, /terminal observation and control for agents/u);
   assert.match(english.stdout, /TUILENS_LANG selects en or zh-CN/u);
+  assert.match(english.stdout, /^shutdown\s+.*Windows global upgrade/mu);
 
   const chinese = await run(process.execPath, [cli, "--help"], {
     env: envWithoutLocale({ TUILENS_LANG: "zh-CN" }),
   });
   assert.match(chinese.stdout, /面向 Agent/u);
   assert.match(chinese.stdout, /TUILENS_LANG 选择/u);
+  assert.match(chinese.stdout, /^shutdown\s+.*Windows 全局升级/mu);
 
   const failedEnglish = await run(process.execPath, [cli, "definitely-unknown"], {
     env: envWithoutLocale(),

@@ -17,6 +17,8 @@ The [demo app](https://github.com/Blackn-L/TuiLens/blob/main/examples/echo-tui.m
 
 Install with Node.js 22 or newer. Then launch Node's interactive prompt from any directory.
 
+**Upgrading on Windows?** Finish active TuiLens sessions and run `tuilens shutdown` before the npm install below. Restart your MCP client after installation. [Windows upgrade steps and `EBUSY` recovery](docs/GETTING-STARTED.md#windows-global-upgrades)
+
 ```sh
 npm install -g tuilens
 tuilens launch --cols 64 --rows 8 "--" node -i

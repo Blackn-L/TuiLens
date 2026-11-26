@@ -22,7 +22,7 @@ terminal sessions should run.
 
 ## Install
 
-Global install:
+For an existing Windows global install, [stop the daemon before upgrading](GETTING-STARTED.md#windows-global-upgrades). For a first global install, run the following commands.
 
 ```sh
 npm install -g tuilens
@@ -265,7 +265,8 @@ the oldest exited sessions are reclaimed; running sessions are never preempted.
 | --- | --- | --- |
 | `spawn tuilens ENOENT` | GUI client does not inherit shell `PATH` | Use `tuilens mcp-config --client <client> --mode absolute` |
 | `Cannot find module .../cli.js` | Absolute configuration points at a removed install | Reinstall TuiLens and regenerate with `--mode absolute` |
-| Scoped authentication fails after an upgrade | An older daemon is still running | Finish active work, run `tuilens shutdown`, then restart MCP clients with the updated binary. A separate `TUILENS_HOME` can run the new daemon alongside existing sessions. |
+| npm reports `EBUSY` renaming the global `tuilens` directory on Windows | A running daemon may still hold the ConPTY files open | Finish active work, run `tuilens shutdown` and retry after the daemon exits. [Windows upgrade steps](GETTING-STARTED.md#windows-global-upgrades) |
+| Scoped authentication fails after an upgrade | An older daemon is still running | Finish active work, run `tuilens shutdown`, then restart MCP clients with the updated binary. To run two versions side by side, use separate installations and `TUILENS_HOME` directories. |
 | No tools after restart | Client did not reload MCP configuration | Restart the client or start a new session |
 | `node-pty` install failure | pnpm/npm blocked the build script or C++ tools are missing | Approve `node-pty` with `pnpm approve-builds -g`, or install build tools |
 | Browser launch failure | No Chrome/Edge/Chromium detected | Install a browser or run `npx playwright-core install chromium` |
