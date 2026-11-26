@@ -86,6 +86,8 @@ tuilens report artifacts/session.recording.jsonl --out recording-report.html
   inventory and a draggable offline timeline. ANSI is stripped in the browser; recorded input is
   never executed.
 
+![Performance evidence report showing timing and memory measurements](assets/evidence-report.png)
+
 ## Safety and bounds
 
 - The HTML uses only inline CSS, JavaScript and SVG. It has no CDN, external font, external script or

@@ -27,7 +27,7 @@ speed=0 立即应用；正数按比例保留间隔，单步延迟超过 30 秒�
 ## 场景
 
 场景包含 version:1、launch 和最多 500 个 steps。
-支持 input、wait、resize、observe、clickText、compare，见[可运行示例](../../examples/scenario.json)。
+支持 input、wait、resize、observe、clickText、compare，见[可运行示例](https://github.com/Blackn-L/TuiLens/blob/main/examples/scenario.json)。
 执行器启动一个真实程序，各步骤复用会话接口。失败时尝试有界截图并生成报告；
 成功、失败、取消都会关闭本次会话，清理异常单列记录。
 

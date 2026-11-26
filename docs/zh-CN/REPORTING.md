@@ -80,6 +80,8 @@ tuilens report artifacts/session.recording.jsonl --out recording-report.html
 - **Recording：** header、renderer、网格、profile、resize 与 exit 事件、截断警告、事件清单，
   以及可拖动的离线时间轴。浏览器端会剥离 ANSI，录制输入永不执行。
 
+![显示耗时和内存测量结果的性能证据报告](../assets/evidence-report.png)
+
 ## 安全与边界
 
 - HTML 只使用内联 CSS、JavaScript 与 SVG，不请求 CDN、外部字体、外部脚本或远程图片，

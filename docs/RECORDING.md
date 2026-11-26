@@ -32,7 +32,7 @@ Replay checks terminal rendering. To test application behavior, run the actual p
 
 A scenario has `version:1`, `launch`, and up to 500 `steps`.
 Supported step types: `input`, `wait`, `resize`, `observe`, `clickText`, `compare`.
-See [the runnable example](../examples/scenario.json).
+See [the runnable example](https://github.com/Blackn-L/TuiLens/blob/main/examples/scenario.json).
 
 The runner launches one real process. Steps use the same session APIs as CLI/MCP.
 On failure, it attempts a bounded screenshot and writes a structured report.

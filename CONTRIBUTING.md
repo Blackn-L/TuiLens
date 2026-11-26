@@ -23,6 +23,22 @@ For visual changes inspect the generated PNG as well as structured assertions.
 Describe the trigger, observable change, checks performed and remaining limitations in the pull request.
 Do not equate text presence with visual correctness or a short benchmark with long-run stability.
 
+## Documentation
+
+Edit the English guides in `docs/` and their Chinese counterparts in `docs/zh-CN/`.
+From the repository root, build and preview the Pages site:
+
+```sh
+npm ci --prefix docs
+npm run build --prefix docs
+npm run preview --prefix docs
+```
+
+Open the preview at `/TuiLens/`. To refresh the README image and sample HTML report, build TuiLens,
+then run `node scripts/generate-docs-demo.mjs` with a supported browser installed. The generator uses
+the public terminal example in this repository. The Documentation workflow builds pull requests and
+publishes the site to GitHub Pages after a merge to `main`.
+
 TuiLens is released under the [MIT License](LICENSE). Unless explicitly stated otherwise,
 contributions are licensed under the same license.
 Third-party components retain their own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md).
