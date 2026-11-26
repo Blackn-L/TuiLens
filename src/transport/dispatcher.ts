@@ -117,7 +117,7 @@ export async function dispatch(
       await manager.closeAll();
       return { stopped: true };
   }
-  if (!("id" in result.data)) throw new TuiLensError("UNKNOWN_METHOD", "未知命令");
+  if (!("id" in result.data) || result.data.id === undefined) throw new TuiLensError("UNKNOWN_METHOD", "未知命令");
   return manager.withOwnedSession(result.data.id, ownerId, () =>
     runSessionMethod(manager, method, result.data, signal, emit)
   );

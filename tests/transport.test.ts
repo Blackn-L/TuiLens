@@ -1391,50 +1391,115 @@ test("独立归属握手遇到旧 daemon 时拒绝发送业务请求", async (t)
   }
 });
 
-test("独立归属客户端取消获取会话后清理迟到的成功响应", { timeout: 10000 }, async (t) => {
+test("独立归属客户端按原请求回收未收到响应的获取操作", { timeout: 30000 }, async (t) => {
   for (const method of ["launch", "adopt"] as const) {
-    await t.test(method, async () => {
-      const sessionId = randomUUID();
-      const events = new EventEmitter();
-      const requested = once(events, "acquire");
-      const cancelled = once(events, "cancel");
-      const cleaned = once(events, "cleaned");
-      const attempts: { method: string; params: unknown }[] = [];
-      await withScopedIpcStub(
-        (socket, frame) => {
-          if (frame.type === "auth") {
-            socket.write(
-              encodeFrame({ type: "auth_ok", version: 2, daemonPid: process.pid, daemonVersion: "test", scoped: true })
-            );
-          } else if (frame.type === "cancel") {
-            events.emit("cancel", frame.id);
-          } else if (frame.method === method) {
-            events.emit("acquire", socket, frame.id);
-          } else {
-            attempts.push({ method: frame.method, params: frame.params });
-            if (attempts.length === 1) {
-              socket.write(encodeFrame({ type: "res", id: frame.id, ok: false, error: errorFrame("INTERNAL") }));
+    for (const interruption of ["cancel", "disconnect"] as const) {
+      await t.test(`${method} / ${interruption}`, async () => {
+        const events = new EventEmitter();
+        const committed = once(events, "committed");
+        const cancelled = interruption === "cancel" ? once(events, "cancel") : undefined;
+        const authenticated = new Map<Socket, string | undefined>();
+        const acquisitions: string[] = [];
+        const attempts: { socket: Socket; method: string; params: unknown }[] = [];
+        await withScopedIpcStub(
+          (socket, frame) => {
+            if (frame.type === "auth") {
+              authenticated.set(socket, frame.ownerId);
+              socket.write(
+                encodeFrame({
+                  type: "auth_ok",
+                  version: 2,
+                  daemonPid: process.pid,
+                  daemonVersion: "test",
+                  scoped: true,
+                })
+              );
+            } else if (frame.type === "cancel") {
+              events.emit("cancel", frame.id);
+            } else if (frame.method === method) {
+              acquisitions.push(frame.id);
+              // The fixture commits this acquisition and deliberately withholds its response.
+              events.emit("committed", socket, frame.id);
             } else {
-              socket.write(encodeFrame({ type: "res", id: frame.id, ok: true, data: { released: true } }));
-              events.emit("cleaned");
+              attempts.push({ socket, method: frame.method, params: frame.params });
+              if (attempts.length === 1) {
+                socket.write(encodeFrame({ type: "res", id: frame.id, ok: false, error: errorFrame("INTERNAL") }));
+              } else {
+                socket.write(encodeFrame({ type: "res", id: frame.id, ok: true, data: { released: true } }));
+                events.emit("cleaned");
+              }
+            }
+          },
+          async (client) => {
+            const controller = new AbortController();
+            const acquisition = client.call(method, {}, { signal: controller.signal });
+            const [source, requestId] = (await committed) as [Socket, string];
+            const cleaned = once(events, "cleaned", { signal: AbortSignal.timeout(4000) });
+            if (interruption === "cancel") {
+              controller.abort();
+              await assert.rejects(acquisition, { code: "ABORTED" });
+              assert.deepEqual(await cancelled, [requestId]);
+            } else {
+              source.destroy();
+              await assert.rejects(
+                acquisition,
+                (error: unknown) =>
+                  error instanceof TuiLensError && ["IPC_CLOSED", "ECONNRESET", "EPIPE"].includes(error.code)
+              );
+            }
+
+            await cleaned;
+            assert.deepEqual(acquisitions, [requestId], "an uncertain acquisition must not be replayed");
+            assert.equal(attempts.length, 2);
+            const ownerId = authenticated.get(source);
+            assert.equal(typeof ownerId, "string");
+            for (const attempt of attempts) {
+              assert.notEqual(attempt.socket, source);
+              assert.equal(authenticated.get(attempt.socket), ownerId);
+              assert.equal(attempt.method, "releaseAcquisition");
+              assert.deepEqual(attempt.params, { acquisitionId: requestId });
             }
           }
-        },
-        async (client) => {
-          const controller = new AbortController();
-          const acquisition = client.call(method, {}, { signal: controller.signal });
-          const [socket, requestId] = (await requested) as [Socket, string];
-          controller.abort();
-          await assert.rejects(acquisition, { code: "ABORTED" });
-          assert.deepEqual(await cancelled, [requestId]);
-          socket.write(encodeFrame({ type: "res", id: requestId, ok: true, data: { id: sessionId } }));
-          await cleaned;
-          const expected = { method: "releaseAcquisition", params: { id: sessionId, acquisitionId: requestId } };
-          assert.deepEqual(attempts, [expected, expected]);
-        }
-      );
-    });
+        );
+      });
+    }
   }
+});
+
+test("独立归属客户端首次回收未命中时用迟到响应重试同一获取请求", { timeout: 10000 }, async () => {
+  const events = new EventEmitter();
+  const sent = once(events, "sent");
+  const firstRelease = once(events, "firstRelease");
+  const finalRelease = once(events, "finalRelease");
+  const attempts: unknown[] = [];
+  await withScopedIpcStub(
+    (socket, frame) => {
+      if (frame.type === "auth") {
+        socket.write(
+          encodeFrame({ type: "auth_ok", version: 2, daemonPid: process.pid, daemonVersion: "test", scoped: true })
+        );
+      } else if (frame.type === "req" && frame.method === "launch") {
+        events.emit("sent", socket, frame.id);
+      } else if (frame.type === "req" && frame.method === "releaseAcquisition") {
+        attempts.push(frame.params);
+        const released = attempts.length === 2;
+        socket.write(encodeFrame({ type: "res", id: frame.id, ok: true, data: { released } }));
+        events.emit(released ? "finalRelease" : "firstRelease");
+      }
+    },
+    async (client) => {
+      const controller = new AbortController();
+      const pending = client.call("launch", {}, { signal: controller.signal });
+      const [source, requestId] = (await sent) as [Socket, string];
+      controller.abort();
+      await assert.rejects(pending, { code: "ABORTED" });
+      await firstRelease;
+      const id = randomUUID();
+      source.write(encodeFrame({ type: "res", id: requestId, ok: true, data: { id } }));
+      await finalRelease;
+      assert.deepEqual(attempts, [{ acquisitionId: requestId }, { id, acquisitionId: requestId }]);
+    }
+  );
 });
 
 test("会话回到原持有者后，迟到的回收只匹配原获取请求", { timeout: 20000 }, async () => {
@@ -1463,6 +1528,7 @@ test("会话回到原持有者后，迟到的回收只匹配原获取请求", { 
     }
     const initial = await acquire("launch", { command: process.execPath, args: [fixture] });
     const id = initial.session.id;
+    const sibling = (await owner.call("launch", { command: process.execPath, args: [fixture] })) as SessionInfo;
     const acquisitions = [initial.acquisitionId];
     for (let round = 0; round < 2; round++) {
       const outgoing = (await owner.call("handoff", { id })) as { token: string };
@@ -1473,19 +1539,27 @@ test("会话回到原持有者后，迟到的回收只匹配原获取请求", { 
       acquisitions.push(returned.acquisitionId);
     }
 
-    const current = { id, acquisitionId: acquisitions[2]! };
+    const current = { acquisitionId: acquisitions[2]! };
     for (const acquisitionId of acquisitions.slice(0, -1)) {
-      assert.deepEqual(await owner.call("releaseAcquisition", { id, acquisitionId }), { released: false });
+      assert.deepEqual(await owner.call("releaseAcquisition", { acquisitionId }), { released: false });
     }
     assert.deepEqual(await recipient.call("releaseAcquisition", current), { released: false });
     assert.deepEqual(
-      ((await owner.call("list", {})) as SessionInfo[]).map((row) => row.id),
-      [id]
+      ((await owner.call("list", {})) as SessionInfo[]).map((row) => row.id).sort(),
+      [id, sibling.id].sort()
     );
     await owner.call("wait", { id, conditions: [{ kind: "text", text: "TUILENS_READY" }], timeoutMs: 5000 });
     assert.deepEqual(await owner.call("releaseAcquisition", current), { released: true });
     assert.deepEqual(await owner.call("releaseAcquisition", current), { released: false });
-    assert.deepEqual(await owner.call("list", {}), []);
+    assert.deepEqual(
+      ((await owner.call("list", {})) as SessionInfo[]).map((row) => row.id),
+      [sibling.id]
+    );
+    await owner.call("wait", {
+      id: sibling.id,
+      conditions: [{ kind: "text", text: "TUILENS_READY" }],
+      timeoutMs: 5000,
+    });
   } finally {
     await raw?.close();
     await request("shutdown", {}, { autoStart: false }).catch(() => null);

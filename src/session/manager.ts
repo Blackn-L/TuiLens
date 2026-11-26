@@ -96,6 +96,7 @@ interface SessionEntry {
 
 interface LaunchScope {
   owner: Owner;
+  acquisitionId?: string | undefined;
   released: boolean;
   cleanup?: Promise<void>;
 }
@@ -138,8 +139,8 @@ export class SessionManager {
   }
 
   async launch(options: LaunchOptions, ownerId?: string, acquisitionId?: string): Promise<SessionInfo> {
-    const scope = { owner: ownerId, released: false };
-    const task = this.launchSession(options, scope, acquisitionId);
+    const scope = { owner: ownerId, acquisitionId, released: false };
+    const task = this.launchSession(options, scope);
     if (ownerId === undefined) return task;
     // Include launches queued for admission when their MCP connection disconnects.
     this.scopedLaunches.set(scope, task);
@@ -154,11 +155,7 @@ export class SessionManager {
     return this.launchSession(options, { owner: WORKFLOW_OWNER, released: false });
   }
 
-  private async launchSession(
-    options: LaunchOptions,
-    scope: LaunchScope,
-    acquisitionId?: string
-  ): Promise<SessionInfo> {
+  private async launchSession(options: LaunchOptions, scope: LaunchScope): Promise<SessionInfo> {
     launchOptions(options);
     if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "会话管理器已关闭");
     const release = await this.reserveSlot(`最多同时保留 ${this.maxSessions} 个会话，请先关闭不再使用的会话`);
@@ -166,7 +163,7 @@ export class SessionManager {
       release();
       throw new TuiLensError("ABORTED", "会话启动已取消");
     }
-    const pending = this.launchProcess(options);
+    const pending = this.launchProcess(options, scope);
     this.pendingLaunches.add(pending);
     // 槽位已由 pendingLaunches 占用；释放准入锁，让其他启动可以并行准备引擎。
     release();
@@ -176,7 +173,7 @@ export class SessionManager {
       this.sessions.set(launched.info.id, {
         session: launched.session,
         owner: scope.owner,
-        acquisitionId,
+        acquisitionId: scope.acquisitionId,
         token: undefined,
         operations: 0,
         closing: false,
@@ -243,7 +240,10 @@ export class SessionManager {
     }
   }
 
-  private async launchProcess(options: LaunchOptions): Promise<{ info: SessionInfo; session: ManagedSession }> {
+  private async launchProcess(
+    options: LaunchOptions,
+    scope: LaunchScope
+  ): Promise<{ info: SessionInfo; session: ManagedSession }> {
     const cwd = resolve(options.cwd ?? process.cwd());
     try {
       if (!(await stat(cwd)).isDirectory()) throw new Error("不是目录");
@@ -273,6 +273,7 @@ export class SessionManager {
     });
     try {
       if (this.disposed) throw new TuiLensError("MANAGER_CLOSED", "管理器在启动期间已关闭");
+      if (scope.released) throw new TuiLensError("ABORTED", "会话启动已取消");
       const sessionId = randomUUID();
       if (options.recording) {
         const { env: _env, source: _source, ...renderProfile } = profile;
@@ -318,6 +319,7 @@ export class SessionManager {
           ? process.execPath
           : options.command;
       const resolved = await resolveExecutable(requested, { cwd, env });
+      if (scope.released) throw new TuiLensError("ABORTED", "会话启动已取消");
       const name = getEnv(env, "TERM") ?? "xterm-256color";
       const useConptyDll =
         process.platform === "win32" && (options.terminalProfile !== undefined || options.graphics !== undefined);
@@ -899,21 +901,46 @@ export class SessionManager {
     await this.close(id);
   }
 
-  async releaseAcquisition(id: string, acquisitionId: string, ownerId: string | undefined): Promise<boolean> {
-    const entry = this.sessions.get(id);
-    // The original owner may have handed this session away and acquired it again.
-    if (!entry || entry.owner !== ownerId || entry.acquisitionId !== acquisitionId) return false;
-    await this.close(id);
-    return true;
+  async releaseAcquisition(
+    id: string | undefined,
+    acquisitionId: string,
+    ownerId: string | undefined
+  ): Promise<boolean> {
+    for (const [sessionId, entry] of this.sessions) {
+      if (id !== undefined && id !== sessionId) continue;
+      // The original owner may have handed this session away and acquired it again.
+      if (entry.owner === ownerId && entry.acquisitionId === acquisitionId) {
+        await this.close(sessionId);
+        return true;
+      }
+    }
+    if (id === undefined) {
+      for (const [scope, task] of this.scopedLaunches) {
+        if (scope.owner === ownerId && scope.acquisitionId === acquisitionId) {
+          await this.cancelLaunch(scope, task);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private async cancelLaunch(scope: LaunchScope, task: Promise<SessionInfo>): Promise<void> {
+    scope.released = true;
+    try {
+      await task;
+    } catch (error) {
+      // Startup cancellation is expected. Surface errors cleaning up any acquired resources.
+      if (error instanceof AggregateError) throw error;
+      await scope.cleanup;
+    }
   }
 
   async releaseOwned(ownerId: string): Promise<number> {
     const pending: Promise<void>[] = [];
     for (const [scope, task] of this.scopedLaunches) {
       if (scope.owner !== ownerId) continue;
-      scope.released = true;
-      // A cancelled/failed launch is expected. Propagate any error releasing a late PTY.
-      pending.push(task.catch(() => {}).then(() => scope.cleanup));
+      pending.push(this.cancelLaunch(scope, task));
     }
     // Start every close synchronously so adoption cannot interleave with the owner check.
     const closing: Promise<void>[] = [];

@@ -308,6 +308,8 @@ interface PendingRequest {
   timer?: NodeJS.Timeout;
   abortListener?: () => void;
   sent: boolean;
+  unconfirmedAcquisition: boolean;
+  earlyRelease?: Promise<boolean>;
 }
 
 interface AuthWaiter {
@@ -383,19 +385,26 @@ export class IpcClient {
           ...(options.onEvent ? { onEvent: options.onEvent } : {}),
           ...(timer ? { timer } : {}),
           sent: false,
+          unconfirmedAcquisition: this.ownerId !== undefined && (method === "launch" || method === "adopt"),
         };
         const abort = (): void => {
           const error = abortError(controlled.signal);
           if (pending.sent && this.socket?.writable) {
             this.socket.write(encodeFrame({ type: "cancel", id }));
-            if (this.ownerId && (method === "launch" || method === "adopt")) {
-              // Cancellation may cross a committed acquisition's response in transit.
-              // Honor the caller's deadline while retaining a bounded path to release it.
+            if (pending.unconfirmedAcquisition) {
+              // A second pipe may reach the daemon before the original request. If this
+              // happens, use a late successful reply for a second, equally fenced release.
+              pending.earlyRelease = this.releaseUnconfirmedAcquisition(id);
               pending.resolve = (data) => {
                 if (isRecord(data) && typeof data.id === "string") {
-                  void this.releaseLateAcquisition(data.id, id);
+                  void this.releaseUnconfirmedAcquisition(id, data.id, pending.earlyRelease);
                 }
               };
+              void pending.earlyRelease.then((matched) => {
+                if (!matched) return;
+                pending.unconfirmedAcquisition = false;
+                this.completePending(pending, error);
+              });
               if (pending.timer) clearTimeout(pending.timer);
               pending.timer = setTimeout(() => this.completePending(pending, error), ACQUISITION_CLEANUP_TIMEOUT_MS);
               reject(new TuiLensError(error.code, error.messageZh, { sent: true }, error.messageEn));
@@ -427,22 +436,34 @@ export class IpcClient {
     }
   }
 
-  private async releaseLateAcquisition(id: string, acquisitionId: string): Promise<void> {
+  private async releaseUnconfirmedAcquisition(
+    acquisitionId: string,
+    id?: string,
+    earlyRelease?: Promise<boolean>
+  ): Promise<boolean> {
+    if (earlyRelease && (await earlyRelease)) return true;
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      const cleanup = new IpcClient(this.paths, this.connectSocket, this.ownerId);
       try {
-        await this.call("releaseAcquisition", { id, acquisitionId }, { timeoutMs: ACQUISITION_CLEANUP_TIMEOUT_MS });
-        return;
+        const result = await cleanup.call(
+          "releaseAcquisition",
+          { acquisitionId, ...(id === undefined ? {} : { id }) },
+          { timeoutMs: ACQUISITION_CLEANUP_TIMEOUT_MS }
+        );
+        return isRecord(result) && result.released === true;
       } catch (error) {
-        if (["SESSION_NOT_FOUND", "SESSION_NOT_OWNED"].includes(errorCode(error) ?? "")) return;
         if (attempt === 0) {
           await sleep(100);
           continue;
         }
         process.stderr.write(
-          `${pick("Session cleanup failed: ", "会话清理失败：")}${id}: ${errorRecord(error).message}\n`
+          `${pick("Session cleanup failed: ", "会话清理失败：")}${acquisitionId}: ${errorRecord(error).message}\n`
         );
+      } finally {
+        cleanup.resetConnection();
       }
     }
+    return false;
   }
 
   async ensureDaemon(signal?: AbortSignal): Promise<void> {
@@ -742,6 +763,7 @@ export class IpcClient {
     }
     const pending = this.inflight.get(frame.id);
     if (!pending) return;
+    pending.unconfirmedAcquisition = false;
     if (frame.ok) {
       this.completePending(pending, null, frame.data);
     } else {
@@ -817,8 +839,18 @@ export class IpcClient {
     if (pending.abortListener) pending.controller.signal.removeEventListener("abort", pending.abortListener);
     this.inflight.delete(pending.id);
     this.updateIdleState();
-    if (error !== null) pending.reject(error);
-    else pending.resolve(data);
+    if (error === null) {
+      pending.resolve(data);
+      return;
+    }
+    if (pending.sent && pending.unconfirmedAcquisition) {
+      void this.releaseUnconfirmedAcquisition(pending.id, undefined, pending.earlyRelease);
+      // Never replay a possibly committed acquisition after an ambiguous transport failure.
+      if (error instanceof TuiLensError && isStartableFailure(error)) {
+        error = new TuiLensError(error.code, error.messageZh, { sent: true }, error.messageEn);
+      }
+    }
+    pending.reject(error);
   }
 
   private updateIdleState(): void {
@@ -874,7 +906,8 @@ export function createOwnedRequest(ownerId: string): typeof request {
   const paths = runtimePaths();
   const client = new IpcClient(paths, undefined, ownerId);
   return async (method, params = {}, options = {}) => {
-    if (method !== "releaseOwned") return requestUsing(client, method, params, options);
+    if (method !== "releaseOwned" && method !== "releaseAcquisition")
+      return requestUsing(client, method, params, options);
     // A disconnect can leave the original socket half-closed or full of cancelled calls.
     const release = () =>
       requestUsing(new IpcClient(paths, undefined, ownerId), method, params, { ...options, autoStart: false });
