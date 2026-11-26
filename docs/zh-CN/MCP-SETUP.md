@@ -202,7 +202,7 @@ Prompt 文案和描述跟随 `TUILENS_LANG`（默认英文，`zh-CN` 为中文�
 1. 确认工具列表包含 `terminal_launch`、`terminal_observe`、`terminal_inputAndWait`、
    `terminal_wait`、`terminal_compare`、`terminal_scenario`、`terminal_perf` 和
    `terminal_close`。
-2. 启动一个简单 TUI：
+2. 用以下参数调用 `terminal_launch`，启动一个小型 Node.js 程序：
 
    ```json
    {
@@ -213,10 +213,14 @@ Prompt 文案和描述跟随 `TUILENS_LANG`（默认英文，`zh-CN` 为中文�
    }
    ```
 
-3. 保存 `data.id`，用 `{"id":"<会话 ID>"}` 调用 `terminal_observe`，再调用
-   `terminal_close`。
-4. 可选读取 `tuilens://sessions/<会话 ID>/screen` 和
-   `tuilens://sessions/<会话 ID>/metrics`。
+3. 复制启动结果中的 `id`，填入 `terminal_wait` 的参数，等待程序绘制画面。
+
+   ```json
+   { "id": "<会话 ID>", "conditions": [{ "kind": "text", "text": "READY" }] }
+   ```
+
+4. 用 `{"id":"<会话 ID>"}` 调用 `terminal_observe`。接入成功时，返回的
+   `snapshot.lines[0]` 为 `READY`。用同一 ID 调用 `terminal_close` 结束会话。
 
 纯文本观察不需要浏览器。截图请求会激活 Chromium 并返回实际 `renderer`；没有浏览器时截图失败，
 但文本观察仍然可用。

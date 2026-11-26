@@ -207,7 +207,7 @@ After restarting the client:
 1. Confirm the tools appear, including `terminal_launch`, `terminal_observe`,
    `terminal_inputAndWait`, `terminal_wait`, `terminal_compare`, `terminal_scenario`,
    `terminal_perf` and `terminal_close`.
-2. Launch a small TUI:
+2. Call `terminal_launch` with this small Node.js program:
 
    ```json
    {
@@ -218,10 +218,14 @@ After restarting the client:
    }
    ```
 
-3. Save `data.id`, call `terminal_observe` with `{"id":"<session-id>"}`, then call
-   `terminal_close`.
-4. Optionally read `tuilens://sessions/<session-id>/screen` and
-   `tuilens://sessions/<session-id>/metrics`.
+3. Copy the `id` in the launch result. Use it in `terminal_wait` to give the program time to draw:
+
+   ```json
+   { "id": "<session-id>", "conditions": [{ "kind": "text", "text": "READY" }] }
+   ```
+
+4. Call `terminal_observe` with `{"id":"<session-id>"}`. A working connection returns
+   `READY` in `snapshot.lines[0]`. Call `terminal_close` with the same ID to end the session.
 
 Text observation works without a browser. A screenshot request activates Chromium and reports the
 live `renderer`; if no browser is installed, the screenshot fails while text observation remains

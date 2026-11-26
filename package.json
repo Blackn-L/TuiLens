@@ -3,6 +3,7 @@
   "version": "0.6.0",
   "description": "Terminal automation for AI agents with PTY sessions, image-aware capture, visual testing, performance regression baselines and MCP.",
   "license": "MIT",
+  "homepage": "https://blackn-l.github.io/TuiLens/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Blackn-L/TuiLens.git"
@@ -25,6 +26,8 @@
     "SECURITY.md",
     "docs/*.md",
     "docs/zh-CN/*.md",
+    "!docs/index.md",
+    "!docs/zh-CN/index.md",
     "docs/assets/"
   ],
   "bin": {

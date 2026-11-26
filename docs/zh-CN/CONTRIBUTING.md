@@ -16,5 +16,19 @@
 视觉变更同时检查 PNG 和结构化断言。
 PR 说明触发条件、行为变化、验证与限制；文字存在不等于视觉正确，短测不等于长时稳定。
 
+## 帮助文档
+
+英文指南位于 `docs/`，对应的中文指南位于 `docs/zh-CN/`。在仓库根目录构建并预览文档站。
+
+```sh
+npm ci --prefix docs
+npm run build --prefix docs
+npm run preview --prefix docs
+```
+
+打开预览地址下的 `/TuiLens/`。需要更新 README 配图和示例 HTML 报告时，先构建 TuiLens，
+再在已安装受支持浏览器的机器上运行 `node scripts/generate-docs-demo.mjs`。脚本使用仓库内的公开终端示例。
+Documentation 工作流会为 PR 构建站点，合入 `main` 后发布到 GitHub Pages。
+
 本项目采用 [MIT 许可证](../../LICENSE) 开源；除非另有明确说明，贡献均以同一许可证授权。
 第三方组件保留各自的上游许可证，见 [THIRD_PARTY.md](../../THIRD_PARTY.md)。
