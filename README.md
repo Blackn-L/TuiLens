@@ -1,8 +1,13 @@
 # TuiLens
 
+[![npm version](https://img.shields.io/npm/v/tuilens)](https://www.npmjs.com/package/tuilens)
+[![Supported Node.js versions](https://img.shields.io/node/v/tuilens)](https://github.com/Blackn-L/TuiLens/blob/main/package.json)
+[![Build and tests on main](https://github.com/Blackn-L/TuiLens/actions/workflows/checks.yml/badge.svg?branch=main&event=push)](https://github.com/Blackn-L/TuiLens/actions/workflows/checks.yml?query=branch%3Amain)
+[![License](https://img.shields.io/npm/l/tuilens)](https://github.com/Blackn-L/TuiLens/blob/main/LICENSE)
+
 **Terminal automation for AI agents and tests.** Run an interactive program in a real pseudoterminal (PTY), send it keys or mouse input, and read the screen it draws. Text observation works without a browser. Request a PNG when you need to check what a user would see.
 
-[简体中文](README.zh-CN.md) · [Documentation](https://blackn-l.github.io/TuiLens/) · [npm](https://www.npmjs.com/package/tuilens)
+[简体中文](README.zh-CN.md) · [Documentation](https://blackn-l.github.io/TuiLens/)
 
 <img src="docs/assets/agent-demo.png" width="640" alt="The terminal shows READY before g and UPDATED afterward. The frame diff reports UPDATED on zero-based row 7.">
 
