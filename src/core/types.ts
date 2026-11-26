@@ -280,6 +280,8 @@ export interface SnapshotFrame {
   cols: number;
   rows: number;
   lines: string[];
+  /** Exact column layout for non-ASCII rows when supplied by the engine. */
+  lineCells?: ReadonlyMap<number, readonly string[]>;
   cursor: CursorState;
   modes: TerminalModes;
 }

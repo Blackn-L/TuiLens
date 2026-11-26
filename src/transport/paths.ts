@@ -20,3 +20,13 @@ export function runtimePaths() {
 }
 
 export type RuntimePaths = ReturnType<typeof runtimePaths>;
+
+/** Pin path-valued settings before the detached server switches to its runtime directory. */
+export function daemonEnvironment(home: string, inherited: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...inherited, TUILENS_HOME: home };
+  for (const key of ["TUILENS_BROWSER_PATH", "TUILENS_FONT_FILE"] as const) {
+    const path = inherited[key];
+    if (path) env[key] = resolve(path);
+  }
+  return env;
+}

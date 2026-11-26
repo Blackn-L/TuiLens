@@ -1,10 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { readBoundedFile } from "../core/bounded-file.js";
 import { errorRecord, TuiLensError, type ErrorRecord } from "../core/errors.js";
 import { pick } from "../core/i18n.js";
-import type { InputAction, LaunchOptions, ProgressReporter, RendererKind, WaitCondition } from "../core/types.js";
+import type {
+  InputAction,
+  LaunchOptions,
+  ProgressReporter,
+  RendererKind,
+  SessionInfo,
+  WaitCondition,
+} from "../core/types.js";
 import type { SessionManager } from "../session/manager.js";
 import { ProcessTreeSampler } from "./resource.js";
 import { perfSpecSchema, type PerfSample, type PerfSpec } from "./schema.js";
@@ -107,6 +114,8 @@ export interface PerfResult {
   comparisons: MetricComparison[];
   regressions: string[];
   baselinePath?: string;
+  /** 同时比较和更新基线时，区分用于比较的文件与新写出的测量。 */
+  writtenBaselinePath?: string;
   errors: PerfError[];
 }
 
@@ -332,7 +341,6 @@ async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: P
       const session = await manager.launch(launch);
       sessionId = session.id;
       terminalProfile = session.terminalProfile ?? terminalProfile;
-      if (session.renderer) renderer = session.renderer;
       // 就绪条件必须在测量开始前成立：程序进入 raw mode 之前的输入会被吞掉，
       // 否则首个采样会以一个假超时结束整轮。
       if (spec.ready?.length) {
@@ -347,6 +355,14 @@ async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: P
         warmupStartupMs = startupMs;
         continue;
       }
+      // paint 可按需启动浏览器。先确定本轮的实际渲染器，再执行 setup 与计时输入。
+      const textOnly = launch.renderer === "headless" && session.renderer !== "dom" && session.renderer !== "webgl";
+      const measurePaint =
+        !textOnly && (await manager.paint(session.id, options.signal ? { signal: options.signal } : {})) !== undefined;
+      const sampleSession = measurePaint
+        ? (manager.list().find((entry) => entry.id === session.id) ?? session)
+        : session;
+      if (collected.length > 0) requireSameRenderer(renderer, sampleSession.renderer);
       if (spec.measure?.processTree !== false) {
         sampler = new ProcessTreeSampler(session.pid, 1000);
         sampler.start();
@@ -362,7 +378,14 @@ async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: P
           const paint: number[] = [];
           for (let repeat = 0; repeat < repeats; repeat += 1) {
             if (options.signal?.aborted) throw new TuiLensError("ABORTED", "性能运行已取消");
-            const measured = await measureSample(manager, session.id, sample, sequence, options.signal);
+            const measured = await measureSample(
+              manager,
+              sampleSession,
+              sample,
+              sequence,
+              measurePaint,
+              options.signal
+            );
             elapsed.push(measured.elapsed);
             if (measured.paintMs !== undefined) paint.push(measured.paintMs);
           }
@@ -378,6 +401,7 @@ async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: P
         }
       }
       const info = manager.metrics(session.id);
+      renderer = sampleSession.renderer;
       collected.push({
         round: roundNumber,
         startupMs,
@@ -514,6 +538,15 @@ async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: P
     errors,
   };
   if (options.writeBaseline) {
+    const destination = resolve(options.writeBaseline);
+    if (baseline && result.baselinePath) {
+      if (await sameFile(result.baselinePath, destination)) {
+        // 更新同一文件前保留本次已读取的比较依据，供报告和证据包复核。
+        result.baselinePath = resolve(options.directory, `compared-baseline-${randomUUID()}.json`);
+        await writeFile(result.baselinePath, JSON.stringify(baseline, null, 2), { mode: 0o600 });
+      }
+      result.writtenBaselinePath = destination;
+    }
     const file: BaselineFile = {
       version: 1,
       createdAt: new Date().toISOString(),
@@ -526,13 +559,22 @@ async function runPerfSingle(manager: SessionManager, spec: PerfSpec, options: P
         p99: metric.elapsedMs.p99,
       })),
     };
-    await writeFile(resolve(options.writeBaseline), JSON.stringify(file, null, 2), { mode: 0o644 });
-    result.baselinePath = resolve(options.writeBaseline);
-    // 新写入的基线自我一致；此时判定只取决于本轮是否发生错误。
-    result.pass = errors.length === 0;
+    await writeFile(destination, JSON.stringify(file, null, 2), { mode: 0o644 });
+    result.baselinePath ??= destination;
   }
   await writeFile(reportPath, JSON.stringify(result, null, 2), { mode: 0o600 });
   return result;
+}
+
+async function sameFile(source: string, destination: string): Promise<boolean> {
+  if (source === destination) return true;
+  try {
+    const [left, right] = await Promise.all([stat(source, { bigint: true }), stat(destination, { bigint: true })]);
+    return left.dev === right.dev && left.ino === right.ino;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 async function readBaseline(path: string): Promise<BaselineFile> {
@@ -643,14 +685,15 @@ async function runSetup(
  */
 async function measureSample(
   manager: SessionManager,
-  id: string,
+  session: SessionInfo,
   sample: PerfSample,
   sequence: { value: number },
+  measurePaint: boolean,
   signal?: AbortSignal
 ): Promise<{ elapsed: number; paintMs?: number }> {
   sequence.value += 1;
   const result = await manager.inputAndWait(
-    id,
+    session.id,
     sample.input as InputAction,
     undefined,
     {
@@ -659,11 +702,21 @@ async function measureSample(
     },
     signal ? { signal } : {}
   );
-  const paint = await manager.paint(id, signal ? { signal } : {});
+  requireSameRenderer(session.renderer, result.session.renderer);
+  const paint = measurePaint ? await manager.paint(session.id, signal ? { signal } : {}) : undefined;
   return {
     elapsed: rounded(result.elapsedMs),
     ...(paint === undefined ? {} : { paintMs: rounded(paint.paintMs) }),
   };
+}
+
+function requireSameRenderer(expected: RendererKind | undefined, actual: RendererKind | undefined): void {
+  if (expected !== actual) {
+    throw new TuiLensError("PERF_ENVIRONMENT_MISMATCH", "采样期间渲染器发生变化，无法合并性能数据", {
+      expected,
+      actual,
+    });
+  }
 }
 
 /**

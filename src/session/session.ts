@@ -4,7 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { IDisposable } from "node-pty";
 import { TuiLensError } from "../core/errors.js";
 import { compactSnapshot } from "../core/compact.js";
-import { diffSnapshots } from "../core/diff.js";
+import { diffSnapshots, snapshotLineCells } from "../core/diff.js";
 import { encodeInput, encodeScrollBatches } from "../core/input.js";
 import type {
   CursorState,
@@ -209,12 +209,21 @@ export class ManagedSession {
     };
   }
 
-  private rememberFrame(snapshot: TerminalSnapshot): SnapshotFrame {
+  private rememberFrame(snapshot: TerminalSnapshot, lineCells: Map<number, readonly string[]>): SnapshotFrame {
+    const lines = snapshot.lines.map((line) => line.replace(/[ \t]+$/u, ""));
+    // Custom engines may already supply a grid; retain only the text columns required for Unicode diffs.
+    for (const [y, row] of snapshot.cells.entries()) {
+      if (!row.length || lineCells.has(y) || !/[^\x00-\x7f]/u.test(lines[y] ?? "")) continue;
+      const columns = row.map((cell) => (cell.width === 0 ? "" : cell.text || " "));
+      while (columns.at(-1) === " ") columns.pop();
+      lineCells.set(y, columns);
+    }
     const frame: SnapshotFrame = {
       frameId: snapshot.frameId,
       cols: snapshot.cols,
       rows: snapshot.rows,
-      lines: snapshot.lines.map((line) => line.replace(/[ \t]+$/u, "")),
+      lines,
+      ...(lineCells.size ? { lineCells } : {}),
       cursor: { ...snapshot.cursor },
       modes: {
         ...snapshot.modes,
@@ -613,14 +622,22 @@ export class ManagedSession {
       const pending = this.enqueue(async () => {
         this.assertUsable();
         if (cancelled || signal.aborted) throw new TuiLensError("ABORTED", "观察已取消");
-        const snapshot = await this.engine.snapshot(this.frameId, {
+        const lineCells = new Map<number, readonly string[]>();
+        const frameOptions: FrameAccessOptions = {
           ...frame,
           cells: view === "cells",
           ...(options.scrollback === undefined ? {} : { scrollback: options.scrollback }),
-        });
+        };
+        snapshotLineCells.set(frameOptions, lineCells);
+        let snapshot: TerminalSnapshot;
+        try {
+          snapshot = await this.engine.snapshot(this.frameId, frameOptions);
+        } finally {
+          snapshotLineCells.delete(frameOptions);
+        }
         if (options.region) regionWithin(options.region, snapshot.cols, snapshot.rows);
         const base = view === "diff" ? this.frameHistory.get(options.fromFrameId!) : undefined;
-        const target = this.rememberFrame(snapshot);
+        const target = this.rememberFrame(snapshot, lineCells);
         let visible = snapshot;
         let diff: SnapshotDiff | undefined;
         if (view === "compact") {

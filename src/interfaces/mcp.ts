@@ -10,6 +10,7 @@ import { methodSchemas } from "./schemas.js";
 import { mcpInstructions, mcpTools, type McpMethod } from "./mcp-tools.js";
 import { MCP_SCREENSHOT_MAX_BYTES, registerMcpPrompts, registerMcpResources } from "./mcp-resources.js";
 import { McpProgressForwarder } from "./mcp-progress.js";
+import { anchorRequestPaths } from "./request-paths.js";
 import { VERSION } from "../version.js";
 import { pick } from "../core/i18n.js";
 
@@ -47,7 +48,7 @@ export async function startMcp(): Promise<void> {
           try {
             const data = await requestWithProgress(
               method,
-              args,
+              anchorRequestPaths(method, args),
               extra,
               AbortSignal.any([extra.signal, disconnect.signal])
             );
@@ -126,7 +127,7 @@ export async function startMcp(): Promise<void> {
  */
 async function requestWithProgress(
   method: McpMethod,
-  args: Record<string, unknown>,
+  args: unknown,
   extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
   signal: AbortSignal
 ): Promise<unknown> {

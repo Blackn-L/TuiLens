@@ -9,6 +9,8 @@
 
 `perf` 回答的是「我的 TUI 在长会话后是否变慢」，不是「TuiLens 本身有多快」。
 基线是可选的：省略 `--baseline` 只产出报告；需要时用 `--write-baseline` 为自己的应用和环境生成。
+同时传入两个选项时，CLI 会写出本次测量值，发现回归时退出码为 1。报告的 `baselinePath`
+指向比较所用的数据，`writtenBaselinePath` 指向新写出的文件。原地更新基线时，报告会保留更新前的测量值。
 
 ```sh
 node dist/src/interfaces/cli.js perf --file examples/perf.json --write-baseline artifacts/perf-baseline.json
@@ -101,6 +103,11 @@ npm run benchmark:overhead -- --frames 120 --repeats 3 --pace-ms 1 `
 
 `snapshot.render.paintMs` 记录最近一次写入到两次动画帧完成的间隔。renderer 指纹不包含该计时值，
 因此字体/网格身份不会随每次绘制变化。引擎支持时，`perf` 会等待绘制边界并输出 `paintMs`。
+默认情况下，每个正式轮次都会在执行阶段准备动作和首次计时输入前就绪视觉渲染器。将
+`launch.renderer` 设为 `headless` 可测量纯文本模式，此时省略 `paintMs`。启用图形协议的
+profile 使用已激活的视觉渲染器。报告与基线记录采样期间的实际渲染器。早期 0.6.0 的运行可能将
+headless 与 DOM 的混合样本记为 `headless`。请重新生成这类基线，或在确需跨渲染器比较时使用
+`--allow-env-mismatch`。
 
 可运行有界 soak：
 

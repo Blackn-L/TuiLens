@@ -6,7 +6,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { TuiLensError } from "../core/errors.js";
 import type { Method } from "../interfaces/schemas.js";
-import { runtimePaths, type RuntimePaths } from "./paths.js";
+import { daemonEnvironment, runtimePaths, type RuntimePaths } from "./paths.js";
 import {
   DEFAULT_HANDSHAKE_TIMEOUT_MS,
   encodeFrame,
@@ -428,6 +428,7 @@ export class IpcClient {
         {
           detached: true,
           windowsHide: true,
+          env: daemonEnvironment(this.paths.home, process.env),
           stdio: ["ignore", log.fd, log.fd],
           // 不继承首个调用者的工作目录：daemon 是常驻进程，相对路径应由调用方显式锚定。
           cwd: this.paths.home,

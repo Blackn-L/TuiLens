@@ -110,6 +110,12 @@ application hands history to the terminal scrollback rather than repainting it i
 }
 ```
 
+CLI paths are relative to the invoking shell's working directory. MCP paths are relative to the
+stdio server's working directory. This applies to launch `cwd`, replay files, visual baselines
+(including scenario compare steps), and performance baseline files. An omitted `cwd` uses that
+same directory. Relative terminal profile paths use the resulting launch directory. The program
+receives its arguments unchanged. CLI `--cwd` overrides `launch.cwd` in a specification.
+
 `terminalProfile` accepts a built-in preset key/name or a JSON profile path. The returned session includes
 the resolved name in `terminalProfile`. `graphics` overrides individual image protocols. See
 [terminal profiles](PROFILES.md).
@@ -202,6 +208,7 @@ add a visible layout condition after resize. `stable` compares characters and st
 ```
 
 `inputAndWait` sends the input exactly once and never retries it. With no conditions it waits for at least one new `frameId`.
+An explicit `exited` condition can confirm input even when the process exits without further output.
 Success returns `session`, `inputFrameId`, `cursorBefore`, `observation` and `elapsedMs`.
 A timeout returns `WAIT_TIMEOUT` with `accepted: true` and `inputFrameId`.
 A requested screenshot uses a separate bounded capture budget, so a successful wait is not turned into an ambiguous input failure.
@@ -217,6 +224,8 @@ When a line insertion or deletion changes its display width, `changedRegion` ext
 suffix to the end of the wider line. An explicitly requested `scrollback` is retained when a diff is
 available; otherwise the snapshot omits viewport text and cells.
 Regional text/style waits are evaluated in the engine before a light observation is returned.
+The built-in engine uses the terminal's cell widths for Unicode diff regions. When a custom engine
+supplies text alone, a changed row with uncertain Unicode widths is included in full.
 
 ## MCP resources and prompts
 

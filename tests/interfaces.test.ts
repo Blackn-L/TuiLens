@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, truncate, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -175,9 +175,19 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     assert.deepEqual(await call("list"), []);
 
     client = new Client({ name: "tuilens-test", version: "1" });
+    const mcpCwd = join(home, "mcp-project");
+    await mkdir(mcpCwd);
+    await copyFile(fixture, join(mcpCwd, basename(fixture)));
+    await copyFile(session.recordingPath!, join(mcpCwd, "session.recording.jsonl"));
     const inherited = Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => e[1] !== undefined));
     await client.connect(
-      new StdioClientTransport({ command: process.execPath, args: [cli, "mcp"], env: inherited, stderr: "pipe" })
+      new StdioClientTransport({
+        command: process.execPath,
+        args: [cli, "mcp"],
+        cwd: mcpCwd,
+        env: inherited,
+        stderr: "pipe",
+      })
     );
     assert.deepEqual(client.getServerVersion(), { name: "tuilens", version: VERSION });
     assert.match(client.getInstructions() ?? "", /preferred tool for interactive terminal\/TUI work/u);
@@ -210,7 +220,7 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     assert.match(observeTool.description ?? "", /inputAndWait/u);
     const launch = await client.callTool({
       name: "terminal_launch",
-      arguments: { command: process.execPath, args: [fixture], cols: 60, rows: 12, colorMode: "truecolor" },
+      arguments: { command: process.execPath, args: [basename(fixture)], cols: 60, rows: 12, colorMode: "truecolor" },
     });
     const launchContent = launch.content as { type: string; text?: string }[];
     assert.notEqual(launch.isError, true, launchContent[0]?.text ?? "MCP launch failed");
@@ -341,7 +351,7 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
 
     const replayProgress: McpProgress[] = [];
     const replayedMcp = await client.callTool(
-      { name: "terminal_replay", arguments: { path: session.recordingPath } },
+      { name: "terminal_replay", arguments: { path: "session.recording.jsonl" } },
       undefined,
       { onprogress: (item) => replayProgress.push(item as McpProgress) }
     );
@@ -400,6 +410,12 @@ test("跨目录调用：相对路径与未指定的 cwd 按调用方目录解析
       ["launch", "--json", JSON.stringify({ command: process.execPath, args: [fixture], cols: 60, rows: 12 })],
       callerA
     )) as SessionInfo;
+    await call(["wait", session.id, "--text", "TUILENS_READY"], callerA);
+    const observed = (await call(
+      ["observe", session.id, "--screenshot", "--region", "0,0,12,1"],
+      callerA
+    )) as Observation;
+    await copyFile(observed.screenshot!.path, join(callerB, "ready.png"));
     await call(["close", session.id], callerA);
 
     // 目录 B 只放一个相对路径的场景文件和夹具副本，spec 不写 cwd。
@@ -410,6 +426,7 @@ test("跨目录调用：相对路径与未指定的 cwd 按调用方目录解析
       launch: { command: process.execPath, args: ["./probe.js"], cols: 60, rows: 12 },
       steps: [
         { type: "wait", conditions: [{ kind: "text", text: "TUILENS_READY" }] },
+        { type: "compare", options: { baseline: "ready.png", region: { x: 0, y: 0, width: 12, height: 1 } } },
         { type: "input", action: { type: "text", text: "PING" } },
         { type: "wait", conditions: [{ kind: "text", text: "INPUT_RECEIVED" }] },
         { type: "input", action: { type: "key", key: "Ctrl+q" } },
@@ -423,15 +440,25 @@ test("跨目录调用：相对路径与未指定的 cwd 按调用方目录解析
     };
     assert.equal(scenario.pass, true, JSON.stringify(scenario));
 
+    const project = join(callerB, "project");
+    await mkdir(project);
+    await copyFile(fixture, join(project, "app.js"));
+    const relativeLaunch = (await call(
+      ["launch", "--json", JSON.stringify({ command: process.execPath, args: ["app.js"], cwd: "project" })],
+      callerB
+    )) as SessionInfo;
+    await call(["wait", relativeLaunch.id, "--text", "TUILENS_READY"], callerB);
+    await call(["close", relativeLaunch.id], callerB);
+
     // 显式 --cwd 仍然优先于调用方目录。
-    await writeFile(join(callerA, "probe.js"), await readFile(fixture, "utf8"), "utf8");
+    await copyFile(fixture, join(callerA, "only-in-a.js"));
     const explicit = (await call(
       [
         "launch",
         "--cwd",
         callerA,
         "--json",
-        JSON.stringify({ command: process.execPath, args: ["./probe.js"], cols: 60, rows: 12 }),
+        JSON.stringify({ command: process.execPath, args: ["./only-in-a.js"], cwd: "project", cols: 60, rows: 12 }),
       ],
       callerB
     )) as { id: string };

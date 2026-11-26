@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { connect, createServer, Socket, type Server } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -13,7 +13,7 @@ import test from "node:test";
 import { TuiLensError } from "../src/core/errors.js";
 import type { OperationProgress, SessionInfo } from "../src/core/types.js";
 import { IpcClient, isDaemonUnavailable, request, sleepWithSignal } from "../src/transport/client.js";
-import { runtimePaths } from "../src/transport/paths.js";
+import { daemonEnvironment, runtimePaths } from "../src/transport/paths.js";
 import {
   encodeFrame,
   MAX_INFLIGHT_PER_CONNECTION,
@@ -329,22 +329,41 @@ test("并发自动启动只连接同一服务，关闭后可再次启动", { tim
   }
 });
 
-test("shutdown 关闭窗口内立即请求会等待旧实例并自动重启", { timeout: 30000 }, async () => {
-  const home = await mkdtemp(join(tmpdir(), "tuilens-shutdown-restart-"));
-  const env = { ...process.env, TUILENS_HOME: home };
+test("daemon 切换目录前固定浏览器和字体路径，保留空值与缺省配置", () => {
+  const home = resolve(".runtime");
+  const inherited = { TUILENS_BROWSER_PATH: "bin/browser", TUILENS_FONT_FILE: "fonts/mono.ttf", LANG: "zh_CN" };
+  assert.deepEqual(daemonEnvironment(home, inherited), {
+    TUILENS_HOME: home,
+    TUILENS_BROWSER_PATH: resolve("bin/browser"),
+    TUILENS_FONT_FILE: resolve("fonts/mono.ttf"),
+    LANG: inherited.LANG,
+  });
+  assert.deepEqual(daemonEnvironment(home, { TUILENS_FONT_FILE: "" }), { TUILENS_HOME: home, TUILENS_FONT_FILE: "" });
+});
+
+test("相对 TUILENS_HOME 的服务在 shutdown 关闭窗口内可自动重启", { timeout: 30000 }, async () => {
+  const caller = await mkdtemp(join(tmpdir(), "tuilens-shutdown-restart-"));
+  const home = join(caller, "runtime");
+  const env = { ...process.env, TUILENS_HOME: "runtime" };
   const call = async (command: string): Promise<{ ok: boolean; data: { pid: number } }> => {
-    const result = await execute(process.execPath, [cli, command], { env, timeout: 15000 });
+    const result = await execute(process.execPath, [cli, command], { cwd: caller, env, timeout: 15000 });
     return JSON.parse(result.stdout) as { ok: boolean; data: { pid: number } };
   };
   try {
     const first = await call("ping");
+    assert.equal(JSON.parse(await readFile(join(home, "daemon.json"), "utf8")).pid, first.data.pid);
     await call("shutdown");
     const restarted = await call("ping");
     assert.equal(restarted.ok, true);
     assert.notEqual(restarted.data.pid, first.data.pid);
   } finally {
-    await call("shutdown").catch(() => null);
-    await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    // A server started by a regressed build may have resolved "runtime" twice.
+    for (const directory of [home, join(home, "runtime")]) {
+      if (existsSync(join(directory, "daemon.json"))) {
+        await execute(process.execPath, [cli, "shutdown"], { env: { ...env, TUILENS_HOME: directory }, timeout: 5000 });
+      }
+    }
+    await rm(caller, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
 

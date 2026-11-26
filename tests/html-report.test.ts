@@ -11,7 +11,14 @@ import { chromium } from "playwright-core";
 import { resolveBrowserExecutable } from "../src/engine/browser-engine.js";
 import type { PerfMatrixResult, PerfResult } from "../src/perf/runner.js";
 import type { ScenarioMatrixResult, ScenarioResult } from "../src/scenario/runner.js";
-import { buildPerfEvidence, buildScenarioEvidence, writeEvidenceBundle } from "../src/reporting/bundle.js";
+import {
+  buildPerfEvidence,
+  buildRecordingEvidence,
+  buildScenarioEvidence,
+  readRecordingReport,
+  replayRecording,
+  writeEvidenceBundle,
+} from "../src/index.js";
 import {
   MAX_SINGLE_INLINE_IMAGE_BYTES,
   renderPerfHtmlReport,
@@ -270,6 +277,35 @@ test("Evidence Bundle 目录复制并重定位所有 artifact，且 matrix 回�
     assert.equal(perfManifest.summary.regressions, 2);
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("录制证据包保留 JSON 报告和可独立回放的原始 JSONL", { timeout: 30000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tuilens-bundle-recording-"));
+  try {
+    const path = join(directory, "session.recording.jsonl");
+    const source =
+      [
+        { type: "header", version: 2, cols: 20, rows: 4, renderer: "headless" },
+        { type: "output", atMs: 10, data: "PACKED" },
+        { type: "end", atMs: 20, truncated: false },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join("\r\n") + "\r\n";
+    await writeFile(path, source);
+    const recording = await readRecordingReport(path);
+    const bundle = join(directory, "bundle");
+    const written = await writeEvidenceBundle(buildRecordingEvidence(recording), recording, bundle);
+    await rm(path);
+    assert.deepEqual(JSON.parse(await readFile(written.payloadPath, "utf8")), recording);
+    const artifact = written.manifest.artifacts.find((item) => item.role === "recording");
+    assert.equal(artifact?.mimeType, "application/x-ndjson");
+    const packed = join(bundle, artifact.path);
+    assert.equal(await readFile(packed, "utf8"), source);
+    const replay = await replayRecording(packed, { artifactDir: directory });
+    assert.match(replay.snapshot.text, /PACKED/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true, maxRetries: 5 });
   }
 });
 

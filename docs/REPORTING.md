@@ -49,6 +49,7 @@ await writeEvidenceManifest("artifacts/evidence.json", manifest);
 `writeEvidenceBundle(manifest, payload, directory)` writes a self-contained directory:
 `payload.json`, `evidence.json`, and copied `artifacts/` files. Manifest artifact paths are rewritten
 to relative paths inside that directory.
+Recording bundles keep the parsed report in `payload.json` and the original replayable JSONL in `artifacts/`.
 
 ## CLI
 

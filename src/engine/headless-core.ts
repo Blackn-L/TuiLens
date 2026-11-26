@@ -1,6 +1,8 @@
 import { createRequire } from "node:module";
+import { snapshotLineCells } from "../core/diff.js";
 import type {
   CursorState,
+  FrameAccessOptions,
   MatchStyle,
   Region,
   RendererKind,
@@ -538,9 +540,10 @@ export class HeadlessTerminalCore {
       const ends: number[] = [];
       for (let x = area.x; x < area.x + area.width; x += 1) {
         const cell = line.getCell(x, reusableCell);
-        const width = cell?.getWidth() ?? 1;
+        if (!cell) continue;
+        const width = cell.getWidth();
         if (width === 0) continue;
-        const value = cell?.getChars() ?? "";
+        const value = cell.getChars() || " ";
         if (x + width > area.x + area.width) continue;
         for (let offset = 0; offset < value.length; offset += 1) {
           starts.push(x);
@@ -561,17 +564,33 @@ export class HeadlessTerminalCore {
     return { count, matches };
   }
 
-  snapshot(frameId: number, options: { cells?: boolean; scrollback?: number } = {}): TerminalSnapshot {
+  snapshot(frameId: number, options: FrameAccessOptions = {}): TerminalSnapshot {
     this.assertOpen();
     const buffer = this.terminal.buffer.active;
     const reusableCell = buffer.getNullCell();
     const includeGrid = options.cells !== false;
+    const lineCells = snapshotLineCells.get(options);
     const scrollbackLines = options.scrollback ?? 0;
     const lines: string[] = [];
     const cells: TerminalCell[][] = [];
     for (let y = 0; y < this.terminal.rows; y += 1) {
       const line = buffer.getLine(buffer.viewportY + y);
-      lines.push(line?.translateToString(true) ?? "");
+      const text = line?.translateToString(true) ?? "";
+      lines.push(text);
+      // ASCII maps directly to columns. Only ambiguous rows need extra history, without cell style data.
+      if (line && lineCells && /[^\x00-\x7f]/u.test(text)) {
+        const layout: string[] = [];
+        let offset = 0;
+        const length = text.replace(/[ \t]+$/u, "").length;
+        while (layout.length < line.length && offset < length) {
+          const cell = line.getCell(layout.length, reusableCell)!;
+          const chars = cell.getChars() || " ";
+          layout.push(chars);
+          if (cell.getWidth() === 2) layout.push("");
+          offset += chars.length;
+        }
+        lineCells.set(y, layout);
+      }
       if (!includeGrid) continue;
       const row: TerminalCell[] = [];
       for (let x = 0; x < this.terminal.cols; x += 1) {
@@ -668,11 +687,7 @@ export async function createHeadlessEngine(options: HeadlessCoreOptions): Promis
     state: async () => core.state(),
     hasText: async (text) => core.hasText(text),
     probeText: async (text, region, style) => core.probeText(text, region, style),
-    snapshot: async (frameId, frame = {}) =>
-      core.snapshot(frameId, {
-        ...(frame.cells === undefined ? {} : { cells: frame.cells }),
-        ...(frame.scrollback === undefined ? {} : { scrollback: frame.scrollback }),
-      }),
+    snapshot: async (frameId, frame) => core.snapshot(frameId, frame),
     screenshot: async () => {
       throw new TuiLensError("BROWSER_REQUIRED", "纯无头引擎不能截图");
     },

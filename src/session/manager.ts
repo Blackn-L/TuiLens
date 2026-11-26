@@ -466,7 +466,10 @@ export class SessionManager {
         {
           conditions: options.conditions ?? [],
           timeoutMs: remaining(),
-          afterFrameId: accepted.frameId,
+          // Input is only accepted by a running process. Its subsequent exit is fresh evidence even without output.
+          ...(options.conditions?.some((condition) => condition.kind === "exited")
+            ? {}
+            : { afterFrameId: accepted.frameId }),
           ...(options.onProgress
             ? { onProgress: (progress) => options.onProgress!({ ...progress, kind: "inputAndWait" }) }
             : {}),

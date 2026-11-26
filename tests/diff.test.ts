@@ -73,6 +73,11 @@ test("resize、光标和模式变化均单独报告", () => {
   assert.ok(resized.changedRegion);
 });
 
+test("仅有旧式文本帧时，不确定的字宽使差异区域覆盖整行", () => {
+  const diff = diffSnapshots(frame(1, ["☕A"]), frame(2, ["☕B"]));
+  assert.deepEqual(diff.changedRegion, { x: 0, y: 0, width: 20, height: 1 });
+});
+
 test("observe schema 要求 diff 必须提供 fromFrameId", () => {
   const id = randomUUID();
   assert.equal(observeSchema.safeParse({ id, view: "diff" }).success, false);

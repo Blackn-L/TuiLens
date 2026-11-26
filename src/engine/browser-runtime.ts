@@ -614,9 +614,10 @@ export async function initializeBrowserRuntime(options: RuntimeOptions): Promise
       const ends: number[] = [];
       for (let x = area.x; x < area.x + area.width; x += 1) {
         const cell = line.getCell(x, reusableCell);
-        const width = cell?.getWidth() ?? 1;
+        if (!cell) continue;
+        const width = cell.getWidth();
         if (width === 0) continue;
-        const value = cell?.getChars() ?? "";
+        const value = cell.getChars() || " ";
         if (x + width > area.x + area.width) continue;
         for (let offset = 0; offset < value.length; offset += 1) {
           starts.push(x);

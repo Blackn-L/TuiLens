@@ -1,116 +1,47 @@
-import type { Region, SnapshotDiff, SnapshotFrame, SnapshotLineChange, TerminalModes } from "./types.js";
+import type {
+  FrameAccessOptions,
+  Region,
+  SnapshotDiff,
+  SnapshotFrame,
+  SnapshotLineChange,
+  TerminalModes,
+} from "./types.js";
 
-const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-
-function graphemes(text: string): string[] {
-  return Array.from(graphemeSegmenter.segment(text), (part) => part.segment);
-}
-
-function inRange(codePoint: number, start: number, end: number): boolean {
-  return codePoint >= start && codePoint <= end;
-}
-
-function isCombining(codePoint: number): boolean {
-  return (
-    inRange(codePoint, 0x0300, 0x036f) ||
-    inRange(codePoint, 0x0483, 0x0489) ||
-    inRange(codePoint, 0x0591, 0x05bd) ||
-    inRange(codePoint, 0x0610, 0x061a) ||
-    inRange(codePoint, 0x064b, 0x065f) ||
-    inRange(codePoint, 0x0670, 0x0670) ||
-    inRange(codePoint, 0x06d6, 0x06dc) ||
-    inRange(codePoint, 0x0e31, 0x0e31) ||
-    inRange(codePoint, 0x0e34, 0x0e3a) ||
-    inRange(codePoint, 0x0e47, 0x0e4e) ||
-    inRange(codePoint, 0x1ab0, 0x1aff) ||
-    inRange(codePoint, 0x1dc0, 0x1dff) ||
-    inRange(codePoint, 0x20d0, 0x20ff) ||
-    inRange(codePoint, 0xfe20, 0xfe2f)
-  );
-}
-
-function isWide(codePoint: number): boolean {
-  return (
-    inRange(codePoint, 0x1100, 0x115f) ||
-    inRange(codePoint, 0x2329, 0x232a) ||
-    inRange(codePoint, 0x2e80, 0x303e) ||
-    inRange(codePoint, 0x3041, 0x33ff) ||
-    inRange(codePoint, 0x3400, 0x4dbf) ||
-    inRange(codePoint, 0x4e00, 0x9fff) ||
-    inRange(codePoint, 0xa000, 0xa4cf) ||
-    inRange(codePoint, 0xa960, 0xa97f) ||
-    inRange(codePoint, 0xac00, 0xd7a3) ||
-    inRange(codePoint, 0xf900, 0xfaff) ||
-    inRange(codePoint, 0xfe10, 0xfe19) ||
-    inRange(codePoint, 0xfe30, 0xfe6f) ||
-    inRange(codePoint, 0xff00, 0xff60) ||
-    inRange(codePoint, 0xffe0, 0xffe6) ||
-    inRange(codePoint, 0x1f1e6, 0x1f1ff) ||
-    inRange(codePoint, 0x1f200, 0x1f251) ||
-    inRange(codePoint, 0x1f300, 0x1faff) ||
-    inRange(codePoint, 0x20000, 0x3fffd)
-  );
-}
-
-function graphemeWidth(grapheme: string): number {
-  const codePoints = Array.from(grapheme, (character) => character.codePointAt(0) ?? 0);
-  if (
-    codePoints.length === 0 ||
-    codePoints.every(
-      (codePoint) =>
-        isCombining(codePoint) ||
-        codePoint === 0x200d ||
-        codePoint === 0x200c ||
-        codePoint === 0xfe0e ||
-        codePoint === 0xfe0f
-    )
-  ) {
-    return 0;
-  }
-  return codePoints.some(isWide) ? 2 : 1;
-}
-
-/** Display columns, not UTF-16 code units. */
-export function displayWidth(text: string): number {
-  return graphemes(text).reduce((width, grapheme) => width + graphemeWidth(grapheme), 0);
-}
+/** Captures in-process geometry without adding callbacks or private fields to serializable engine options. */
+export const snapshotLineCells = new WeakMap<FrameAccessOptions, Map<number, readonly string[]>>();
 
 interface ChangedColumns {
   start: number;
   end: number;
 }
 
-function changedColumns(before: string, after: string, columns: number): ChangedColumns {
-  const beforeParts = graphemes(before);
-  const afterParts = graphemes(after);
-  let prefix = 0;
-  while (prefix < beforeParts.length && prefix < afterParts.length && beforeParts[prefix] === afterParts[prefix]) {
-    prefix += 1;
+function lineColumns(frame: SnapshotFrame, y: number): string | readonly string[] | undefined {
+  const measured = frame.lineCells?.get(y);
+  if (measured) return measured;
+  const text = frame.lines[y] ?? "";
+  if (!/[^\x00-\x7f]/u.test(text)) return text;
+  // Legacy text-only frames can still locate ASCII and double-width CJK ideographs exactly.
+  const cells: string[] = [];
+  for (const char of text) {
+    cells.push(char);
+    if (char.charCodeAt(0) <= 0x7f) continue;
+    if (!/^\p{Unified_Ideograph}$/u.test(char)) return undefined;
+    cells.push("");
   }
-  let suffix = 0;
-  while (
-    suffix < beforeParts.length - prefix &&
-    suffix < afterParts.length - prefix &&
-    beforeParts[beforeParts.length - 1 - suffix] === afterParts[afterParts.length - 1 - suffix]
-  ) {
-    suffix += 1;
-  }
-  const start = Math.min(
-    columns - 1,
-    beforeParts.slice(0, prefix).reduce((width, grapheme) => width + graphemeWidth(grapheme), 0)
-  );
-  const beforeEnd = beforeParts
-    .slice(0, beforeParts.length - suffix)
-    .reduce((width, grapheme) => width + graphemeWidth(grapheme), 0);
-  const afterEnd = afterParts
-    .slice(0, afterParts.length - suffix)
-    .reduce((width, grapheme) => width + graphemeWidth(grapheme), 0);
-  const beforeWidth = beforeParts.reduce((width, grapheme) => width + graphemeWidth(grapheme), 0);
-  const afterWidth = afterParts.reduce((width, grapheme) => width + graphemeWidth(grapheme), 0);
-  // A shared suffix remains screen-stable only when both lines occupy the same total width.
-  // Otherwise an insertion/deletion shifts every following cell, so the region extends to the line end.
-  const changedEnd = beforeWidth === afterWidth ? Math.max(beforeEnd, afterEnd) : Math.max(beforeWidth, afterWidth);
-  const end = Math.min(columns, Math.max(start + 1, changedEnd));
+  return cells;
+}
+
+function changedColumns(base: SnapshotFrame, target: SnapshotFrame, y: number): ChangedColumns {
+  const before = lineColumns(base, y);
+  const after = lineColumns(target, y);
+  if (before === undefined || after === undefined) return { start: 0, end: target.cols };
+  let start = 0;
+  let end = Math.max(before.length, after.length);
+  while (start < end && before[start] === after[start]) start += 1;
+  while (end > start && before[end - 1] === after[end - 1]) end -= 1;
+  if (start > 0 && (before[start] === "" || after[start] === "")) start -= 1;
+  // Both glyphs may be wide, with their differing lead cells followed by equal continuation markers.
+  if (before[end] === "" || after[end] === "") end += 1;
   return { start, end };
 }
 
@@ -154,7 +85,7 @@ export function diffSnapshots(base: SnapshotFrame, target: SnapshotFrame): Snaps
     let top = Number.POSITIVE_INFINITY;
     let bottom = 0;
     for (const change of changedLines) {
-      const columns = changedColumns(change.before, change.after, target.cols);
+      const columns = changedColumns(base, target, change.y);
       start = Math.min(start, columns.start);
       end = Math.max(end, columns.end);
       top = Math.min(top, change.y);

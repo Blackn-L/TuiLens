@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { test } from "node:test";
 import { PNG } from "pngjs";
 import { createBrowserEngine } from "../src/engine/browser-engine.js";
+import { createVisualPageEngine } from "../src/engine/visual-renderer.js";
+import { findText } from "../src/core/locator.js";
 import type { TerminalEngine } from "../src/core/types.js";
 
 /** 统计块字符条带中明显低于中位亮度的周期暗列。 */
@@ -74,6 +76,26 @@ test("区域文本探测在引擎内统计文本、区域与样式匹配", { tim
     assert.deepEqual(styled?.matches[0]?.region, { x: 8, y: 0, width: 3, height: 1 });
   } finally {
     await engine.close();
+  }
+});
+
+test("文本探针保留光标跳过的空格，与字符格定位一致", { timeout: 30_000 }, async () => {
+  for (const create of [createBrowserEngine, createVisualPageEngine]) {
+    const engine = await create({ cols: 12, rows: 2, onData() {} });
+    try {
+      await engine.write("A\x1b[4GB");
+      const snapshot = await engine.snapshot(1);
+      assert.equal(snapshot.lines[0], "A  B");
+      const region = { x: 0, y: 0, width: 4, height: 1 };
+      for (const query of ["AB", "A  B", "  "]) {
+        const matches = findText(snapshot, query, region);
+        const probe = await engine.probeText!(query, region);
+        assert.equal(probe.count, matches.length);
+        assert.deepEqual(probe.matches, matches);
+      }
+    } finally {
+      await engine.close();
+    }
   }
 });
 

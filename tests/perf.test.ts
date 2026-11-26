@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { link, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { SessionManager } from "../src/session/manager.js";
-import { runPerf } from "../src/perf/runner.js";
+import { createHeadlessEngine } from "../src/engine/headless-core.js";
+import { runPerf, type PerfResult } from "../src/perf/runner.js";
 import { collectTree, parseDarwinProcessTable } from "../src/perf/resource.js";
 import { summarize } from "../src/perf/stats.js";
+import { buildPerfEvidence } from "../src/reporting/bundle.js";
 
 const execute = promisify(execFile);
 
@@ -27,6 +30,28 @@ process.stdin.on("data", (chunk) => {
 process.stdin.resume();
 `,
 ];
+
+const singleRound = {
+  version: 1,
+  launch: { command: process.execPath, args: fixture, cols: 40, rows: 8 },
+  ready: [{ kind: "text", text: "TURN_0" }],
+  rounds: 1,
+  repeats: 2,
+  measure: { processTree: false },
+  phases: [
+    {
+      name: "add",
+      samples: [
+        {
+          name: "add-turn",
+          input: { type: "text", text: "x" },
+          observe: [{ kind: "text", text: "TURN_{{seq}}" }],
+          timeoutMs: 5000,
+        },
+      ],
+    },
+  ],
+};
 
 test("分位数统计保留极值并处理单样本", () => {
   assert.deepEqual(summarize([]), { count: 0, min: 0, p50: 0, p95: 0, p99: 0, max: 0, mean: 0 });
@@ -66,35 +91,23 @@ test("macOS 真实 ps 采样包含当前进程", { skip: process.platform !== "d
   assert.ok(current.rssBytes > 0);
 });
 
-test("性能场景按模板等待每次新证据，并能写出可比较的基线", { timeout: 120_000 }, async () => {
+test("性能场景按模板等待每次新证据，并能写出可比较的基线", { timeout: 120_000 }, async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "tuilens-perf-"));
   const manager = new SessionManager({ artifactDir: directory });
+  const inputs = t.mock.method(manager, "inputAndWait");
   try {
-    const spec = {
-      version: 1,
-      launch: { command: process.execPath, args: fixture, cols: 40, rows: 8 },
-      ready: [{ kind: "text", text: "TURN_0" }],
-      rounds: 2,
-      repeats: 2,
-      phases: [
-        {
-          name: "add",
-          samples: [
-            {
-              name: "add-turn",
-              input: { type: "text", text: "x" },
-              observe: [{ kind: "text", text: "TURN_{{seq}}" }],
-              timeoutMs: 5000,
-            },
-          ],
-        },
-      ],
-    };
+    const spec = { ...singleRound, rounds: 2, measure: { processTree: true } };
     const baselinePath = join(directory, "baseline.json");
     const first = await runPerf(manager, { spec, directory, writeBaseline: baselinePath });
     assert.ok(!("matrix" in first));
     assert.equal(first.pass, true);
-    assert.equal(first.environment.renderer, "headless");
+    assert.equal(first.environment.renderer, "dom");
+    const sampled = await Promise.all(inputs.mock.calls.map((call) => call.result!));
+    assert.deepEqual(
+      sampled.map((sample) => sample.session.renderer),
+      ["dom", "dom", "dom", "dom"]
+    );
+    assert.equal(first.metrics[0]?.paintMs?.count, sampled.length);
     assert.equal(first.processTree.errors, 0);
     assert.ok(first.processTree.peakRootRssBytes > 0);
     // 2 轮 × 2 次重复 = 4 个样本。
@@ -109,7 +122,7 @@ test("性能场景按模板等待每次新证据，并能写出可比较的基�
       metrics: { phase: string; name: string; p50: number }[];
     };
     assert.equal(baseline.version, 1);
-    assert.equal(baseline.environment.renderer, "headless");
+    assert.equal(baseline.environment.renderer, "dom");
     assert.equal(baseline.metrics[0]?.phase, "add");
     assert.equal(baseline.metrics[0]?.name, "add-turn");
 
@@ -121,6 +134,93 @@ test("性能场景按模板等待每次新证据，并能写出可比较的基�
     assert.equal(second.regressions.length, 0);
   } finally {
     await manager.closeAll();
+    await rm(directory, { recursive: true, force: true, maxRetries: 5 });
+  }
+});
+
+test("perf 支持明确要求 headless 和未提供绘制能力的引擎", { timeout: 60_000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "tuilens-perf-headless-"));
+  const headless = new SessionManager({ artifactDir: directory });
+  const custom = new SessionManager({ artifactDir: directory, engineFactory: createHeadlessEngine });
+  try {
+    for (const [manager, launch] of [
+      [headless, { ...singleRound.launch, renderer: "headless" }],
+      [custom, singleRound.launch],
+    ] as const) {
+      const inputs = t.mock.method(manager, "inputAndWait");
+      const result = await runPerf(manager, { spec: { ...singleRound, launch }, directory });
+      assert.ok(!("matrix" in result));
+      assert.equal(result.pass, true);
+      assert.equal(result.environment.renderer, "headless");
+      assert.equal(result.metrics[0]?.samples, 2);
+      assert.equal(result.metrics[0]?.paintMs, undefined);
+      const sampled = await Promise.all(inputs.mock.calls.map((call) => call.result!));
+      assert.deepEqual(
+        sampled.map((sample) => sample.session.renderer),
+        ["headless", "headless"]
+      );
+    }
+    const graphics = await runPerf(headless, {
+      spec: { ...singleRound, launch: { ...singleRound.launch, renderer: "headless", graphics: { sixel: true } } },
+      directory,
+    });
+    assert.ok(!("matrix" in graphics));
+    assert.equal(graphics.environment.renderer, "dom");
+    assert.equal(graphics.metrics[0]?.paintMs?.count, singleRound.repeats);
+  } finally {
+    await Promise.all([headless.closeAll(), custom.closeAll()]);
+    await rm(directory, { recursive: true, force: true, maxRetries: 5 });
+  }
+});
+
+test("perf CLI 同时比较并写出基线时保留回归退出码和报告", { timeout: 60_000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tuilens-perf-gate-"));
+  const env = { ...process.env, TUILENS_HOME: directory };
+  const cli = fileURLToPath(new URL("../src/interfaces/cli.js", import.meta.url));
+  try {
+    const spec = join(directory, "workload.json");
+    const original = join(directory, "original.json");
+    const next = join(directory, "next.json");
+    const baseline = JSON.stringify({
+      version: 1,
+      environment: { platform: process.platform, cols: 40, rows: 8 },
+      metrics: [{ phase: "add", name: "add-turn", p50: 0.001, p95: 0.001, p99: 0.001 }],
+    });
+    await Promise.all([writeFile(spec, JSON.stringify(singleRound)), writeFile(original, baseline)]);
+    const alias = join(directory, "update-in-place.json");
+    await link(original, alias);
+    for (const target of [next, alias]) {
+      let result: PerfResult | undefined;
+      await assert.rejects(
+        execute(process.execPath, [cli, "perf", "--file", spec, "--baseline", original, "--write-baseline", target], {
+          env,
+        }),
+        (error: Error & { code?: number; stdout?: string }) => {
+          assert.equal(error.code, 1);
+          const output = JSON.parse(error.stdout!) as { ok: boolean; data: PerfResult };
+          assert.equal(output.ok, true);
+          result = output.data;
+          return true;
+        }
+      );
+      assert.ok(result?.baselinePath);
+      assert.equal(result.pass, false);
+      assert.equal(result.comparisons[0]?.regression, true);
+      assert.equal(result.regressions.length, 1);
+      assert.deepEqual(JSON.parse(await readFile(result.reportPath, "utf8")), result);
+      if (target === next) assert.equal(await realpath(result.baselinePath), await realpath(original));
+      assert.equal(await realpath(result.writtenBaselinePath!), await realpath(target));
+      const evidence = await buildPerfEvidence(result);
+      const baselines = evidence.artifacts.filter((artifact) => artifact.role === "baseline");
+      assert.deepEqual(
+        baselines.map((item) => item.path),
+        [result.baselinePath, result.writtenBaselinePath]
+      );
+      assert.deepEqual(JSON.parse(await readFile(result.baselinePath, "utf8")), JSON.parse(baseline));
+      assert.equal(JSON.parse(await readFile(target, "utf8")).metrics[0].p50, result.comparisons[0]?.currentP50);
+    }
+  } finally {
+    await execute(process.execPath, [cli, "shutdown"], { env });
     await rm(directory, { recursive: true, force: true, maxRetries: 5 });
   }
 });

@@ -124,10 +124,7 @@ async function createEngine(
       }
       // TerminalCore 是唯一文本/字符格事实源。浏览器激活后只补充绘制元数据，
       // 不能切换快照实现，否则同一区域在懒加载前后会产生不同指纹。
-      const snapshot = core.snapshot(frameId, {
-        ...(frame.cells === undefined ? {} : { cells: frame.cells }),
-        ...(frame.scrollback === undefined ? {} : { scrollback: frame.scrollback }),
-      });
+      const snapshot = core.snapshot(frameId, frame);
       const active = visual.active;
       if (active) {
         const rendered = await active.snapshot(frameId, {

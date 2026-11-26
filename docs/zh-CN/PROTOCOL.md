@@ -107,6 +107,11 @@ hitbox 以文字区域为基准向四周扩展；point 支持 center、left、ri
 }
 ```
 
+CLI 相对路径以调用 shell 的工作目录为起点，MCP 相对路径以 stdio 服务进程的工作目录为起点。
+此约定适用于启动参数 `cwd`、回放文件、视觉基线（含场景 compare 步骤）和性能基线文件。
+省略 `cwd` 时，程序在该目录启动。终端 profile 的相对路径以启动目录为起点，程序参数原样传入。
+CLI 的 `--cwd` 可覆盖规格文件中的 `launch.cwd`。
+
 `terminalProfile` 接受内置 preset 键/名称或 JSON profile 路径。返回的会话通过 `terminalProfile`
 给出解析后的名称。`graphics` 按单项覆盖图片协议。详见[终端能力画像](PROFILES.md)。
 
@@ -180,6 +185,7 @@ stable 比较字符和样式，不比较图片像素。
 
 inputAndWait 只发送一次输入，不自动重发。空条件时等待至少一个新 frameId；
 成功后返回 session、inputFrameId、cursorBefore、observation 和 elapsedMs。
+显式等待 `exited` 时，进程收到输入后即使没有继续输出，也可以用退出事件确认输入。
 超时返回 WAIT_TIMEOUT，并标明 accepted:true 与 inputFrameId。
 启用截图时使用独立的有界采集预算，等待成功不会因截图超时而变成无法判断输入是否送达的失败。
 
@@ -192,6 +198,7 @@ observe/compare 的 cursor 可设为 hide（默认）或 show；快照始终返�
 `screenshot:true` 才会截图。行内插入或删除导致显示宽度变化时，`changedRegion` 会覆盖被右移的
 共同后缀直至较宽行的行尾。命中 diff 时仍保留调用方显式请求的 `scrollback`，否则快照省略
 视口文本与字符格。区域文本/样式等待先在引擎侧判断，命中后才返回轻量观察。
+内置引擎按终端实际字符格宽度定位 Unicode 差异。仅提供文本的自定义引擎遇到不确定字宽时，差异区域覆盖整条变化行。
 
 ## MCP 资源与 Prompt
 

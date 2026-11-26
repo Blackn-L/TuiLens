@@ -7,6 +7,7 @@ import type { IPty } from "node-pty";
 import { ManagedSession, MAX_FRAME_HISTORY, type SessionEvent } from "../src/session/session.js";
 import { SessionManager } from "../src/session/manager.js";
 import { ProtocolReplyGuard } from "../src/session/protocol-replies.js";
+import { createBrowserEngine } from "../src/engine/browser-engine.js";
 import { TuiLensError } from "../src/core/errors.js";
 import type { TerminalEngine, TerminalSnapshot } from "../src/core/types.js";
 import { RecordingWriter } from "../src/recording/writer.js";
@@ -369,6 +370,80 @@ test("observe view=diff 返回变化行并省略整屏文本", async () => {
   }
 });
 
+test("紧凑快照的 diff 区域与 xterm 的 emoji 字符格一致", async () => {
+  const engine = await createBrowserEngine({ cols: 20, rows: 2, onData() {} });
+  const f = fixture(engine, tmpdir());
+  try {
+    for (const glyph of ["❤️", "1️⃣", "☕", "👩‍💻"]) {
+      f.emit("\x1b[2J\x1b[H" + glyph + "A");
+      const base = await f.session.observe({ view: "compact" });
+      assert.deepEqual(base.snapshot.cells, []);
+      f.emit("\x1b[H" + glyph + "B");
+      const diff = await f.session.observe({ view: "diff", fromFrameId: base.snapshot.frameId });
+      const grid = await f.session.observe({ view: "cells" });
+      const column = grid.snapshot.cells[0]!.find((cell) => cell.text === "B")!.x;
+      assert.equal(column, 2);
+      assert.deepEqual(diff.diff?.changedRegion, { x: column, y: 0, width: 1, height: 1 }, glyph);
+      assert.deepEqual(diff.snapshot.cells, []);
+    }
+    f.emit("\x1b[H❤️B");
+    const original = await f.session.observe();
+    f.emit("\x1b[H☕B");
+    const replaced = await f.session.observe({ view: "diff", fromFrameId: original.snapshot.frameId });
+    assert.deepEqual(replaced.diff?.changedRegion, { x: 0, y: 0, width: 2, height: 1 });
+    f.emit("\x1b[2J\x1b[H");
+    const cleared = await f.session.observe();
+    f.emit("\u3000");
+    const wideSpace = await f.session.observe({ view: "diff", fromFrameId: cleared.snapshot.frameId });
+    assert.deepEqual(wideSpace.diff?.changedRegion, { x: 0, y: 0, width: 2, height: 1 });
+  } finally {
+    await f.session.close();
+  }
+});
+
+test("旧式自定义引擎可跨 worker 传递快照选项，并用原有字符格定位 diff", async () => {
+  const { engine } = memoryEngine();
+  const f = fixture(
+    {
+      ...engine,
+      snapshot: (id, options) => engine.snapshot(id, structuredClone(options)),
+    },
+    tmpdir()
+  );
+  try {
+    // This engine places each code point, including the coffee glyph, in one cell.
+    f.emit("☕");
+    const base = await f.session.observe({ view: "compact" });
+    f.emit("A");
+    const diff = await f.session.observe({ view: "diff", fromFrameId: base.snapshot.frameId });
+    assert.deepEqual(diff.diff?.changedRegion, { x: 1, y: 0, width: 1, height: 1 });
+  } finally {
+    await f.session.close();
+  }
+});
+
+test("透传序列化选项的 xterm 包装器可用紧凑观察生成 diff", async () => {
+  const base = await createBrowserEngine({ cols: 20, rows: 2, onData() {} });
+  const f = fixture(
+    {
+      ...base,
+      snapshot: (id, options) => base.snapshot(id, structuredClone(options)),
+    },
+    tmpdir()
+  );
+  try {
+    f.emit("❤️A");
+    const previous = await f.session.observe({ view: "compact" });
+    f.emit("\x1b[H❤️B");
+    const diff = await f.session.observe({ view: "diff", fromFrameId: previous.snapshot.frameId });
+    assert.deepEqual(diff.diff?.changedLines, [{ y: 0, before: "❤️A", after: "❤️B" }]);
+    assert.deepEqual(diff.diff?.changedRegion, { x: 0, y: 0, width: 20, height: 1 });
+    assert.deepEqual(diff.snapshot.cells, []);
+  } finally {
+    await f.session.close();
+  }
+});
+
 test("diff 命中缓存时保留显式请求的 scrollback", async () => {
   const memory = memoryEngine();
   const engine: TerminalEngine = {
@@ -494,6 +569,36 @@ test("inputAndWait 在可观测输出后返回，超时保留已接收证据", {
         error.code === "WAIT_TIMEOUT" &&
         (error.details as { accepted?: boolean; inputFrameId?: number }).accepted === true &&
         typeof (error.details as { inputFrameId?: number }).inputFrameId === "number"
+    );
+  } finally {
+    await manager.closeAll();
+  }
+});
+
+test("inputAndWait 可以用静默退出确认已送达的输入", { timeout: 10000 }, async () => {
+  const manager = new SessionManager({ artifactDir: tmpdir(), engineFactory: async () => memoryEngine().engine });
+  try {
+    const session = await manager.launch({
+      command: process.execPath,
+      args: [
+        "-e",
+        "process.stdin.setRawMode(true);process.stdin.once('data',()=>process.exit(7));process.stdout.write('READY')",
+      ],
+    });
+    await manager.wait(session.id, { conditions: [{ kind: "text", text: "READY" }] });
+    const result = await manager.inputAndWait(session.id, { type: "text", text: "q" }, undefined, {
+      conditions: [{ kind: "exited" }],
+      timeoutMs: 2000,
+    });
+    assert.equal(result.session.status, "exited");
+    assert.equal(result.session.exitCode, 7);
+    await assert.rejects(
+      manager.wait(session.id, {
+        conditions: [{ kind: "exited" }],
+        afterFrameId: result.observation.snapshot.frameId,
+        timeoutMs: 100,
+      }),
+      { code: "WAIT_TIMEOUT" }
     );
   } finally {
     await manager.closeAll();

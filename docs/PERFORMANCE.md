@@ -11,6 +11,9 @@ Always identify the workload, terminal engine, platform and collection method.
 `perf` answers "did my TUI get slower over long sessions", not "how fast is TuiLens".
 A baseline is optional: omit `--baseline` for a report-only run, or use `--write-baseline` to create
 one for your own application and environment.
+With both options, the CLI writes the new measurements and exits with status 1 if the comparison finds a regression.
+The report's `baselinePath` identifies the data used for comparison and `writtenBaselinePath` identifies the update.
+Updating a baseline in place retains a copy of its previous measurements for the report.
 
 ```sh
 node dist/src/interfaces/cli.js perf --file examples/perf.json --write-baseline artifacts/perf-baseline.json
@@ -104,7 +107,12 @@ Wait polling now backs off from 2 ms to 50 ms. The old fixed 50 ms tick both qua
 
 `snapshot.render.paintMs` records the most recent write-to-two-animation-frame interval. The renderer fingerprint
 excludes this timing value, so font/grid identity stays stable across paints. `perf` also records `paintMs`
-by waiting for the engine paint boundary when supported.
+by waiting for the engine paint boundary when supported. By default, each measured round prepares the
+visual renderer before phase setup and the first timed input. Set `launch.renderer` to `headless` for
+text-only samples without `paintMs`. Profiles with graphics enabled use their active visual renderer.
+Reports and baselines identify the renderer used during sampling. Earlier 0.6.0 runs could label a
+mixture of headless and DOM samples as `headless`. Regenerate those baselines for comparison, or use
+`--allow-env-mismatch` for an intentional cross-renderer comparison.
 
 Run a bounded soak without a real application:
 

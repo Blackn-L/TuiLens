@@ -148,6 +148,12 @@ export async function buildPerfEvidence(
         label: "Performance baseline",
       });
     }
+    if (run.writtenBaselinePath) {
+      await addArtifact(artifacts, run.writtenBaselinePath, "baseline", {
+        ...(run.environment.terminalProfile ? { profile: run.environment.terminalProfile } : {}),
+        label: "Updated performance baseline",
+      });
+    }
   }
   const first = runs.find((run): run is PerfResult => run.reportPath !== null);
   const metrics = runs.reduce((count, run) => count + (run.reportPath === null ? 0 : run.metrics.length), 0);
@@ -238,7 +244,7 @@ export async function writeEvidenceBundle(
   const artifacts: EvidenceArtifact[] = [];
   for (const [index, artifact] of manifest.artifacts.entries()) {
     const source = resolve(artifact.path);
-    if (source === sourcePayload) {
+    if (artifact.role === "report" && source === sourcePayload) {
       artifacts.push({ ...artifact, path: "payload.json" });
       continue;
     }

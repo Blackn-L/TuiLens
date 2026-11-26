@@ -46,6 +46,7 @@ await writeEvidenceManifest("artifacts/evidence.json", manifest);
 
 `writeEvidenceBundle(manifest, payload, directory)` 会写出自包含目录：`payload.json`、
 `evidence.json` 和复制后的 `artifacts/` 文件；manifest 内的 artifact 路径会改写为目录内相对路径。
+录制证据包的 `payload.json` 保存解析后的报告，`artifacts/` 保存可独立回放的原始 JSONL。
 
 ## CLI
 
