@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { ProgressNotificationSchema, type ProgressNotification } from "@modelcontextprotocol/sdk/types.js";
 import { TuiLensError } from "../src/core/errors.js";
 import type { Observation, SessionInfo } from "../src/core/types.js";
 import { mcpImageContent } from "../src/interfaces/mcp.js";
@@ -350,14 +351,20 @@ test("JSON CLI 跨进程会话与 MCP 共享核心，断开回收拥有的会话
     assert.equal(reproduceContent.type, "text");
     assert.match("text" in reproduceContent ? reproduceContent.text : "", /terminal_launch/u);
 
-    const replayProgress: McpProgress[] = [];
-    const replayedMcp = await client.callTool(
-      { name: "terminal_replay", arguments: { path: "session.recording.jsonl" } },
-      undefined,
-      { onprogress: (item) => replayProgress.push(item as McpProgress) }
-    );
+    const replayToken = "replay-recording";
+    const replayProgress: ProgressNotification["params"][] = [];
+    // The SDK may retire a per-request callback when the final notification and response share a stdio read.
+    client.setNotificationHandler(ProgressNotificationSchema, ({ params }) => {
+      if (params.progressToken === replayToken) replayProgress.push(params);
+    });
+    const replayedMcp = await client.callTool({
+      name: "terminal_replay",
+      arguments: { path: "session.recording.jsonl" },
+      _meta: { progressToken: replayToken },
+    });
     assert.notEqual(replayedMcp.isError, true);
     assert.ok(replayProgress.length >= 2);
+    assert.equal(replayProgress[0]?.progress, 0);
     assert.ok(replayProgress.every((item) => item.total !== undefined && item.total > 0));
     assert.equal(replayProgress.at(-1)?.progress, replayProgress.at(-1)?.total);
     assert.ok(replayProgress.some((item) => item.message?.includes("replay")));
