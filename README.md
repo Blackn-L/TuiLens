@@ -1,9 +1,9 @@
 # TuiLens
 
-[![npm version](https://img.shields.io/npm/v/tuilens)](https://www.npmjs.com/package/tuilens)
-[![Supported Node.js versions](https://img.shields.io/node/v/tuilens)](https://github.com/Blackn-L/TuiLens/blob/main/package.json)
+[![npm version](https://badgen.net/npm/v/tuilens)](https://www.npmjs.com/package/tuilens)
+[![Supported Node.js versions](https://badgen.net/npm/node/tuilens)](https://github.com/Blackn-L/TuiLens/blob/main/package.json)
 [![Build and tests on main](https://github.com/Blackn-L/TuiLens/actions/workflows/checks.yml/badge.svg?branch=main&event=push)](https://github.com/Blackn-L/TuiLens/actions/workflows/checks.yml?query=branch%3Amain)
-[![License](https://img.shields.io/npm/l/tuilens)](https://github.com/Blackn-L/TuiLens/blob/main/LICENSE)
+[![License](https://badgen.net/npm/license/tuilens)](https://github.com/Blackn-L/TuiLens/blob/main/LICENSE)
 
 **Terminal automation for AI agents and tests.** Run an interactive program in a real pseudoterminal (PTY), send it keys or mouse input, and read the screen it draws. Text observation works without a browser. Request a PNG when you need to check what a user would see.
 
