@@ -1,9 +1,9 @@
 # TuiLens
 
-[![npm 版本](https://img.shields.io/npm/v/tuilens)](https://www.npmjs.com/package/tuilens)
-[![支持的 Node.js 版本](https://img.shields.io/node/v/tuilens)](https://github.com/Blackn-L/TuiLens/blob/main/package.json)
+[![npm 版本](https://badgen.net/npm/v/tuilens)](https://www.npmjs.com/package/tuilens)
+[![支持的 Node.js 版本](https://badgen.net/npm/node/tuilens)](https://github.com/Blackn-L/TuiLens/blob/main/package.json)
 [![main 分支构建与测试](https://github.com/Blackn-L/TuiLens/actions/workflows/checks.yml/badge.svg?branch=main&event=push)](https://github.com/Blackn-L/TuiLens/actions/workflows/checks.yml?query=branch%3Amain)
-[![许可证](https://img.shields.io/npm/l/tuilens)](https://github.com/Blackn-L/TuiLens/blob/main/LICENSE)
+[![许可证](https://badgen.net/npm/license/tuilens)](https://github.com/Blackn-L/TuiLens/blob/main/LICENSE)
 
 **面向 AI Agent 和测试的终端自动化工具。** 在真实伪终端（PTY）里启动交互程序，发送按键或鼠标操作，读取程序绘制的画面。读取文字无需浏览器。需要检查用户看到的布局、颜色或图形时，可以截取 PNG。
 
